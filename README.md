@@ -57,9 +57,10 @@ node test/bench.js 1200000
 ## Structure
 
 ```
-index.html          Page shell
+index.html          Page shell. Loads the files from the manifest.
+js/manifest.js      Version and the list of application files
 css/app.css         Styles
-js/engine/core.js   Table model, value parsing, operation registry
+js/engine/core.js   Table model, value parsing, field types, operation and format registries
 js/engine/worker.js Web Worker: reads files, runs the chain, makes downloads
 js/ops/*.js         Operations (one file per group)
 js/app/*.js         State store, worker client, saved workflows, helpers
@@ -73,13 +74,21 @@ test/               Tests, benchmark and test data
 
 1. Make a new file in `js/ops/` or add to an existing file.
 2. Call `DL.registerOp` with an `id`, `name`, `category`, `icon`, `description`, `params` and `apply`.
-3. Add the file to `index.html` and to the `importScripts` call in `js/engine/worker.js`.
+3. Add a new file to the `ops` list in `js/manifest.js`.
 
-The `params` list makes the form. Field types: `text`, `number`, `textarea`, `code`, `boolean`, `select`, `checkboxes`, `column`, `columns`, `columnOrder`, `renameMap`, `mapping`, `conditions`, `rules`, `sortKeys`.
+The `params` list makes the form. Field types: `text`, `number`, `code`, `boolean`, `select`, `checkboxes`, `column`, `columns`, `columnOrder`, `renameMap`, `mapping`, `conditions`, `rules`, `sortKeys`. Each type knows how to check and repair its value. Add a type with `DL.registerParamType` in `core.js` and a renderer in `js/ui/fields.js`.
 
-`apply(table, params)` gets a table `{ columns, cols, length }` and returns `{ table, notes }`. Use the helpers in `core.js`: `DL.col`, `DL.mapColumns`, `DL.addColumn`, `DL.selectRows`, `DL.pickColumns`, `DL.dropColumns`. Never change the input table.
+`apply(table, params)` gets a table `{ columns, cols, length }` and returns `{ table, notes }`. Use the helpers in `core.js`: `DL.col`, `DL.mapColumns`, `DL.addColumn`, `DL.selectRows`, `DL.pickColumns`, `DL.dropColumns`, `DL.groupRows`. Never change the input table.
 
-Add `outputColumns(columns, params)` when the operation changes the columns. The user interface uses it to show the correct column names in the steps that follow.
+Add `outputColumns(columns, params)` when the operation changes the columns. Return `null` when the columns are only known after the step runs. The user interface uses this to show the correct column names in the steps that follow.
+
+## Add an input or output format
+
+Input formats are listed in `DL.inputFormats` (`core.js`) with their file extensions and options. The worker has a reader for each format id in `readers` (`worker.js`). Output formats are listed in `DL.outputFormats` with their options. The worker has a writer for each format id in `writers`.
+
+## Release
+
+Change `DL.VERSION` in `js/manifest.js` and the version in the manifest tag in `index.html`. Browsers then load the new files.
 
 ## Workflow files
 
