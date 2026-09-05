@@ -40,7 +40,7 @@
     var drop = U.el('div', { class: 'dropzone', tabindex: '0', role: 'button' }, [
       U.el('i', { class: 'bi bi-cloud-arrow-up' }),
       src.file ? U.el('div', {}, [U.el('strong', { text: src.file.name }), ' · ' + U.fmtBytes(src.file.size), U.el('div', { class: 'small', text: 'Drop another file here or click to change it' })])
-        : U.el('div', {}, [U.el('strong', { text: 'Drop a file here' }), ' or click to choose one', U.el('div', { class: 'small mt-1', text: 'CSV, TSV, TXT, XLSX, XLS' })])
+        : U.el('div', {}, [U.el('strong', { text: 'Drop a file here' }), ' or click to choose one', U.el('div', { class: 'small mt-1', text: DL.acceptedExtensions().map(function (e) { return e.slice(1).toUpperCase(); }).join(', ') })])
     ]);
     drop.addEventListener('click', function () { fileInput.click(); });
     drop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
@@ -101,14 +101,14 @@
     var apply = U.debounce(function () { self.actions.reload(); }, 400);
 
     var params = format.options;
+    // Typed values (merge) reload after a pause; switches and choices reload at once.
     var rendered = DL.fields.renderAll(params, o, { columns: null, compact: false }, function (key, value, opts) {
       var patch = {};
       patch[key] = value;
       self.store.setSourceOptions(patch);
       DL.fields.updateVisibility(params, self.store.state.source.options, rendered.els);
-      var def = DL.findOption(params.map(function (p) { return { value: p.key, param: p }; }), key).param;
-      if (def.reload === 'now' && !(opts && opts.merge)) { apply.cancel(); self.actions.reload(); }
-      else apply();
+      if (opts && opts.merge) apply();
+      else { apply.cancel(); self.actions.reload(); }
     });
     DL.fields.updateVisibility(params, o, rendered.els);
     var grid = rendered.grid;

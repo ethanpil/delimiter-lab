@@ -25,6 +25,7 @@
     };
     this.undoStack = [];
     this.redoStack = [];
+    this.savedSnapshot = null; // the workflow as it was last saved
     this.restoreSession();
   }
 
@@ -57,6 +58,11 @@
     this.undoStack.push(this.snapshot());
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift();
     this.redoStack.length = 0;
+    this.lastEditKey = null; // the next edit starts a new undo entry
+  };
+
+  Store.prototype.workflowSnapshot = function () {
+    return JSON.stringify(this.state.workflow);
   };
 
   Store.prototype.applySnapshot = function (snap) {
@@ -65,9 +71,9 @@
     var ids = data.workflow.steps.map(function (s) { return s.id; });
     this.state.selectedId = (data.selectedId === 'source' || ids.indexOf(data.selectedId) >= 0) ? data.selectedId : 'source';
     this.invalidateResultsFrom(0);
-    this.state.dirty = true;
+    this.lastEditKey = null;
+    this.state.dirty = this.workflowSnapshot() !== this.savedSnapshot;
     this.emit('steps');
-    this.emit('selection');
     this.emit('workflow');
   };
 
@@ -119,10 +125,10 @@
     var step = { id: U.uid(), opId: opId, params: DL.defaultParams(opId), enabled: true };
     steps.splice(idx + 1, 0, step);
     DL.initParams(opId, step.params, this.inputColumnsFor(step.id));
+    this.invalidateResultsFrom(idx + 1);
     this.state.selectedId = step.id;
     this.state.dirty = true;
     this.emit('steps');
-    this.emit('selection');
     return step;
   };
 
@@ -138,7 +144,6 @@
     }
     this.state.dirty = true;
     this.emit('steps');
-    this.emit('selection');
   };
 
   Store.prototype.duplicateStep = function (id) {
@@ -152,7 +157,6 @@
     this.state.selectedId = copy.id;
     this.state.dirty = true;
     this.emit('steps');
-    this.emit('selection');
   };
 
   Store.prototype.toggleStep = function (id) {
@@ -191,7 +195,6 @@
     this.invalidateResultsFrom(this.stepIndex(id));
     this.state.dirty = true;
     this.emit('steps');
-    this.emit('selection');
   };
 
   // Updates settings of a step. Quick edits (typing) merge into one undo entry.
@@ -206,7 +209,7 @@
     Object.keys(patch).forEach(function (k) { step.params[k] = patch[k]; });
     this.invalidateResultsFrom(this.stepIndex(id));
     this.state.dirty = true;
-    this.emit('params', id);
+    this.emit('params');
   };
 
   // Replaces all steps, for example when a saved workflow is opened.
@@ -216,9 +219,9 @@
     this.state.workflow = { id: wf.id || null, name: wf.name || '', steps: steps };
     this.state.selectedId = steps.length ? steps[steps.length - 1].id : 'source';
     this.invalidateResultsFrom(0);
+    this.savedSnapshot = wf.id ? this.workflowSnapshot() : null;
     this.state.dirty = false;
     this.emit('steps');
-    this.emit('selection');
     this.emit('workflow');
   };
 
@@ -228,10 +231,18 @@
     this.emit('selection');
   };
 
-  Store.prototype.setWorkflowMeta = function (patch, clean) {
+  // Changes the name or id of the workflow. A new name can be undone. saved: the workflow was just saved.
+  Store.prototype.setWorkflowMeta = function (patch, saved) {
+    if (patch.name !== undefined && patch.name !== this.state.workflow.name && !saved) this.pushHistory();
     Object.assign(this.state.workflow, patch);
-    this.state.dirty = !clean;
+    if (saved) this.savedSnapshot = this.workflowSnapshot();
+    this.state.dirty = this.workflowSnapshot() !== this.savedSnapshot;
     this.emit('workflow');
+  };
+
+  Store.prototype.setSheets = function (sheets) {
+    this.state.source.sheets = sheets;
+    if (sheets.indexOf(this.state.source.options.sheet) < 0) this.state.source.options.sheet = sheets[0] || '';
   };
 
   /* ---------- Columns ---------- */

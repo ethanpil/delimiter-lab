@@ -24,13 +24,13 @@
   }
 
   function noColumnsMessage(columns) {
-    return columns === null ? 'The columns are known after the earlier steps run.' : 'Load a file to see its columns.';
+    return columns === null ? 'The columns are known after the earlier steps run.' : 'No columns: load a file, or check the earlier steps.';
   }
 
   function colSelect(columns, value, allowEmpty, emptyLabel) {
     var known = columns || [];
     var options = [];
-    if (allowEmpty || !value || known.indexOf(value) < 0) options.push({ value: '', label: emptyLabel || (known.length ? 'Choose a column…' : (columns === null ? 'Columns known after earlier steps run' : 'Load a file to see columns')) });
+    if (allowEmpty || !value || known.indexOf(value) < 0) options.push({ value: '', label: emptyLabel || (known.length ? 'Choose a column…' : noColumnsMessage(columns)) });
     known.forEach(function (c) { options.push({ value: c, label: c }); });
     if (value && known.indexOf(value) < 0) options.push({ value: value, label: columns ? value + ' (missing)' : value });
     return U.select(options, value || '');
@@ -108,11 +108,13 @@
     return ul;
   }
 
-  // A list of rows with an "Add" button. opts = { blank(), renderRow(row, api, index) -> element, addLabel, focusSelector }
-  // api = { emit(merge), remove(), edit(fn) }. edit(fn) calls fn(rows, index), then rebuilds the list.
-  // Rows are copied before they go to the store.
+  // A list of rows with an "Add" button. opts = { renderRow(row, api, index) -> element, addLabel, focusSelector }
+  // The empty row comes from the field type. api = { emit(merge), remove(), edit(fn) };
+  // edit(fn) calls fn(rows, index), then builds the list again. Rows are copied before they go to the store.
   function listEditor(param, value, ctx, opts) {
-    var rows = (value && value.length ? value : [opts.blank()]).map(function (r) { return Object.assign(opts.blank(), r); });
+    var blank = DL.paramTypes[param.type].blank;
+    opts.blank = blank;
+    var rows = (value && value.length ? value : [blank()]).map(function (r) { return Object.assign(blank(), r); });
     var box = U.el('div', { class: 'rows-editor' });
     function emit(merge) { ctx.onChange(rows.map(function (r) { return Object.assign({}, r); }), { merge: !!merge }); }
     function rebuild() {
@@ -231,10 +233,10 @@
       countEl
     ]);
     var ordered = null;
-    var checks = {};
+    var checks = new Map();
     function setChosen(next) {
       chosen = next;
-      Object.keys(checks).forEach(function (c) { checks[c].checked = chosen.indexOf(c) >= 0; });
+      checks.forEach(function (input, c) { input.checked = chosen.indexOf(c) >= 0; });
       if (ordered) ordered.setItems(chosen);
       updateCount();
       ctx.onChange(chosen.slice());
@@ -253,7 +255,7 @@
         setChosen(next);
       });
       check.el.dataset.name = c.toLowerCase();
-      checks[c] = check.input;
+      checks.set(c, check.input);
       box.appendChild(check.el);
     });
     chosen.filter(function (c) { return columns.indexOf(c) < 0; }).forEach(function (c) {
@@ -291,18 +293,18 @@
   };
 
   renderers.renameMap = function (param, value, ctx) {
-    var map = Object.assign({}, value || {});
+    var map = Object.assign(Object.create(null), value || {});
     var columns = ctx.columns || [];
     if (!columns.length) return wrap(param, U.el('div', { class: 'text-secondary small', text: noColumnsMessage(ctx.columns) }), true);
     var tbody = U.el('tbody');
-    var inputs = {};
+    var inputs = new Map();
     columns.forEach(function (c) {
       var input = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: hasOwn.call(map, c) ? map[c] : '', placeholder: c, spellcheck: 'false' });
       input.addEventListener('input', function () {
         if (input.value.trim()) map[c] = input.value; else delete map[c];
-        ctx.onChange(Object.assign({}, map), { merge: true });
+        ctx.onChange(Object.assign(Object.create(null), map), { merge: true });
       });
-      inputs[c] = input;
+      inputs.set(c, input);
       tbody.appendChild(U.el('tr', {}, [U.el('td', { class: 'align-middle', text: c }), U.el('td', {}, [input])]));
     });
     var table = U.el('table', { class: 'table table-sm mb-0 mapping-table' }, [
@@ -312,9 +314,9 @@
     function quickLink(label, fn) {
       return U.el('a', { href: '#', text: label, onclick: function (e) {
         e.preventDefault();
-        map = {};
-        columns.forEach(function (c) { var n = fn(c); if (n && n !== c) map[c] = n; inputs[c].value = map[c] || ''; });
-        ctx.onChange(Object.assign({}, map));
+        map = Object.create(null);
+        columns.forEach(function (c) { var n = fn(c); if (n && n !== c) map[c] = n; inputs.get(c).value = map[c] || ''; });
+        ctx.onChange(Object.assign(Object.create(null), map));
       } });
     }
     var tools = U.el('div', { class: 'd-flex gap-3 mb-1 small' }, [
@@ -327,8 +329,8 @@
   };
 
   renderers.mapping = function (param, value, ctx) {
+    var blank = DL.paramTypes.mapping.blank;
     var editor = listEditor(param, value, ctx, {
-      blank: function () { return { from: '', to: '' }; },
       addLabel: 'Add value',
       focusSelector: 'input',
       renderRow: function (r, api) {
@@ -353,7 +355,7 @@
           api.edit(function (rows, i) {
             if (oneColumn) {
               parsed.forEach(function (p, k) {
-                if (!rows[i + k]) rows.push({ from: '', to: '' });
+                if (!rows[i + k]) rows.push(blank());
                 rows[i + k][isTo ? 'to' : 'from'] = p.from;
               });
             } else {
@@ -371,9 +373,8 @@
   };
 
   // Shared renderer for lists of rules (filter conditions and verify rules).
-  function ruleRows(param, value, ctx, operators, blank, allowEmpty) {
+  function ruleRows(param, value, ctx, operators, allowEmpty) {
     var editor = listEditor(param, value, ctx, {
-      blank: blank,
       addLabel: 'Add rule',
       renderRow: function (r, api) {
         var col = colSelect(ctx.columns, r.column);
@@ -404,19 +405,15 @@
   }
 
   renderers.conditions = function (param, value, ctx) {
-    return ruleRows(param, value, ctx, DL.FILTER_OPERATORS, function () { return { column: '', op: 'contains', value: '', value2: '' }; }, false);
+    return ruleRows(param, value, ctx, DL.FILTER_OPERATORS, false);
   };
 
   renderers.rules = function (param, value, ctx) {
-    return ruleRows(param, value, ctx, DL.VERIFY_RULES, function () { return { column: '', op: 'notEmpty', value: '', allowEmpty: true }; }, true);
+    return ruleRows(param, value, ctx, DL.VERIFY_RULES, true);
   };
-
-  var SORT_TYPES = [{ value: 'auto', label: 'Detect type' }, { value: 'text', label: 'As text' }, { value: 'number', label: 'As numbers' }, { value: 'date', label: 'As dates' }];
-  var SORT_DIRS = [{ value: 'asc', label: 'A → Z / low → high' }, { value: 'desc', label: 'Z → A / high → low' }];
 
   renderers.sortKeys = function (param, value, ctx) {
     var editor = listEditor(param, value, ctx, {
-      blank: function () { return { column: '', type: 'auto', dir: 'asc' }; },
       addLabel: 'Add another column',
       renderRow: function (k, api, index) {
         var col = colSelect(ctx.columns, k.column);
@@ -424,8 +421,8 @@
         var row = U.el('div', { class: 'rule-row' }, [
           U.el('span', { class: 'text-secondary small', style: 'flex:0 0 auto', text: index === 0 ? 'Sort by' : 'then by' }),
           col,
-          U.select(SORT_TYPES, k.type, function (v) { k.type = v; api.emit(); }),
-          U.select(SORT_DIRS, k.dir, function (v) { k.dir = v; api.emit(); }),
+          U.select(DL.SORT_TYPES, k.type, function (v) { k.type = v; api.emit(); }),
+          U.select(DL.SORT_DIRS, k.dir, function (v) { k.dir = v; api.emit(); }),
           removeButton('Remove', api.remove)
         ]);
         return row;

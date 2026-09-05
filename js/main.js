@@ -7,7 +7,7 @@
   var store = new DL.Store();
   var progressEl = $('progress');
   var engine = new DL.EngineClient(function (msg) { showProgress(msg.phase, msg.percent); });
-  engine.configure(U.cellBudget());
+  engine.configure(U.cellBudget()).catch(function (err) { U.toast(err.message, 'danger'); });
 
   var chain = new DL.ChainView($('chain'), store, {
     toggle: function (id) { store.toggleStep(id); },
@@ -39,7 +39,28 @@
     clearTimeout(progressTimer);
     progressTimer = setTimeout(hideProgress, 4000);
   }
-  function hideProgress() { clearTimeout(progressTimer); progressEl.hidden = true; }
+  function hideProgress() { clearTimeout(progressTimer); progressEl.hidden = true; $('btnStop').hidden = true; }
+
+  // A step that does not finish (for example a slow regular expression) blocks the worker.
+  // Stop ends the worker, loads the file again and turns the selected step off.
+  var stopTimer = null;
+  function armStop() {
+    clearTimeout(stopTimer);
+    stopTimer = setTimeout(function () { showProgress('Still running… this takes longer than usual.', 50); $('btnStop').hidden = false; }, 15000);
+  }
+  function disarmStop() { clearTimeout(stopTimer); $('btnStop').hidden = true; }
+  $('btnStop').addEventListener('click', function () {
+    disarmStop();
+    engine.restart();
+    var sel = store.state.selectedId;
+    if (sel !== 'source' && store.getStep(sel) && store.getStep(sel).enabled !== false) {
+      store.toggleStep(sel);
+      U.toast('Step ' + (store.stepIndex(sel) + 1) + ' did not finish and was turned off. Check its settings.', 'warning');
+    }
+    grid.show(null, 'Reading the file…');
+    previewKey = null;
+    if (store.state.source.file) loadSource();
+  });
 
   /* ---------- Source loading ---------- */
   var loadToken = 0;
@@ -56,8 +77,7 @@
       showProgress('Reading workbook', 5);
       engine.listSheets(file).then(function (msg) {
         if (token !== loadToken) return;
-        store.state.source.sheets = msg.sheets;
-        if (msg.sheets.indexOf(store.state.source.options.sheet) < 0) store.state.source.options.sheet = msg.sheets[0] || '';
+        store.setSheets(msg.sheets);
         loadSource();
       }).catch(function (err) {
         if (token !== loadToken) return;
@@ -76,13 +96,16 @@
     src.status = 'loading';
     store.emit('source');
     showProgress('Reading file', 2);
+    armStop();
     engine.load(src.file, src.options).then(function (msg) {
       if (token !== loadToken) return;
+      disarmStop();
       hideProgress();
       store.setSourceInfo(msg.info);
       runChain();
     }).catch(function (err) {
       if (token !== loadToken) return;
+      disarmStop();
       hideProgress();
       store.setSourceError(err.message);
       U.toast(err.message, 'danger');
@@ -110,15 +133,18 @@
     });
     var started = Date.now();
     var slowTimer = setTimeout(function () { showProgress('Running steps…', 50); }, 400);
+    armStop();
     engine.run(steps, protectedSteps()).then(function (msg) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
+      disarmStop();
       if (Date.now() - started > 400) hideProgress();
       store.setResults(msg.results);
     }).catch(function (err) {
       clearTimeout(slowTimer);
-      hideProgress();
       if (token !== runToken) return;
+      disarmStop();
+      hideProgress();
       U.toast('Something went wrong while running the steps: ' + err.message, 'danger');
     });
   }
@@ -221,10 +247,10 @@
   var searchToken = 0;
 
   function runSearch() {
-    var shown = store.displayResultFor(store.state.selectedId);
+    var stepId = grid.stepId; // search the data that the grid shows
     var token = ++searchToken;
-    if (!searchQuery || !shown.stepId) { setSearchResult([], 0); return; }
-    engine.search(shown.stepId, searchQuery, 2000).then(function (msg) {
+    if (!searchQuery || !stepId) { setSearchResult([], 0); return; }
+    engine.search(stepId, searchQuery, 2000).then(function (msg) {
       if (token !== searchToken) return;
       setSearchResult(msg.result.matches, msg.result.total);
     }).catch(function (err) { U.toast(err.message, 'danger'); });
@@ -295,10 +321,10 @@
       store.replaceWorkflow(wf);
       if (wf.id) DL.workflows.touch(wf.id);
       if (wf.sourceOptions && store.state.source.file) {
-        var o = wf.sourceOptions;
-        var cur = store.state.source.options;
-        if (o.headers !== cur.headers || o.skipRows !== cur.skipRows) {
-          store.setSourceOptions({ headers: o.headers, skipRows: o.skipRows });
+        var wanted = DL.cleanSourceOptions(wf.sourceOptions);
+        wanted.sheet = store.state.source.options.sheet;
+        if (JSON.stringify(wanted) !== JSON.stringify(store.state.source.options)) {
+          store.setSourceOptions(wanted);
           loadSource();
         }
       }
@@ -351,8 +377,9 @@
     var note = null;
     if (sel !== 'source') {
       var idx = store.stepIndex(sel);
+      var op = DL.getOp(st.workflow.steps[idx].opId);
       if (shown.stepId !== sel) note = 'Step ' + (idx + 1) + ' cannot run yet, so the download holds the data going into it.';
-      else note = 'This download holds the result after step ' + (idx + 1) + ' (' + DL.getOp(st.workflow.steps[idx].opId).name + ').';
+      else note = 'This download holds the result after step ' + (idx + 1) + (op ? ' (' + op.name + ')' : '') + '.';
     } else if (st.workflow.steps.length) {
       note = 'The source is selected, so this download holds the unchanged source data. Select the last step to download the final result.';
     }
@@ -385,8 +412,7 @@
   store.subscribe(function (what, st) {
     switch (what) {
       case 'steps':
-        chain.render();
-        configView.renderedFor = null; // the structure changed: build the form again
+        chain.render(true);
         renderConfig();
         runAgainSoon();
         updateUndoButtons();
@@ -395,7 +421,7 @@
         refreshPreview();
         break;
       case 'params':
-        chain.render();
+        chain.render(false);
         configView.update();
         runAgainSoon();
         updateUndoButtons();
@@ -403,13 +429,13 @@
         store.saveSession();
         break;
       case 'selection':
-        chain.render();
+        chain.render(true);
         renderConfig();
         refreshPreview();
         store.saveSession();
         break;
       case 'source':
-        chain.render();
+        chain.render(false);
         renderConfig();
         refreshPreview();
         break;
@@ -417,7 +443,7 @@
         store.saveSession();
         break;
       case 'results':
-        chain.render();
+        chain.render(false);
         if (st.selectedId !== 'source') configView.update();
         refreshPreview();
         break;
@@ -473,9 +499,12 @@
   });
   document.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('is-dragging-file'); } });
   document.addEventListener('dragover', function (e) { if (document.body.classList.contains('is-dragging-file')) e.preventDefault(); });
-  document.addEventListener('drop', function (e) {
+  // The capture phase runs before the drop zone's own handler, which stops the event.
+  document.addEventListener('drop', function () {
     dragDepth = 0;
     document.body.classList.remove('is-dragging-file');
+  }, true);
+  document.addEventListener('drop', function (e) {
     if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
     e.preventDefault();
     var f = e.dataTransfer.files[0];
@@ -485,7 +514,7 @@
 
   /* ---------- Start ---------- */
   U.tooltips(document.body);
-  chain.render();
+  chain.render(true);
   renderConfig();
   refreshPreview();
   updateUndoButtons();
@@ -494,5 +523,6 @@
   if (store.restoredSourceName && store.state.workflow.steps.length) {
     U.toast('Your steps were restored. Open "' + store.restoredSourceName + '" again to continue.', 'info');
   }
-  window.DLApp = { store: store, engine: engine, grid: grid, openFile: openFile };
+  // A handle for tests: open the page with ?debug to use it from the browser console.
+  if (/[?&]debug\b/.test(location.search)) window.DLApp = { store: store, engine: engine, grid: grid, openFile: openFile };
 })();

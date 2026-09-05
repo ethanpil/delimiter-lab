@@ -27,12 +27,13 @@
     });
     container.addEventListener('keydown', function (e) {
       var card = e.target.closest('.step-card');
-      if (!card) return;
+      if (!card || e.target.closest('button')) return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); store.select(card.dataset.step || 'source'); }
     });
   }
 
-  ChainView.prototype.render = function () {
+  // scroll: bring the selected card into view (on selection changes, not while typing).
+  ChainView.prototype.render = function (scroll) {
     var st = this.store.state;
     var steps = st.workflow.steps;
     var el = U.empty(this.el);
@@ -49,7 +50,7 @@
       el.appendChild(U.el('div', { class: 'chain-connector' }));
       el.appendChild(self.stepCard(step, i));
     });
-    this.scrollSelectedIntoView();
+    if (scroll) this.scrollSelectedIntoView();
   };
 
   ChainView.prototype.scrollSelectedIntoView = function () {
@@ -92,14 +93,13 @@
     var selected = st.selectedId === step.id;
     var disabled = step.enabled === false;
     var status, statusText;
-    if (disabled) { status = 'skipped'; statusText = 'Turned off'; }
-    else if (res) {
-      status = res.status;
-      statusText = res.hasTable ? DL.rowsAndColumns(res.rowCount, res.columns.length) : DL.RESULT_STATUS[res.status].label;
-    }
-    else if (this.store.validateStep(step.id).length) { status = 'invalid'; statusText = 'Needs setup'; }
-    else if (st.source.status !== 'ready') { status = 'invalid'; statusText = ''; }
-    else { status = 'running'; statusText = 'Running…'; }
+    if (disabled) status = 'skipped';
+    else if (res) status = res.status;
+    else if (this.store.validateStep(step.id).length) status = 'invalid';
+    else status = st.source.status === 'ready' ? 'running' : 'invalid';
+    if (res && res.hasTable && !disabled) statusText = DL.rowsAndColumns(res.rowCount, res.columns.length);
+    else if (!res && !disabled && status === 'invalid' && st.source.status !== 'ready') statusText = '';
+    else statusText = DL.RESULT_STATUS[status].label;
     var summary = '';
     try { summary = op.summary ? op.summary(step.params) : ''; } catch (e) { summary = ''; }
     return U.el('div', { class: 'step-card' + (selected ? ' is-selected' : '') + (disabled ? ' is-disabled' : ''), dataset: { step: step.id }, draggable: 'true', tabindex: '0', role: 'button' }, [

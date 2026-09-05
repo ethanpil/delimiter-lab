@@ -4,11 +4,18 @@
   var DL = root.DL;
 
   function EngineClient(onProgress) {
-    this.worker = new Worker('js/engine/worker.js?v=' + DL.VERSION);
     this.pending = new Map();
     this.nextId = 1;
     this.onProgress = onProgress || function () {};
+    this.maxCells = 0;
+    this.dead = null; // the error that stopped the worker, when it stopped
+    this.start();
+  }
+
+  EngineClient.prototype.start = function () {
     var self = this;
+    this.dead = null;
+    this.worker = new Worker('js/engine/worker.js?v=' + DL.VERSION);
     this.worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { self.onProgress(msg); return; }
@@ -22,15 +29,30 @@
       } else p.resolve(msg);
     };
     this.worker.onerror = function (e) {
-      var err = new Error('The processing engine stopped: ' + (e.message || 'unknown error'));
-      self.pending.forEach(function (p) { p.reject(err); });
-      self.pending.clear();
+      self.fail(new Error('The processing engine stopped: ' + (e.message || 'unknown error') + '. Reload the page.'));
     };
-  }
+    if (this.maxCells) this.send({ type: 'config', maxCells: this.maxCells });
+  };
+
+  // Rejects every request, now and later, with the given error.
+  EngineClient.prototype.fail = function (err) {
+    this.dead = err;
+    this.pending.forEach(function (p) { p.reject(err); });
+    this.pending.clear();
+  };
+
+  // Stops the worker at once (for example when a step does not finish) and starts a new one.
+  // The new worker holds no data: the source file must be loaded again.
+  EngineClient.prototype.restart = function () {
+    this.worker.terminate();
+    this.fail(new Error('The work was stopped.'));
+    this.start();
+  };
 
   EngineClient.prototype.send = function (msg) {
     var self = this;
     return new Promise(function (resolve, reject) {
+      if (self.dead) { reject(self.dead); return; }
       var id = self.nextId++;
       msg.requestId = id;
       self.pending.set(id, { resolve: resolve, reject: reject });
@@ -38,7 +60,7 @@
     });
   };
 
-  EngineClient.prototype.configure = function (maxCells) { return this.send({ type: 'config', maxCells: maxCells }); };
+  EngineClient.prototype.configure = function (maxCells) { this.maxCells = maxCells; return this.send({ type: 'config', maxCells: maxCells }); };
   EngineClient.prototype.listSheets = function (file) { return this.send({ type: 'sheets', file: file }); };
   EngineClient.prototype.load = function (file, options) { return this.send({ type: 'load', file: file, options: options }); };
   EngineClient.prototype.run = function (steps, protect) { return this.send({ type: 'run', steps: steps, protect: protect }); };

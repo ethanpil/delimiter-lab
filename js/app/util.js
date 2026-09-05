@@ -193,10 +193,11 @@
     });
   };
 
-  // One tooltip handler per container. Elements inside can come and go; nothing leaks.
+  // One tooltip handler per container. Elements inside can be added and removed at any time.
+  // Bootstrap moves "title" to "data-bs-original-title" when it shows a tooltip, so both are matched.
   U.tooltips = function (container) {
     if (bootstrap.Tooltip.getInstance(container)) return;
-    new bootstrap.Tooltip(container, { selector: '[title]:not(.no-tip)', delay: { show: 500, hide: 0 }, trigger: 'hover' });
+    new bootstrap.Tooltip(container, { selector: '[title]:not(.no-tip), [data-bs-original-title]:not(.no-tip)', delay: { show: 500, hide: 0 }, trigger: 'hover' });
   };
 
   U.downloadBlob = function (blob, filename) {

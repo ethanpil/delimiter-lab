@@ -5,9 +5,12 @@
   var U = DL.util;
 
   var ROW_H = 28;
-  var PAGE = 200;
-  var MAX_VIRTUAL_H = 8000000; // browsers limit element height; above this we scale the scrollbar
+  var HEADER_H = 34;
+  var MAX_VIRTUAL_H = 8000000; // browsers limit element height; above this the scrollbar is scaled
   var BUFFER = 8;
+  var COL_BUFFER = 2;
+  var PAGE_CELLS = 20000;      // cells per page request; the row count per page follows from the columns
+  var CACHE_CELLS = 600000;    // pages kept in memory per grid
 
   function GridView(container, engine, opts) {
     this.engine = engine;
@@ -55,8 +58,13 @@
     this.hitsVersion = 0;
     this.columns = [];
     this.widths = [];
+    this.lefts = [0];
+    this.totalW = 0;
+    this.rowNumW = 44;
+    this.headerRange = null;
     this.pages = new Map();
     this.inflight = new Map();
+    this.page = 200;
     this.info = null;
     this.hits = null;      // Map rowIndex -> Set(colIndex)
     this.current = null;   // [row, col]
@@ -81,10 +89,14 @@
       return Promise.resolve();
     }
     this.showMessage('');
-    return this.fetchPage(0).then(function (data) {
+    return this.engine.slice(stepId, 0, 1).then(function (msg) {
       if (self.showVersion !== version) return;
-      self.total = data.total;
-      self.columns = data.columns;
+      self.total = msg.data.total;
+      self.columns = msg.data.columns;
+      self.page = Math.max(20, Math.min(200, Math.floor(PAGE_CELLS / Math.max(1, self.columns.length))));
+      return self.fetchPage(0);
+    }).then(function (data) {
+      if (self.showVersion !== version || !data) return;
       self.computeWidths(data.rows);
       self.scale = Math.min(1, MAX_VIRTUAL_H / Math.max(1, self.total * ROW_H));
       self.rowsEl.style.height = Math.max(1, Math.round(self.total * ROW_H * self.scale)) + 'px';
@@ -114,16 +126,17 @@
     if (this.pages.has(pageIndex)) return Promise.resolve(this.pages.get(pageIndex));
     if (this.inflight.has(pageIndex)) return this.inflight.get(pageIndex);
     var stepId = this.stepId;
-    var p = this.engine.slice(stepId, pageIndex * PAGE, PAGE).then(function (msg) {
+    var page = this.page;
+    var p = this.engine.slice(stepId, pageIndex * page, page).then(function (msg) {
       if (self.inflight.get(pageIndex) === p) self.inflight.delete(pageIndex);
       if (self.stepId !== stepId) return msg.data;
       self.pages.set(pageIndex, msg.data);
-      if (self.pages.size > 60) {
-        // Keep memory small: drop pages far from the current view.
+      if (self.pages.size * page * self.columns.length > CACHE_CELLS) {
+        // Keep memory small: drop the pages that are far from the current view.
         var first = self.firstVisibleRow();
         var keys = Array.from(self.pages.keys());
-        keys.sort(function (a, b) { return Math.abs(b * PAGE - first) - Math.abs(a * PAGE - first); });
-        for (var i = 0; i < 20; i++) self.pages.delete(keys[i]);
+        keys.sort(function (a, b) { return Math.abs(b * page - first) - Math.abs(a * page - first); });
+        for (var i = 0; i < Math.ceil(keys.length / 3); i++) self.pages.delete(keys[i]);
       }
       return msg.data;
     }, function (err) {
@@ -143,27 +156,47 @@
 
   GridView.prototype.computeWidths = function (sampleRows) {
     var cols = this.columns;
-    var widths = cols.map(function (c) { return Math.min(320, Math.max(70, textWidth(c, true) + 40)); });
     var n = Math.min(sampleRows.length, 100);
-    for (var i = 0; i < n; i++) {
-      var r = sampleRows[i];
-      for (var c = 0; c < cols.length; c++) {
-        var v = r[c];
-        if (!v) continue;
-        var w = Math.min(320, textWidth(v.length > 60 ? v.slice(0, 60) : v) + 18);
-        if (w > widths[c]) widths[c] = w;
-      }
+    var widths = new Array(cols.length);
+    var lefts = new Array(cols.length + 1);
+    this.rowNumW = Math.max(44, textWidth(String(this.total)) + 18);
+    lefts[0] = this.rowNumW;
+    for (var c = 0; c < cols.length; c++) {
+      // Measure the longest sample value only: one measurement per column.
+      var longest = '';
+      for (var i = 0; i < n; i++) { var v = sampleRows[i][c]; if (v.length > longest.length) longest = v; }
+      var w = Math.max(70, textWidth(cols[c], true) + 40);
+      if (longest) w = Math.max(w, textWidth(longest.length > 60 ? longest.slice(0, 60) : longest) + 18);
+      widths[c] = Math.min(320, w);
+      lefts[c + 1] = lefts[c] + widths[c];
     }
     this.widths = widths;
-    this.rowNumW = Math.max(44, textWidth(String(this.total)) + 18);
-    this.totalW = this.rowNumW + widths.reduce(function (a, b) { return a + b; }, 0);
+    this.lefts = lefts; // left edge of each column; lefts[cols.length] is the total width
+    this.totalW = lefts[cols.length];
+  };
+
+  // The columns that are inside the view (plus a small buffer): [first, last).
+  GridView.prototype.visibleColumns = function () {
+    var w = this.columns.length;
+    if (!w) return [0, 0];
+    var left = this.scroll.scrollLeft;
+    var right = left + this.scroll.clientWidth;
+    var lefts = this.lefts;
+    var lo = 0, hi = w;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (lefts[mid + 1] <= left) lo = mid + 1; else hi = mid; }
+    var first = lo;
+    var last = first;
+    while (last < w && lefts[last] < right) last++;
+    return [Math.max(0, first - COL_BUFFER), Math.min(w, last + COL_BUFFER)];
   };
 
   GridView.prototype.renderHeader = function () {
     var h = this.header;
+    var range = this.visibleColumns();
     var html = '<div class="grid-hcell rownum" style="width:' + this.rowNumW + 'px">#</div>';
+    if (range[0] > 0) html += '<div class="grid-hcell" style="width:' + (this.lefts[range[0]] - this.rowNumW) + 'px"></div>';
     var info = this.info;
-    for (var c = 0; c < this.columns.length; c++) {
+    for (var c = range[0]; c < range[1]; c++) {
       var name = this.columns[c];
       var icon = '';
       var title = name;
@@ -177,15 +210,22 @@
     h.innerHTML = html;
     h.style.width = this.totalW + 'px';
     this.rowsEl.style.width = this.totalW + 'px';
+    this.headerRange = range;
+  };
+
+  // The number of rows that fit in the view below the header.
+  GridView.prototype.visibleRows = function () {
+    return Math.max(1, Math.ceil((this.scroll.clientHeight - HEADER_H) / ROW_H));
   };
 
   GridView.prototype.firstVisibleRow = function () {
     var top = this.scroll.scrollTop;
     if (this.scale < 1) {
-      var maxTop = Math.max(1, this.total * ROW_H * this.scale - this.scroll.clientHeight);
-      return Math.floor((top / maxTop) * Math.max(0, this.total - Math.ceil(this.scroll.clientHeight / ROW_H)));
+      var maxTop = Math.max(1, this.scroll.scrollHeight - this.scroll.clientHeight);
+      var lastFirst = Math.max(0, this.total - this.visibleRows());
+      return Math.min(lastFirst, Math.floor((top / maxTop) * lastFirst));
     }
-    return Math.floor(top / ROW_H);
+    return Math.min(Math.max(0, this.total - 1), Math.floor(top / ROW_H));
   };
 
   var ESC_RE = /[&<>"']/;
@@ -210,9 +250,10 @@
   GridView.prototype.renderRows = function () {
     if (!this.stepId || !this.total) { U.empty(this.rowsEl); this.renderKey = ''; return; }
     var first = Math.max(0, this.firstVisibleRow() - BUFFER);
-    var count = Math.ceil(this.scroll.clientHeight / ROW_H) + BUFFER * 2;
+    var count = this.visibleRows() + BUFFER * 2;
     var last = Math.min(this.total, first + count);
-    var firstPage = Math.floor(first / PAGE), lastPage = Math.floor(Math.max(first, last - 1) / PAGE);
+    var pageSize = this.page;
+    var firstPage = Math.floor(first / pageSize), lastPage = Math.floor(Math.max(first, last - 1) / pageSize);
     var missing = [];
     var loaded = '';
     for (var p = firstPage; p <= lastPage; p++) {
@@ -220,26 +261,28 @@
       else missing.push(p);
     }
     if (missing.length) this.requestPages(missing);
-    // Nothing changed since the last render (for example a horizontal scroll): keep the DOM.
-    var key = first + ':' + last + ':' + loaded + ':' + this.hitsVersion + ':' + (this.current ? this.current.join('/') : '') + ':' + (this.scale < 1 ? this.scroll.scrollTop : 0);
+    var range = this.visibleColumns();
+    if (!this.headerRange || range[0] !== this.headerRange[0] || range[1] !== this.headerRange[1]) this.renderHeader();
+    // Nothing changed since the last render: keep the DOM.
+    var key = first + ':' + last + ':' + range.join('-') + ':' + loaded + ':' + this.hitsVersion + ':' + (this.current ? this.current.join('/') : '') + ':' + (this.scale < 1 ? this.scroll.scrollTop : 0);
     if (key === this.renderKey) return;
     this.renderKey = key;
     // In scaled mode rows are placed relative to the current scroll position.
     var baseTop = this.scale < 1 ? this.scroll.scrollTop : 0;
     var firstVisible = this.firstVisibleRow();
     var html = '';
-    var w = this.columns.length;
     var info = this.info;
     var widths = this.widths;
+    var spacer = range[0] > 0 ? '<div class="grid-cell" style="width:' + (this.lefts[range[0]] - this.rowNumW) + 'px"></div>' : '';
     for (var i = first; i < last; i++) {
-      var page = this.pages.get(Math.floor(i / PAGE));
+      var page = this.pages.get(Math.floor(i / pageSize));
       var row = page ? page.rows[i - page.start] : null;
       var top = this.scale < 1 ? baseTop + (i - firstVisible) * ROW_H : i * ROW_H;
       var hitCols = this.hits ? this.hits.get(i) : null;
       html += '<div class="grid-row' + (hitCols ? ' is-hit' : '') + '" style="top:' + top + 'px;width:' + this.totalW + 'px">';
-      html += '<div class="grid-cell rownum" style="width:' + this.rowNumW + 'px">' + (i + 1) + '</div>';
+      html += '<div class="grid-cell rownum" style="width:' + this.rowNumW + 'px">' + (i + 1) + '</div>' + spacer;
       if (row) {
-        for (var c = 0; c < w; c++) {
+        for (var c = range[0]; c < range[1]; c++) {
           var v = row[c];
           var cls = 'grid-cell';
           if (v === '') cls += ' is-empty';
@@ -259,8 +302,8 @@
   GridView.prototype.scrollToRow = function (row) {
     var target;
     if (this.scale < 1) {
-      var maxTop = this.total * ROW_H * this.scale - this.scroll.clientHeight;
-      target = (row / Math.max(1, this.total - Math.ceil(this.scroll.clientHeight / ROW_H))) * maxTop;
+      var maxTop = this.scroll.scrollHeight - this.scroll.clientHeight;
+      target = (row / Math.max(1, this.total - this.visibleRows())) * maxTop;
     } else {
       target = row * ROW_H - this.scroll.clientHeight / 2 + ROW_H;
     }
@@ -269,9 +312,9 @@
   };
 
   GridView.prototype.scrollToColumn = function (col) {
-    var left = this.rowNumW;
-    for (var c = 0; c < col; c++) left += this.widths[c];
-    var right = left + this.widths[col];
+    if (!this.lefts || col >= this.columns.length) return;
+    var left = this.lefts[col];
+    var right = this.lefts[col + 1];
     var s = this.scroll;
     if (left - this.rowNumW < s.scrollLeft) s.scrollLeft = left - this.rowNumW;
     else if (right > s.scrollLeft + s.clientWidth) s.scrollLeft = right - s.clientWidth;
