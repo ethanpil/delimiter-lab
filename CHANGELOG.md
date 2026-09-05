@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0
+
+- Fix: text such as "Room 12" is not read as a date; time zones are read (c55740a).
+- Fix: fields that need whole numbers reject decimals (c55740a).
+- Fix: sort treats values that differ only in case as equal, so the next sort key applies (c55740a).
+- Fix: the file drop overlay disappears after a drop on the drop zone; tooltips hide (c6c0cce).
+- Fix: undo history stays correct after undo, redo, rename and save (c6c0cce).
+- Add: Stop button for a step that does not finish (c6c0cce).
+- Change: the preview shows only the visible columns of wide tables, so scrolling stays quick (c6c0cce).
+- Change: the worker keeps the steps on screen in memory and trims the cache while the chain runs (a7ad29d).
+
 ## 1.1.0
 
 - Fix: characters that cross a read boundary in large files stay intact (7fdb2f2).
