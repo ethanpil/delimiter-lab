@@ -1,0 +1,5 @@
+Report generated 2024-01-01
+
+sku|qty|price
+A1|3|9.99
+B2|0|12.50

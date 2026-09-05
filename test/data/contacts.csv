@@ -1,0 +1,12 @@
+﻿Full Name,Email,City,Amount,Signup Date,Status,Notes
+dr. john a. smith jr.,John.Smith@example.com,new york,"1,250.50",2024-01-15,active,"Says ""hi"", often"
+"Doe, Jane",jane@example.com,  Boston ,89,02/03/2024,Active,
+maría garcía,maria@example,Madrid,"2.300,75",2023-12-01,inactive,Ñandú
+Ludwig van Beethoven,ludwig@example.org,Bonn,,1827-03-26,active,"multi
+line note"
+dr. john a. smith jr.,John.Smith@example.com,new york,"1,250.50",2024-01-15,active,dup
+Li Wei,li.wei@example.cn,Shanghai,15000,2024-05-20,pending,中文
+Amara Okafor,amara@example.com,Lagos,-45,2024-06-30,active,
+Sam O'Neil,sam@example.com,Dublin,120,not a date,ACTIVE,
+,,,,,,
+Zoë  Müller,zoe@example.de,Köln,1e3,2024-07-04,active,émoji 🎉
