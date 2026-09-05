@@ -88,7 +88,7 @@ Input formats are listed in `DL.inputFormats` (`core.js`) with their file extens
 
 ## Release
 
-Change `DL.VERSION` in `js/manifest.js` and the version in the manifest tag in `index.html`. Browsers then load the new files.
+Change `DL.VERSION` in `js/manifest.js`, and the two `?v=` values in `index.html` (the stylesheet link and the manifest tag). Browsers then load the new files.
 
 ## Workflow files
 
