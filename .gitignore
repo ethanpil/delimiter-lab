@@ -1,0 +1,3 @@
+node_modules/
+test/data/big*.csv
+.DS_Store
