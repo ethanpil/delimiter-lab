@@ -12,7 +12,7 @@
   var chain = new DL.ChainView($('chain'), store, {
     toggle: function (id) { store.toggleStep(id); },
     duplicate: function (id) { store.duplicateStep(id); },
-    remove: function (id) { removeStep(id); }
+    remove: function (id) { store.removeStep(id); }
   });
   var sourceView = new DL.SourceView($('config'), store, {
     openFile: openFile,
@@ -21,22 +21,14 @@
   });
   var configView = new DL.ConfigView($('config'), store, {
     changeOp: function (id) {
-      DL.dialogs.pickOperation({ title: 'Change operation' }, function (opId) {
-        var step = store.getStep(id);
-        if (!step || step.opId === opId) return;
-        store.pushHistory();
-        step.opId = opId;
-        step.params = DL.defaultParams(opId);
-        store.state.dirty = true;
-        store.emit('steps');
-        store.emit('selection');
-      });
+      DL.dialogs.pickOperation({ title: 'Change operation' }, function (opId) { store.changeOp(id, opId); });
     },
-    remove: removeStep
+    remove: function (id) { store.removeStep(id); }
   });
   var grid = new DL.GridView($('grid'), engine);
   var gridBefore = null;
   var lastFormat = 'csv';
+  var lastFormatOptions = {};
 
   /* ---------- Progress ---------- */
   var progressTimer = null;
@@ -59,16 +51,13 @@
       return;
     }
     store.setSourceFile(file);
-    if (!store.state.workflow.name && !store.state.workflow.steps.length) {
-      store.setWorkflowMeta({ name: '' });
-    }
-    if (/\.(xlsx|xlsm|xlsb|xls|ods)$/i.test(file.name)) {
+    if (DL.inputFormatFor(file.name).hasSheets) {
       var token = ++loadToken;
       showProgress('Reading workbook', 5);
       engine.listSheets(file).then(function (msg) {
         if (token !== loadToken) return;
         store.state.source.sheets = msg.sheets;
-        if (!store.state.source.options.sheet || msg.sheets.indexOf(store.state.source.options.sheet) < 0) store.state.source.options.sheet = msg.sheets[0] || '';
+        if (msg.sheets.indexOf(store.state.source.options.sheet) < 0) store.state.source.options.sheet = msg.sheets[0] || '';
         loadSource();
       }).catch(function (err) {
         if (token !== loadToken) return;
@@ -91,9 +80,6 @@
       if (token !== loadToken) return;
       hideProgress();
       store.setSourceInfo(msg.info);
-      if (store.state.selectedId === 'source' && !store.state.workflow.steps.length) {
-        // Nothing else to do; keep the source selected so the user sees the options and preview.
-      }
       runChain();
     }).catch(function (err) {
       if (token !== loadToken) return;
@@ -105,21 +91,26 @@
 
   /* ---------- Running the chain ---------- */
   var runToken = 0;
-  var runScheduled = false;
 
-  function buildWorkerSteps() {
-    return store.state.workflow.steps.map(function (s) {
-      return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false, invalid: store.validateStep(s.id).length > 0 };
-    });
+  // The steps on screen: the worker keeps their results in memory when it frees space.
+  function protectedSteps() {
+    var shown = store.displayResultFor(store.state.selectedId);
+    var ids = [];
+    if (shown.stepId && shown.stepId !== 'source') ids.push(shown.stepId);
+    var before = beforeStepId();
+    if (before && before !== 'source') ids.push(before);
+    return ids;
   }
 
   function runChain() {
     if (store.state.source.status !== 'ready') return;
     var token = ++runToken;
-    var steps = buildWorkerSteps();
+    var steps = store.state.workflow.steps.map(function (s) {
+      return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false };
+    });
     var started = Date.now();
     var slowTimer = setTimeout(function () { showProgress('Running steps…', 50); }, 400);
-    engine.run(steps, store.state.selectedId).then(function (msg) {
+    engine.run(steps, protectedSteps()).then(function (msg) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
       if (Date.now() - started > 400) hideProgress();
@@ -132,62 +123,81 @@
     });
   }
 
+  // Results of a run that started before the latest change are out of date: drop them and run again.
   var runSoon = U.debounce(runChain, 220);
+  function runAgainSoon() {
+    runToken++;
+    runSoon();
+  }
 
   /* ---------- Preview ---------- */
   var previewKey = null;
 
-  // Which step result the preview should show for the selected item, plus a message.
-  function previewTarget() {
-    var st = store.state;
-    var sel = st.selectedId;
-    if (st.source.status !== 'ready') return { stepId: null, message: st.source.status === 'loading' ? 'Reading the file…' : 'Open a file to see a preview.', label: '' };
-    if (sel === 'source') return { stepId: 'source', label: 'Source file', note: '' };
-    var idx = store.stepIndex(sel);
-    var steps = st.workflow.steps;
-    for (var i = idx; i >= 0; i--) {
-      var s = steps[i];
-      var r = st.results[s.id];
-      if (r && (r.status === 'ok' || r.status === 'warning' || r.status === 'skipped')) {
-        var op = DL.getOp(steps[idx].opId);
-        var note = i === idx ? '' : 'Showing the data going into this step until it can run.';
-        return { stepId: s.id, label: 'Step ' + (idx + 1) + ': ' + (op ? op.name : ''), note: note, result: r, pending: !st.results[sel] && i !== idx };
-      }
-      if (r && r.status === 'error') return { stepId: 'source', label: 'Step ' + (idx + 1), note: 'Showing the source file. Step ' + (i + 1) + ' failed.', pending: false };
-    }
-    var op2 = DL.getOp(steps[idx].opId);
-    var anyResult = Object.keys(st.results).length > 0;
-    return { stepId: 'source', label: 'Step ' + (idx + 1) + ': ' + (op2 ? op2.name : ''), note: anyResult ? 'Showing the source file until this step can run.' : '', pending: !anyResult };
-  }
-
   function resultKey(stepId) {
-    if (stepId === 'source') return 'source:' + (store.state.source.file ? store.state.source.file.name + store.state.source.file.size + store.state.source.file.lastModified : '') + ':' + (store.state.source.info ? store.state.source.info.rowCount + '/' + store.state.source.info.columns.join('|') : '');
-    var r = store.state.results[stepId];
-    return stepId + ':' + (r ? r.hash || (r.rowCount + '/' + (r.columns || []).join('|')) : 'none');
+    var st = store.state;
+    if (stepId === 'source') {
+      var f = st.source.file;
+      return 'source:' + (f ? f.name + f.size + f.lastModified : '') + ':' + (st.source.info ? st.source.info.rowCount + '/' + st.source.info.columns.join('|') : '');
+    }
+    var r = st.results[stepId];
+    return stepId + ':' + (r ? r.hash : 'none');
   }
 
   function refreshPreview() {
-    var t = previewTarget();
     var st = store.state;
-    $('previewTitle').textContent = t.label || '';
+    var sel = st.selectedId;
+    var shown = store.displayResultFor(sel);
+    var title = '';
     var stats = '';
-    if (t.stepId === 'source' && st.source.info) stats = U.fmtInt(st.source.info.rowCount) + ' rows · ' + st.source.info.columns.length + ' columns';
-    else if (t.result) stats = U.fmtInt(t.result.rowCount) + ' rows · ' + t.result.columns.length + ' columns' + (t.result.ms > 50 ? ' · ' + (t.result.ms / 1000).toFixed(1) + ' s' : '');
-    if (t.note) stats += (stats ? ' · ' : '') + t.note;
+    if (sel === 'source') title = 'Source file';
+    else {
+      var step = store.getStep(sel);
+      var op = step && DL.getOp(step.opId);
+      title = 'Step ' + (store.stepIndex(sel) + 1) + ': ' + (op ? op.name : '');
+    }
+    if (shown.stepId === 'source' && st.source.info) stats = DL.rowsAndColumns(st.source.info.rowCount, st.source.info.columns.length);
+    else if (shown.result) stats = DL.rowsAndColumns(shown.result.rowCount, shown.result.columns.length) + (shown.result.ms > 50 ? ' · ' + (shown.result.ms / 1000).toFixed(1) + ' s' : '');
+    if (shown.reason) stats += (stats ? ' · ' : '') + shown.reason;
+    $('previewTitle').textContent = title;
     $('previewStats').textContent = stats;
-    var key = (t.stepId || 'none') + '|' + resultKey(t.stepId || 'source') + '|' + (t.message || '');
+    var message = st.source.status === 'loading' ? 'Reading the file…' : 'Open a file to see a preview.';
+    var key = (shown.stepId || 'none') + '|' + resultKey(shown.stepId || 'source') + '|' + (shown.stepId ? '' : message);
     if (key !== previewKey) {
       previewKey = key;
-      grid.show(t.stepId, t.message).then(function () { if (searchQuery) runSearch(); });
+      grid.show(shown.stepId, message).then(function () {
+        if (searchQuery) runSearch();
+        else if (shown.result && shown.stepId === sel) scrollToNewColumns(shown);
+      });
     }
     refreshCompare();
+  }
+
+  // Brings the first column that a step added into view.
+  function scrollToNewColumns(shown) {
+    var before = store.outputColumnsAt(store.stepIndex(shown.stepId) - 1);
+    if (!before) return;
+    var cols = shown.result.columns;
+    for (var c = 0; c < cols.length; c++) {
+      if (before.indexOf(cols[c]) < 0) { grid.scrollToColumn(c); return; }
+    }
+  }
+
+  // The step whose output feeds the selected step (for the "Compare" view).
+  function beforeStepId() {
+    var sel = store.state.selectedId;
+    if (sel === 'source') return null;
+    var steps = store.state.workflow.steps;
+    for (var i = store.stepIndex(sel) - 1; i >= 0; i--) {
+      if (DL.resultHasTable(store.state.results[steps[i].id])) return steps[i].id;
+    }
+    return 'source';
   }
 
   function refreshCompare() {
     var on = $('btnCompare').classList.contains('active');
     var wrap = $('gridBefore');
-    var sel = store.state.selectedId;
-    if (!on || sel === 'source' || store.state.source.status !== 'ready') {
+    var beforeId = beforeStepId();
+    if (!on || !beforeId || store.state.source.status !== 'ready') {
       wrap.hidden = true;
       if (gridBefore) { gridBefore.destroy(); gridBefore = null; U.empty(wrap); }
       grid.setTitle('');
@@ -200,12 +210,6 @@
       grid.onScroll = function (top) { if (gridBefore && Math.abs(gridBefore.scroll.scrollTop - top) > 1) gridBefore.scroll.scrollTop = top; };
     }
     grid.setTitle('After');
-    var idx = store.stepIndex(sel);
-    var beforeId = 'source';
-    for (var i = idx - 1; i >= 0; i--) {
-      var r = store.state.results[store.state.workflow.steps[i].id];
-      if (r && (r.status === 'ok' || r.status === 'warning' || r.status === 'skipped')) { beforeId = store.state.workflow.steps[i].id; break; }
-    }
     var key = beforeId + '|' + resultKey(beforeId);
     if (gridBefore.key !== key) { gridBefore.key = key; gridBefore.show(beforeId); }
   }
@@ -217,13 +221,13 @@
   var searchToken = 0;
 
   function runSearch() {
-    var t = previewTarget();
+    var shown = store.displayResultFor(store.state.selectedId);
     var token = ++searchToken;
-    if (!searchQuery || !t.stepId) { setSearchResult([], 0); return; }
-    engine.search(t.stepId, searchQuery, 2000).then(function (msg) {
+    if (!searchQuery || !shown.stepId) { setSearchResult([], 0); return; }
+    engine.search(shown.stepId, searchQuery, 2000).then(function (msg) {
       if (token !== searchToken) return;
       setSearchResult(msg.result.matches, msg.result.total);
-    });
+    }).catch(function (err) { U.toast(err.message, 'danger'); });
   }
 
   function setSearchResult(matches, total) {
@@ -258,38 +262,25 @@
   /* ---------- Steps ---------- */
   function addStep() {
     if (store.state.source.status !== 'ready' && !store.state.workflow.steps.length) {
-      // Allow building without a file, but nudge toward opening one first.
       U.toast('Tip: open a file first so you can pick columns by name.', 'info');
     }
     DL.dialogs.pickOperation({}, function (opId) { store.addStep(opId, store.state.selectedId); });
   }
 
-  function removeStep(id) {
-    store.removeStep(id);
-  }
-
   /* ---------- Workflows ---------- */
-  function currentWorkflowRecord(name) {
-    var st = store.state;
-    return {
-      id: st.workflow.id,
-      name: name || st.workflow.name,
-      steps: st.workflow.steps,
-      columns: store.sourceColumns(),
-      sourceOptions: st.source.options
-    };
-  }
-
   function saveWorkflow() {
     var st = store.state;
     if (!st.workflow.steps.length) { U.toast('Add at least one step before saving.', 'info'); return; }
     var doSave = function (name) {
-      var rec = DL.workflows.save(currentWorkflowRecord(name));
+      var rec = DL.workflows.save({
+        id: st.workflow.id,
+        name: name,
+        steps: st.workflow.steps,
+        columns: store.sourceColumns() || [],
+        sourceOptions: st.source.options
+      });
       if (!rec) return;
-      store.state.dirty = false;
-      store.setWorkflowMeta({ id: rec.id, name: rec.name });
-      store.state.dirty = false;
-      updateSaveState();
+      store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
       U.toast('Workflow "' + rec.name + '" saved.', 'success');
     };
     if (st.workflow.id && st.workflow.name) doSave(st.workflow.name);
@@ -301,9 +292,7 @@
 
   function applyWorkflow(wf) {
     var go = function () {
-      store.replaceSteps(wf.steps);
-      store.setWorkflowMeta({ id: wf.id || null, name: wf.name });
-      store.state.dirty = false;
+      store.replaceWorkflow(wf);
       if (wf.id) DL.workflows.touch(wf.id);
       if (wf.sourceOptions && store.state.source.file) {
         var o = wf.sourceOptions;
@@ -313,7 +302,6 @@
           loadSource();
         }
       }
-      updateSaveState();
       var level = DL.workflows.matchLevel(wf, store.sourceColumns());
       if (level === 'partial' || level === 'none') U.toast('Some steps refer to columns that are not in this file. Check the steps marked "Needs setup".', 'warning');
     };
@@ -340,8 +328,8 @@
     DL.dialogs.workflows({ currentColumns: store.sourceColumns(), currentId: store.state.workflow.id }, {
       apply: applyWorkflow,
       importFile: importWorkflowFile,
-      renamed: function (id, name) { if (store.state.workflow.id === id) store.setWorkflowMeta({ name: name }); },
-      removed: function (id) { if (store.state.workflow.id === id) { store.setWorkflowMeta({ id: null }); updateSaveState(); } }
+      renamed: function (id, name) { if (store.state.workflow.id === id) store.setWorkflowMeta({ name: name }, !store.state.dirty); },
+      removed: function (id) { if (store.state.workflow.id === id) store.setWorkflowMeta({ id: null }); }
     });
   }
 
@@ -358,29 +346,27 @@
   function download() {
     var st = store.state;
     if (st.source.status !== 'ready') { U.toast('Open a file first.', 'info'); return; }
-    var t = previewTarget();
     var sel = st.selectedId;
-    var stepId = t.stepId;
+    var shown = store.displayResultFor(sel);
     var note = null;
     if (sel !== 'source') {
       var idx = store.stepIndex(sel);
-      var r = st.results[sel];
-      if (!r || (r.status !== 'ok' && r.status !== 'warning' && r.status !== 'skipped')) {
-        note = 'Step ' + (idx + 1) + ' cannot run yet, so the download holds the data going into it.';
-      } else note = 'This download holds the result after step ' + (idx + 1) + ' (' + DL.getOp(st.workflow.steps[idx].opId).name + ').';
+      if (shown.stepId !== sel) note = 'Step ' + (idx + 1) + ' cannot run yet, so the download holds the data going into it.';
+      else note = 'This download holds the result after step ' + (idx + 1) + ' (' + DL.getOp(st.workflow.steps[idx].opId).name + ').';
     } else if (st.workflow.steps.length) {
       note = 'The source is selected, so this download holds the unchanged source data. Select the last step to download the final result.';
     }
     var base = U.baseName(st.source.file.name);
     var wfName = (st.workflow.name || '').trim();
     var suffix = sel === 'source' ? '' : (wfName ? '-' + U.safeFileName(wfName.replace(base, '').trim() || wfName) : '-step' + (store.stepIndex(sel) + 1));
-    DL.dialogs.download({ fileName: base + suffix + '.csv', note: note, lastFormat: lastFormat }, function (options, fileName, fmt) {
-      lastFormat = fmt;
+    DL.dialogs.download({ baseName: base + suffix, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
+      lastFormat = options.format;
+      lastFormatOptions = allOptions;
       showProgress('Preparing download', 20);
-      engine.exportStep(stepId, options).then(function (msg) {
+      engine.exportStep(shown.stepId, options).then(function (msg) {
         hideProgress();
         U.downloadBlob(msg.blob, fileName);
-        U.toast('Downloaded ' + fileName + ' (' + U.fmtInt(msg.rowCount) + ' rows).', 'success');
+        U.toast('Downloaded ' + fileName + ' (' + DL.pluralize(msg.rowCount, 'row') + ').', 'success');
       }).catch(function (err) { hideProgress(); U.toast(err.message, 'danger'); });
     });
   }
@@ -400,9 +386,9 @@
     switch (what) {
       case 'steps':
         chain.render();
-        configView.renderedFor = null; // structure changed: rebuild the form
+        configView.renderedFor = null; // the structure changed: build the form again
         renderConfig();
-        runSoon();
+        runAgainSoon();
         updateUndoButtons();
         updateSaveState();
         store.saveSession();
@@ -411,7 +397,7 @@
       case 'params':
         chain.render();
         configView.update();
-        runSoon();
+        runAgainSoon();
         updateUndoButtons();
         updateSaveState();
         store.saveSession();
@@ -460,16 +446,16 @@
     var tag = (e.target.tagName || '').toLowerCase();
     var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
     var mod = e.ctrlKey || e.metaKey;
-    if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { if (!typing || e.target.type === 'checkbox') { e.preventDefault(); store.undo(); } return; }
-    if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { if (!typing || e.target.type === 'checkbox') { e.preventDefault(); store.redo(); } return; }
-    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveWorkflow(); return; }
-    if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); download(); return; }
-    if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); store.select('source'); var dz = document.querySelector('.dropzone'); if (dz) dz.click(); return; }
-    if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); $('previewSearch').focus(); $('previewSearch').select(); return; }
-    if (typing) return;
-    if (document.querySelector('.modal.show')) return;
+    var key = e.key.toLowerCase();
+    if (mod && !e.shiftKey && key === 'z') { if (!typing || e.target.type === 'checkbox') { e.preventDefault(); store.undo(); } return; }
+    if (mod && (key === 'y' || (e.shiftKey && key === 'z'))) { if (!typing || e.target.type === 'checkbox') { e.preventDefault(); store.redo(); } return; }
+    if (mod && key === 's') { e.preventDefault(); saveWorkflow(); return; }
+    if (mod && key === 'd') { e.preventDefault(); download(); return; }
+    if (mod && key === 'o') { e.preventDefault(); store.select('source'); var dz = document.querySelector('.dropzone'); if (dz) dz.click(); return; }
+    if (mod && key === 'f') { e.preventDefault(); $('previewSearch').focus(); $('previewSearch').select(); return; }
+    if (typing || document.querySelector('.modal.show')) return;
     if (e.key === 'Insert') { e.preventDefault(); addStep(); }
-    else if (e.key === 'Delete' && store.state.selectedId !== 'source') { e.preventDefault(); removeStep(store.state.selectedId); }
+    else if (e.key === 'Delete' && store.state.selectedId !== 'source') { e.preventDefault(); store.removeStep(store.state.selectedId); }
     else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       e.preventDefault();
       var ids = ['source'].concat(store.state.workflow.steps.map(function (s) { return s.id; }));
@@ -493,19 +479,18 @@
     if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
     e.preventDefault();
     var f = e.dataTransfer.files[0];
-    if (/\.workflow\.json$|\.json$/i.test(f.name)) importWorkflowFile(f);
+    if (DL.fileExtension(f.name) === 'json') importWorkflowFile(f);
     else openFile(f);
   });
 
   /* ---------- Start ---------- */
+  U.tooltips(document.body);
   chain.render();
   renderConfig();
   refreshPreview();
   updateUndoButtons();
   updateSaveState();
   $('workflowName').value = store.state.workflow.name || '';
-  U.initTooltips(document.querySelector('.app-header'));
-  U.initTooltips(document.querySelector('.preview-toolbar'));
   if (store.restoredSourceName && store.state.workflow.steps.length) {
     U.toast('Your steps were restored. Open "' + store.restoredSourceName + '" again to continue.', 'info');
   }

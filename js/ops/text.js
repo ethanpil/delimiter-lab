@@ -2,6 +2,7 @@
 (function (root) {
   'use strict';
   var DL = root.DL;
+  var unescapeText = DL.unescapeText;
 
   /* ---------- Case ---------- */
   DL.registerOp({
@@ -21,7 +22,7 @@
           { value: 'sentence', label: 'Sentence case' }
         ] }
     ],
-    summary: function (p) { return p.mode + ' case: ' + (p.columns || []).join(', '); },
+    summary: function (p) { return p.mode + ' case: ' + p.columns.join(', '); },
     apply: function (table, p) {
       var idxs = DL.colIndexes(table, p.columns);
       var fn = p.mode === 'upper' ? function (s) { return s.toUpperCase(); }
@@ -43,20 +44,18 @@
     params: [
       { key: 'columns', label: 'Columns to join (in order)', type: 'columns', ordered: true, help: 'Drag to change the order.' },
       { key: 'separator', label: 'Separator', type: 'text', default: ' ', help: 'Text placed between the values. Use \\t for a tab.' },
-      { key: 'output', label: 'New column name', type: 'text', default: 'Combined', required: true },
+      { key: 'output', label: 'New column name', type: 'text', default: 'Combined', notBlank: true },
       { key: 'skipEmpty', label: 'Skip empty values', type: 'boolean', default: true, help: 'Avoids double separators when a value is empty.' },
       { key: 'removeSource', label: 'Remove the original columns', type: 'boolean', default: false }
     ],
-    summary: function (p) { return (p.columns || []).join(' + ') + ' → ' + p.output; },
+    summary: function (p) { return p.columns.join(' + ') + ' → ' + p.output; },
     outputColumns: function (cols, p) {
-      var out = cols.slice();
-      if (p.removeSource) out = out.filter(function (c) { return p.columns.indexOf(c) < 0; });
-      out.push(DL.uniqueName(out, p.output || 'Combined'));
-      return out;
+      var out = p.removeSource ? cols.filter(function (c) { return p.columns.indexOf(c) < 0; }) : cols;
+      return out.concat([DL.uniqueName(out, DL.cleanName(p.output, 'Combined'))]);
     },
     apply: function (table, p) {
       var idxs = DL.colIndexes(table, p.columns);
-      var sep = unescapeText(p.separator == null ? ' ' : p.separator);
+      var sep = unescapeText(p.separator);
       var n = table.length;
       var skipEmpty = !!p.skipEmpty;
       var srcCols = idxs.map(function (i) { return DL.col(table, i); });
@@ -73,71 +72,22 @@
         values[i] = out;
       }
       var base = p.removeSource ? DL.dropColumns(table, idxs) : table;
-      return { table: DL.addColumn(base, DL.uniqueName(base.columns, p.output || 'Combined'), values) };
+      return { table: DL.addColumn(base, DL.uniqueName(base.columns, DL.cleanName(p.output, 'Combined')), values) };
     }
   });
 
   /* ---------- Split column ---------- */
-  DL.registerOp({
-    id: 'split',
-    name: 'Split Column',
-    category: 'Text',
-    icon: 'bi-layout-split',
-    description: 'Break one column into several columns at a separator.',
-    keywords: 'divide separate delimiter',
-    params: [
-      { key: 'column', label: 'Column to split', type: 'column' },
-      { key: 'separator', label: 'Separator', type: 'text', default: ',', help: 'Text to split on. Use \\t for a tab.' },
-      { key: 'regex', label: 'Separator is a regular expression', type: 'boolean', default: false },
-      { key: 'maxParts', label: 'Maximum parts', type: 'number', default: '', min: 1, help: 'Leave empty to split into as many parts as needed. The last part keeps the rest of the text.' },
-      { key: 'names', label: 'New column names', type: 'text', default: '', help: 'Comma separated names for the new columns. Leave empty to use "Column - 1", "Column - 2", …' },
-      { key: 'trim', label: 'Trim spaces around each part', type: 'boolean', default: true },
-      { key: 'removeSource', label: 'Remove the original column', type: 'boolean', default: false }
-    ],
-    summary: function (p) { return 'Split "' + p.column + '" on "' + p.separator + '"'; },
-    validate: function (p) {
-      var out = [];
-      if (p.separator === '' || p.separator == null) out.push('Enter a separator.');
-      if (p.regex) { try { new RegExp(p.separator); } catch (e) { out.push('The regular expression is not valid: ' + e.message); } }
-      return out;
-    },
-    apply: function (table, p) {
-      var idx = DL.colIndex(table, p.column);
-      if (idx < 0) throw new Error('Column "' + p.column + '" was not found.');
-      var sep = p.regex ? new RegExp(p.separator) : unescapeText(p.separator);
-      var max = p.maxParts !== '' && p.maxParts != null ? Math.max(1, Number(p.maxParts)) : 0;
-      var src = DL.col(table, idx);
-      var n = table.length;
-      var parts = new Array(n);
-      var width = 0;
-      for (var i = 0; i < n; i++) {
-        var v = src[i];
-        var arr;
-        if (v === '') arr = [''];
-        else arr = max ? splitMax(v, sep, max) : v.split(sep);
-        if (p.trim) for (var k = 0; k < arr.length; k++) arr[k] = arr[k].trim();
-        parts[i] = arr;
-        if (arr.length > width) width = arr.length;
-      }
-      if (max && width > max) width = max;
-      var custom = (p.names || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-      var out = p.removeSource ? DL.dropColumns(table, [idx]) : table;
-      for (var c = 0; c < width; c++) {
-        var wanted = custom[c] || (p.column + ' - ' + (c + 1));
-        var values = new Array(n);
-        for (i = 0; i < n; i++) { var a = parts[i]; values[i] = c < a.length ? a[c] : ''; }
-        out = DL.addColumn(out, DL.uniqueName(out.columns, wanted), values);
-      }
-      return { table: out, notes: ['Split into ' + DL.pluralize(width, 'column') + '.'] };
-    }
-  });
 
-  function splitMax(s, sep, max) {
+  // Splits text at a separator (text or regular expression). Capture groups do not add parts.
+  // max = 0 means: as many parts as needed. The last part keeps the rest of the text.
+  function splitText(s, sep, max) {
     var out = [];
     var rest = s;
-    while (out.length < max - 1) {
+    for (;;) {
+      if (max && out.length === max - 1) break;
       var pos, len;
       if (sep instanceof RegExp) {
+        sep.lastIndex = 0;
         var m = sep.exec(rest);
         if (!m || m[0].length === 0) break;
         pos = m.index; len = m[0].length;
@@ -152,6 +102,70 @@
     return out;
   }
 
+  function splitNames(p, base) {
+    var custom = (p.names || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var max = p.maxParts !== '' && p.maxParts != null ? Math.max(1, Number(p.maxParts)) : 0;
+    var known = max || custom.length; // number of columns known before the step runs
+    return { custom: custom, max: max, known: known, base: base };
+  }
+
+  function splitColumnName(names, c) {
+    return names.custom[c] || (names.column + ' - ' + (c + 1));
+  }
+
+  DL.registerOp({
+    id: 'split',
+    name: 'Split Column',
+    category: 'Text',
+    icon: 'bi-layout-split',
+    description: 'Break one column into several columns at a separator.',
+    keywords: 'divide separate delimiter',
+    params: [
+      { key: 'column', label: 'Column to split', type: 'column' },
+      { key: 'separator', label: 'Separator', type: 'text', default: ',', required: true, help: 'Text to split on. Use \\t for a tab.' },
+      { key: 'regex', label: 'Separator is a regular expression', type: 'boolean', default: false },
+      { key: 'maxParts', label: 'Maximum parts', type: 'number', default: '', min: 1, help: 'Leave empty to split into as many parts as needed. The last part keeps the rest of the text.' },
+      { key: 'names', label: 'New column names', type: 'text', default: '', help: 'Comma separated names for the new columns. Leave empty to use "Column - 1", "Column - 2", …' },
+      { key: 'trim', label: 'Trim spaces around each part', type: 'boolean', default: true },
+      { key: 'removeSource', label: 'Remove the original column', type: 'boolean', default: false }
+    ],
+    summary: function (p) { return 'Split "' + p.column + '" on "' + p.separator + '"'; },
+    validate: function (p) {
+      if (p.regex) { try { new RegExp(p.separator); } catch (e) { return ['The regular expression is not valid: ' + e.message]; } }
+      return [];
+    },
+    outputColumns: function (cols, p) {
+      var names = splitNames(p);
+      names.column = p.column;
+      if (!names.known) return null; // the number of parts depends on the data
+      var out = p.removeSource ? cols.filter(function (c) { return c !== p.column; }) : cols.slice();
+      for (var c = 0; c < names.known; c++) out.push(DL.uniqueName(out, splitColumnName(names, c)));
+      return out;
+    },
+    apply: function (table, p) {
+      var idx = DL.requireCol(table, p.column);
+      var sep = p.regex ? new RegExp(p.separator, 'g') : unescapeText(p.separator);
+      var names = splitNames(p);
+      names.column = p.column;
+      var src = DL.col(table, idx);
+      var n = table.length;
+      var values = []; // one array per new column, made when a row has that many parts
+      var trim = !!p.trim;
+      for (var i = 0; i < n; i++) {
+        var v = src[i];
+        var parts = v === '' ? [''] : splitText(v, sep, names.max);
+        for (var c = 0; c < parts.length; c++) {
+          if (c === values.length) values.push(new Array(n).fill(''));
+          values[c][i] = trim ? parts[c].trim() : parts[c];
+        }
+      }
+      while (values.length < names.known) values.push(new Array(n).fill(''));
+      var out = p.removeSource ? DL.dropColumns(table, [idx]) : table;
+      for (c = 0; c < values.length; c++) out = DL.addColumn(out, DL.uniqueName(out.columns, splitColumnName(names, c)), values[c]);
+      return { table: out, notes: ['Split into ' + DL.pluralize(values.length, 'column') + '.'] };
+    }
+  });
+
   /* ---------- Split name ---------- */
   var PREFIXES = { 'mr': 1, 'mrs': 1, 'ms': 1, 'miss': 1, 'mx': 1, 'dr': 1, 'prof': 1, 'rev': 1, 'sir': 1, 'dame': 1, 'hon': 1, 'capt': 1, 'col': 1, 'lt': 1, 'sgt': 1, 'fr': 1 };
   var SUFFIXES = { 'jr': 1, 'sr': 1, 'ii': 1, 'iii': 1, 'iv': 1, 'v': 1, 'phd': 1, 'md': 1, 'esq': 1, 'dds': 1, 'cpa': 1, 'mba': 1, 'ra': 1 };
@@ -164,6 +178,7 @@
     var lastFirst = false;
     if (s.indexOf(',') >= 0) {
       var parts = s.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!parts.length) return res;
       // "Smith, John A." or "Smith, John, Jr."
       var tail = parts.slice(1);
       var suffixParts = [];
@@ -171,14 +186,13 @@
       tail.forEach(function (t) {
         if (SUFFIXES[t.toLowerCase().replace(/\./g, '')]) suffixParts.push(t); else others.push(t);
       });
-      if (others.length && parts.length > 1) {
+      if (others.length) {
         lastFirst = true;
         s = others.join(' ') + ' ' + parts[0];
-        if (suffixParts.length) res.suffix = suffixParts.join(' ');
       } else {
         s = parts[0];
-        if (suffixParts.length) res.suffix = suffixParts.join(' ');
       }
+      if (suffixParts.length) res.suffix = suffixParts.join(' ');
     }
     var tokens = s.split(' ');
     var norm = function (t) { return t.toLowerCase().replace(/\./g, ''); };
@@ -194,14 +208,14 @@
       return res;
     }
     if (lastFirst) {
-      // The part before the comma is the last name; the rest is "First Middle…".
+      // The part before the comma is the last name. The rest is "First Middle…".
       res.last = tokens[tokens.length - 1];
       var firstMid = tokens.slice(0, tokens.length - 1);
       res.first = firstMid[0] || '';
       res.middle = firstMid.slice(1).join(' ');
       return res;
     }
-    // Take the last token as last name; pull particles ("van", "de") into the last name.
+    // The last token is the last name. Particles ("van", "de") go into the last name.
     var lastTokens = [tokens.pop()];
     while (tokens.length > 1 && PARTICLES[norm(tokens[tokens.length - 1])]) {
       lastTokens.unshift(tokens.pop());
@@ -236,14 +250,13 @@
       { key: 'removeSource', label: 'Remove the original column', type: 'boolean', default: false }
     ],
     summary: function (p) { return 'Split "' + p.column + '" into name parts'; },
-    validate: function (p) { return (!p.parts || !p.parts.length) ? ['Choose at least one column to create.'] : []; },
+    validate: function (p) { return p.parts.length ? [] : ['Choose at least one column to create.']; },
     outputColumns: function (cols, p) {
-      var base = p.removeSource ? cols.filter(function (c) { return c !== p.column; }) : cols.slice();
+      var base = p.removeSource ? cols.filter(function (c) { return c !== p.column; }) : cols;
       return base.concat(namePartColumns(base, p));
     },
     apply: function (table, p) {
-      var idx = DL.colIndex(table, p.column);
-      if (idx < 0) throw new Error('Column "' + p.column + '" was not found.');
+      var idx = DL.requireCol(table, p.column);
       var order = NAME_ORDER.filter(function (k) { return p.parts.indexOf(k) >= 0; });
       var src = DL.col(table, idx);
       var n = table.length;
@@ -260,7 +273,7 @@
   });
 
   function namePartColumns(base, p) {
-    var order = NAME_ORDER.filter(function (k) { return (p.parts || []).indexOf(k) >= 0; });
+    var order = NAME_ORDER.filter(function (k) { return p.parts.indexOf(k) >= 0; });
     var pre = (p.prefixNames || '').trim();
     var out = [];
     order.forEach(function (k) {
@@ -292,7 +305,7 @@
       return [];
     },
     apply: function (table, p) {
-      var idxs = p.columns && p.columns.length ? DL.colIndexes(table, p.columns) : table.columns.map(function (c, i) { return i; });
+      var idxs = DL.colIndexesOrAll(table, p.columns);
       var find = p.regex ? p.find : unescapeText(p.find);
       var replacement = p.regex ? p.replace : unescapeText(p.replace).replace(/\$/g, '$$$$');
       var stats = {};
@@ -309,7 +322,7 @@
         }, stats);
       } else {
         var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
-        var quick = !p.regex && !p.wholeWord && p.matchCase ? find : null; // fast pre-check with indexOf
+        var quick = !p.regex && !p.wholeWord && p.matchCase ? find : null; // fast check with indexOf
         out = DL.mapColumns(table, idxs, function (v, ctx) {
           if (!v) return v;
           if (quick !== null && v.indexOf(quick) < 0) return v;
@@ -334,7 +347,7 @@
     keywords: 'map lookup dictionary translate recode',
     params: [
       { key: 'columns', label: 'Columns', type: 'columns' },
-      { key: 'mapping', label: 'Lookup list', type: 'mapping', default: [{ from: '', to: '' }], help: 'Each row swaps one value for another. Paste two columns from a spreadsheet to fill the list.' },
+      { key: 'mapping', label: 'Lookup list', type: 'mapping', help: 'Each row swaps one value for another. Paste two columns from a spreadsheet to fill the list.' },
       { key: 'matchCase', label: 'Match case', type: 'boolean', default: false },
       { key: 'trim', label: 'Ignore spaces around values', type: 'boolean', default: true },
       { key: 'noMatch', label: 'When a value is not in the list', type: 'select', default: 'keep',
@@ -345,23 +358,19 @@
         ] },
       { key: 'noMatchValue', label: 'Fixed value', type: 'text', default: '', showIf: function (p) { return p.noMatch === 'value'; } }
     ],
-    summary: function (p) { return DL.pluralize((p.mapping || []).filter(function (m) { return m.from !== ''; }).length, 'value') + ' in ' + (p.columns || []).join(', '); },
-    validate: function (p) {
-      var ok = (p.mapping || []).some(function (m) { return m.from != null && m.from !== ''; });
-      return ok ? [] : ['Add at least one value to the lookup list.'];
-    },
+    summary: function (p) { return DL.pluralize(p.mapping.filter(function (m) { return m.from !== ''; }).length, 'value') + ' in ' + p.columns.join(', '); },
     apply: function (table, p) {
       var idxs = DL.colIndexes(table, p.columns);
       var map = new Map();
-      (p.mapping || []).forEach(function (m) {
-        if (m.from == null || m.from === '') return;
-        var k = p.trim ? String(m.from).trim() : String(m.from);
+      p.mapping.forEach(function (m) {
+        if (m.from === '') return;
+        var k = p.trim ? m.from.trim() : m.from;
         if (!p.matchCase) k = k.toLowerCase();
-        map.set(k, m.to == null ? '' : String(m.to));
+        map.set(k, m.to);
       });
       var stats = {};
       var noMatch = p.noMatch;
-      var fixed = p.noMatchValue || '';
+      var fixed = p.noMatchValue;
       var out = DL.mapColumns(table, idxs, function (v, ctx) {
         var key = p.trim ? v.trim() : v;
         if (!p.matchCase) key = key.toLowerCase();
@@ -399,18 +408,18 @@
           { value: 'left', label: 'Add at the start (e.g. leading zeros)' },
           { value: 'right', label: 'Add at the end' }
         ] },
-      { key: 'length', label: 'Pad to length', type: 'number', default: 5, min: 1, showIf: function (p) { return p.pad !== 'none'; } },
+      { key: 'length', label: 'Pad to length', type: 'number', default: 5, min: 1, required: true, showIf: function (p) { return p.pad !== 'none'; } },
       { key: 'char', label: 'Pad character', type: 'text', default: '0', showIf: function (p) { return p.pad !== 'none'; } }
     ],
     summary: function (p) {
       var bits = [];
       if (p.trim !== 'none') bits.push('trim');
       if (p.pad !== 'none') bits.push('pad to ' + p.length);
-      return bits.join(', ') + ': ' + (p.columns || []).join(', ');
+      return bits.join(', ') + ': ' + p.columns.join(', ');
     },
     apply: function (table, p) {
       var idxs = DL.colIndexes(table, p.columns);
-      var ch = (p.char || ' ').charAt(0) || ' ';
+      var ch = String(p.char || ' ').charAt(0) || ' ';
       var len = Number(p.length) || 0;
       var trim = p.trim, pad = p.pad, collapse = !!p.collapse;
       var out = DL.mapColumns(table, idxs, function (v) {
@@ -425,11 +434,4 @@
       return { table: out };
     }
   });
-
-  // Turns "\t" and "\n" typed by the user into real characters.
-  function unescapeText(s) {
-    if (s == null) return '';
-    return String(s).replace(/\\t/g, '\t').replace(/\\n/g, '\n').replace(/\\r/g, '\r');
-  }
-  DL.unescapeText = unescapeText;
 })(typeof self !== 'undefined' ? self : this);

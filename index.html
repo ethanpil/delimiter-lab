@@ -8,7 +8,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d6efd'/%3E%3Cpath d='M8 10h16M8 16h10M8 22h14' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="vendor/bootstrap.min.css">
   <link rel="stylesheet" href="vendor/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="css/app.css?v=14">
+  <link rel="stylesheet" href="css/app.css?v=1.1.0">
 </head>
 <body>
   <noscript><div class="p-4">Delimiter Lab needs JavaScript to run.</div></noscript>
@@ -67,7 +67,7 @@
               <button id="previewSearchNext" class="btn btn-outline-secondary" type="button" title="Next match" disabled><i class="bi bi-chevron-down"></i></button>
             </div>
             <span id="previewSearchInfo" class="text-secondary small"></span>
-            <button id="btnCompare" class="btn btn-outline-secondary btn-sm" type="button" title="Show the input of this step next to its output" data-bs-toggle="button"><i class="bi bi-layout-split"></i><span class="btn-label"> Compare</span></button>
+            <button id="btnCompare" class="btn btn-outline-secondary btn-sm no-tip" type="button" title="Show the input of this step next to its output" data-bs-toggle="button"><i class="bi bi-layout-split"></i><span class="btn-label"> Compare</span></button>
           </div>
         </div>
         <div id="gridWrap" class="grid-wrap">
@@ -82,21 +82,18 @@
   <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
 
   <script src="vendor/bootstrap.bundle.min.js"></script>
-  <script src="js/engine/core.js?v=14"></script>
-  <script src="js/ops/text.js?v=14"></script>
-  <script src="js/ops/rows.js?v=14"></script>
-  <script src="js/ops/columns.js?v=14"></script>
-  <script src="js/ops/verify.js?v=14"></script>
-  <script src="js/app/util.js?v=14"></script>
-  <script src="js/app/store.js?v=14"></script>
-  <script src="js/app/engineClient.js?v=14"></script>
-  <script src="js/app/workflows.js?v=14"></script>
-  <script src="js/ui/fields.js?v=14"></script>
-  <script src="js/ui/chain.js?v=14"></script>
-  <script src="js/ui/source.js?v=14"></script>
-  <script src="js/ui/config.js?v=14"></script>
-  <script src="js/ui/grid.js?v=14"></script>
-  <script src="js/ui/dialogs.js?v=14"></script>
-  <script src="js/main.js?v=14"></script>
+  <script src="js/manifest.js?v=1.1.0"></script>
+  <script>
+    // Loads the application files listed in the manifest, in order.
+    (function () {
+      var files = [].concat(DL.FILES.engine, DL.FILES.ops, DL.FILES.app, DL.FILES.ui, DL.FILES.main);
+      files.forEach(function (f) {
+        var s = document.createElement('script');
+        s.src = f + '?v=' + DL.VERSION;
+        s.async = false;
+        document.head.appendChild(s);
+      });
+    })();
+  </script>
 </body>
 </html>

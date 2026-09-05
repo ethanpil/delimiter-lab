@@ -33,7 +33,7 @@
       ])
     ]));
 
-    var fileInput = U.el('input', { type: 'file', accept: '.csv,.tsv,.txt,.tab,.dat,.psv,.xlsx,.xlsm,.xls,.xlsb,.ods,text/csv,text/plain', hidden: true });
+    var fileInput = U.el('input', { type: 'file', accept: DL.acceptedExtensions().join(','), hidden: true });
     fileInput.addEventListener('change', function () { if (fileInput.files[0]) self.actions.openFile(fileInput.files[0]); fileInput.value = ''; });
     el.appendChild(fileInput);
 
@@ -47,7 +47,9 @@
     drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('is-over'); });
     drop.addEventListener('dragleave', function () { drop.classList.remove('is-over'); });
     drop.addEventListener('drop', function (e) {
-      e.preventDefault(); drop.classList.remove('is-over');
+      e.preventDefault();
+      e.stopPropagation(); // the page-level drop handler must not open the file a second time
+      drop.classList.remove('is-over');
       if (e.dataTransfer.files && e.dataTransfer.files[0]) self.actions.openFile(e.dataTransfer.files[0]);
     });
     el.appendChild(drop);
@@ -68,7 +70,7 @@
 
     if (src.status === 'ready' && src.info) {
       var info = src.info;
-      var bits = [U.fmtInt(info.rowCount) + ' rows', info.columns.length + ' columns'];
+      var bits = [DL.rowsAndColumns(info.rowCount, info.columns.length)];
       if (info.encoding) bits.push('encoding ' + info.encoding.toUpperCase());
       if (info.delimiter) bits.push('separator ' + describeDelimiter(info.delimiter));
       if (info.sheet) bits.push('sheet "' + info.sheet + '"');
@@ -76,12 +78,11 @@
       var box = U.el('div', { class: 'alert alert-light border mt-3 mb-0 py-2' }, [
         U.el('div', {}, [U.el('i', { class: 'bi bi-check-circle text-success me-1' }), bits.join(' · ')])
       ]);
-      if (info.notes && info.notes.length) {
+      if (info.notes.length) {
         box.appendChild(U.el('ul', { class: 'notes-list mt-1 mb-0 text-warning-emphasis' }, info.notes.map(function (n) { return U.el('li', { text: n }); })));
       }
       el.appendChild(box);
     }
-    U.initTooltips(el);
   };
 
   function describeDelimiter(d) {
@@ -96,86 +97,29 @@
     var self = this;
     var st = this.store.state;
     var o = st.source.options;
-    var isSheet = /\.(xlsx|xlsm|xlsb|xls|ods)$/i.test(st.source.file.name);
-    var grid = U.el('div', { class: 'field-grid mt-3' });
-
+    var format = DL.inputFormatFor(st.source.file.name);
     var apply = U.debounce(function () { self.actions.reload(); }, 400);
-    var change = function (patch, immediate) {
+
+    var params = format.options;
+    var rendered = DL.fields.renderAll(params, o, { columns: null, compact: false }, function (key, value, opts) {
+      var patch = {};
+      patch[key] = value;
       self.store.setSourceOptions(patch);
-      if (immediate) { apply.cancel(); self.actions.reload(); } else apply();
-    };
+      DL.fields.updateVisibility(params, self.store.state.source.options, rendered.els);
+      var def = DL.findOption(params.map(function (p) { return { value: p.key, param: p }; }), key).param;
+      if (def.reload === 'now' && !(opts && opts.merge)) { apply.cancel(); self.actions.reload(); }
+      else apply();
+    });
+    DL.fields.updateVisibility(params, o, rendered.els);
+    var grid = rendered.grid;
+    grid.classList.add('mt-3');
 
-    // Headers
-    var hid = 'src_headers';
-    var headers = U.el('input', { type: 'checkbox', class: 'form-check-input', role: 'switch', id: hid });
-    headers.checked = o.headers !== false;
-    headers.addEventListener('change', function () { change({ headers: headers.checked }, true); });
-    grid.appendChild(U.el('div', { class: 'field' }, [
-      U.el('label', { class: 'field-label', text: 'Headers' }),
-      U.el('div', { class: 'form-check form-switch' }, [headers, U.el('label', { class: 'form-check-label', for: hid, text: 'First row holds the column names' }),
-        U.el('i', { class: 'bi bi-info-circle help-icon ms-1', 'data-bs-toggle': 'tooltip', title: 'Turn this off if the first row is data. Columns are then named "Column 1", "Column 2", …' })])
-    ]));
-
-    // Skip rows
-    var skip = U.el('input', { type: 'number', class: 'form-control form-control-sm', min: '0', max: '100000', value: o.skipRows || 0 });
-    skip.addEventListener('input', function () { change({ skipRows: Math.max(0, parseInt(skip.value, 10) || 0) }); });
-    grid.appendChild(U.el('div', { class: 'field' }, [
-      U.el('label', { class: 'field-label' }, ['Skip rows at the top', U.el('i', { class: 'bi bi-info-circle help-icon', 'data-bs-toggle': 'tooltip', title: 'Use this when the file starts with notes or a title before the real header row.' })]),
-      skip
-    ]));
-
-    if (isSheet) {
-      var sheetSel = U.el('select', { class: 'form-select form-select-sm' });
+    if (format.hasSheets) {
       var sheets = st.source.sheets || [];
-      if (!sheets.length) sheetSel.appendChild(U.el('option', { value: '', text: 'Reading sheets…' }));
-      sheets.forEach(function (s) { sheetSel.appendChild(U.el('option', { value: s, text: s })); });
-      sheetSel.value = o.sheet || (st.source.info && st.source.info.sheet) || sheets[0] || '';
-      sheetSel.addEventListener('change', function () { change({ sheet: sheetSel.value }, true); });
-      grid.appendChild(U.el('div', { class: 'field' }, [U.el('label', { class: 'field-label', text: 'Sheet' }), sheetSel]));
-    } else {
-      var delim = U.el('select', { class: 'form-select form-select-sm' });
-      [['auto', 'Detect automatically'], [',', 'Comma ( , )'], ['\\t', 'Tab'], [';', 'Semicolon ( ; )'], ['|', 'Pipe ( | )'], ['custom', 'Other…']].forEach(function (x) { delim.appendChild(U.el('option', { value: x[0], text: x[1] })); });
-      var custom = U.el('input', { type: 'text', class: 'form-control form-control-sm mt-1', placeholder: 'Type the separator', maxlength: '5' });
-      var known = ['auto', ',', '\\t', ';', '|'];
-      if (known.indexOf(o.delimiter) >= 0) { delim.value = o.delimiter; custom.hidden = true; }
-      else { delim.value = 'custom'; custom.value = o.delimiter; }
-      delim.addEventListener('change', function () {
-        if (delim.value === 'custom') { custom.hidden = false; custom.focus(); return; }
-        custom.hidden = true;
-        change({ delimiter: delim.value }, true);
-      });
-      custom.addEventListener('input', function () { if (custom.value) change({ delimiter: custom.value }); });
-      grid.appendChild(U.el('div', { class: 'field' }, [
-        U.el('label', { class: 'field-label' }, ['Column separator', U.el('i', { class: 'bi bi-info-circle help-icon', 'data-bs-toggle': 'tooltip', title: 'The character between values. Detected automatically in most files.' })]),
-        delim, custom
-      ]));
-
-      var quote = U.el('select', { class: 'form-select form-select-sm' });
-      [['"', 'Double quote ( " )'], ["'", "Single quote ( ' )"], [' ', 'None']].forEach(function (x) { quote.appendChild(U.el('option', { value: x[0], text: x[1] })); });
-      quote.value = o.quoteChar || '"';
-      quote.addEventListener('change', function () { change({ quoteChar: quote.value }, true); });
-      grid.appendChild(U.el('div', { class: 'field' }, [
-        U.el('label', { class: 'field-label' }, ['Text delimiter', U.el('i', { class: 'bi bi-info-circle help-icon', 'data-bs-toggle': 'tooltip', title: 'The character that wraps values which contain the separator, for example "Doe, Jane".' })]),
-        quote
-      ]));
-
-      var enc = U.el('select', { class: 'form-select form-select-sm' });
-      [['auto', 'Detect automatically'], ['utf-8', 'UTF-8'], ['windows-1252', 'Windows-1252 (Western Europe)'], ['iso-8859-1', 'ISO-8859-1 (Latin 1)'], ['utf-16le', 'UTF-16'], ['macintosh', 'Mac Roman'], ['windows-1251', 'Windows-1251 (Cyrillic)'], ['shift_jis', 'Shift JIS (Japanese)'], ['gbk', 'GBK (Chinese)']].forEach(function (x) { enc.appendChild(U.el('option', { value: x[0], text: x[1] })); });
-      enc.value = o.encoding || 'auto';
-      enc.addEventListener('change', function () { change({ encoding: enc.value }, true); });
-      grid.appendChild(U.el('div', { class: 'field' }, [
-        U.el('label', { class: 'field-label' }, ['File encoding', U.el('i', { class: 'bi bi-info-circle help-icon', 'data-bs-toggle': 'tooltip', title: 'Change this if accented letters look wrong (for example Ã© instead of é).' })]),
-        enc
-      ]));
-
-      var eid = 'src_skipempty';
-      var skipEmpty = U.el('input', { type: 'checkbox', class: 'form-check-input', role: 'switch', id: eid });
-      skipEmpty.checked = o.skipEmptyLines !== false;
-      skipEmpty.addEventListener('change', function () { change({ skipEmptyLines: skipEmpty.checked }, true); });
-      grid.appendChild(U.el('div', { class: 'field' }, [
-        U.el('label', { class: 'field-label', text: 'Empty lines' }),
-        U.el('div', { class: 'form-check form-switch' }, [skipEmpty, U.el('label', { class: 'form-check-label', for: eid, text: 'Skip empty lines' })])
-      ]));
+      var options = sheets.length ? sheets.map(function (s) { return { value: s, label: s }; }) : [{ value: '', label: 'Reading sheets…' }];
+      var current = o.sheet || (st.source.info && st.source.info.sheet) || sheets[0] || '';
+      var sheetSel = U.select(options, current, function (v) { self.store.setSourceOptions({ sheet: v }); apply.cancel(); self.actions.reload(); });
+      grid.insertBefore(U.el('div', { class: 'field' }, [U.el('label', { class: 'field-label', text: 'Sheet' }), sheetSel]), grid.firstChild);
     }
     return grid;
   };

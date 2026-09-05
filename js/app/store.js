@@ -1,4 +1,4 @@
-/* Application state with undo / redo. All UI reads from here and changes go through here. */
+/* Application state with undo / redo. All views read from here and all changes go through here. */
 (function (root) {
   'use strict';
   var DL = root.DL;
@@ -12,16 +12,15 @@
     this.state = {
       source: {
         file: null,
-        options: Store.defaultSourceOptions(),
+        options: DL.defaultSourceOptions(),
         info: null,        // from the worker after a load
-        sheets: null,      // sheet names for spreadsheets
+        sheets: null,      // sheet names for workbooks
         status: 'empty',   // empty | loading | ready | error
         error: null
       },
       workflow: { id: null, name: '', steps: [] },
       selectedId: 'source',
       results: {},         // stepId -> worker result
-      running: false,
       dirty: false
     };
     this.undoStack = [];
@@ -29,13 +28,18 @@
     this.restoreSession();
   }
 
-  Store.defaultSourceOptions = function () {
-    return { headers: true, delimiter: 'auto', quoteChar: '"', encoding: 'auto', skipRows: 0, skipEmptyLines: true, sheet: '' };
+  // Makes a complete step record from saved or imported data. keepId: reuse the id when present.
+  Store.normalizeStep = function (s, keepId) {
+    return {
+      id: keepId && s.id ? String(s.id) : U.uid(),
+      opId: s.opId,
+      params: DL.cleanParams(s.opId, s.params),
+      enabled: s.enabled !== false
+    };
   };
 
   Store.prototype.subscribe = function (fn) {
     this.listeners.push(fn);
-    return function () { this.listeners = this.listeners.filter(function (l) { return l !== fn; }); }.bind(this);
   };
 
   Store.prototype.emit = function (what) {
@@ -46,7 +50,7 @@
   /* ---------- Undo / redo ---------- */
 
   Store.prototype.snapshot = function () {
-    return JSON.stringify({ steps: this.state.workflow.steps, selectedId: this.state.selectedId });
+    return JSON.stringify({ workflow: this.state.workflow, selectedId: this.state.selectedId });
   };
 
   Store.prototype.pushHistory = function () {
@@ -57,27 +61,26 @@
 
   Store.prototype.applySnapshot = function (snap) {
     var data = JSON.parse(snap);
-    this.state.workflow.steps = data.steps;
-    var ids = data.steps.map(function (s) { return s.id; });
+    this.state.workflow = data.workflow;
+    var ids = data.workflow.steps.map(function (s) { return s.id; });
     this.state.selectedId = (data.selectedId === 'source' || ids.indexOf(data.selectedId) >= 0) ? data.selectedId : 'source';
+    this.invalidateResultsFrom(0);
+    this.state.dirty = true;
+    this.emit('steps');
+    this.emit('selection');
+    this.emit('workflow');
   };
 
   Store.prototype.undo = function () {
     if (!this.undoStack.length) return;
     this.redoStack.push(this.snapshot());
     this.applySnapshot(this.undoStack.pop());
-    this.state.dirty = true;
-    this.emit('steps');
-    this.emit('selection');
   };
 
   Store.prototype.redo = function () {
     if (!this.redoStack.length) return;
     this.undoStack.push(this.snapshot());
     this.applySnapshot(this.redoStack.pop());
-    this.state.dirty = true;
-    this.emit('steps');
-    this.emit('selection');
   };
 
   Store.prototype.canUndo = function () { return this.undoStack.length > 0; };
@@ -97,23 +100,25 @@
     return -1;
   };
 
-  // Adds a step after the given step id (or at the end) and selects it.
+  // Results of the steps from index i on are out of date after a change.
+  Store.prototype.invalidateResultsFrom = function (i) {
+    var steps = this.state.workflow.steps;
+    for (var k = Math.max(0, i); k < steps.length; k++) delete this.state.results[steps[k].id];
+    var live = {};
+    steps.forEach(function (s) { live[s.id] = true; });
+    var self = this;
+    Object.keys(this.state.results).forEach(function (id) { if (!live[id]) delete self.state.results[id]; });
+  };
+
+  // Adds a step after the given step id (or after the source) and selects it.
   Store.prototype.addStep = function (opId, afterId) {
     this.pushHistory();
-    var step = { id: U.uid(), opId: opId, params: DL.defaultParams(opId), enabled: true };
     var steps = this.state.workflow.steps;
-    var idx = afterId && afterId !== 'source' ? this.stepIndex(afterId) : -1;
-    if (afterId === 'source') idx = -1;
-    else if (idx < 0) idx = steps.length - 1;
+    var idx = afterId === 'source' ? -1 : this.stepIndex(afterId);
+    if (afterId !== 'source' && idx < 0) idx = steps.length - 1;
+    var step = { id: U.uid(), opId: opId, params: DL.defaultParams(opId), enabled: true };
     steps.splice(idx + 1, 0, step);
-    // Pre-fill parameters that depend on the input columns (for example "Reorder" and "Rename").
-    var cols = this.inputColumnsFor(step.id);
-    var op = DL.getOp(opId);
-    if (op && op.params) {
-      op.params.forEach(function (p) {
-        if (p.type === 'columnOrder' && (!step.params[p.key] || !step.params[p.key].length)) step.params[p.key] = cols.slice();
-      });
-    }
+    DL.initParams(opId, step.params, this.inputColumnsFor(step.id));
     this.state.selectedId = step.id;
     this.state.dirty = true;
     this.emit('steps');
@@ -127,7 +132,7 @@
     this.pushHistory();
     var steps = this.state.workflow.steps;
     steps.splice(idx, 1);
-    delete this.state.results[id];
+    this.invalidateResultsFrom(idx);
     if (this.state.selectedId === id) {
       this.state.selectedId = steps.length ? steps[Math.min(idx, steps.length - 1)].id : 'source';
     }
@@ -140,9 +145,10 @@
     var step = this.getStep(id);
     if (!step) return;
     this.pushHistory();
-    var copy = JSON.parse(JSON.stringify(step));
-    copy.id = U.uid();
-    this.state.workflow.steps.splice(this.stepIndex(id) + 1, 0, copy);
+    var copy = Store.normalizeStep(step, false);
+    var idx = this.stepIndex(id) + 1;
+    this.state.workflow.steps.splice(idx, 0, copy);
+    this.invalidateResultsFrom(idx);
     this.state.selectedId = copy.id;
     this.state.dirty = true;
     this.emit('steps');
@@ -154,6 +160,7 @@
     if (!step) return;
     this.pushHistory();
     step.enabled = step.enabled === false;
+    this.invalidateResultsFrom(this.stepIndex(id));
     this.state.dirty = true;
     this.emit('steps');
   };
@@ -168,11 +175,26 @@
     this.pushHistory();
     var s = steps.splice(from, 1)[0];
     steps.splice(toIndex, 0, s);
+    this.invalidateResultsFrom(Math.min(from, toIndex));
     this.state.dirty = true;
     this.emit('steps');
   };
 
-  // Updates parameters of a step. Groups quick edits (typing) into one undo entry.
+  // Replaces the operation of a step. The settings start from their defaults.
+  Store.prototype.changeOp = function (id, opId) {
+    var step = this.getStep(id);
+    if (!step || step.opId === opId) return;
+    this.pushHistory();
+    step.opId = opId;
+    step.params = DL.defaultParams(opId);
+    DL.initParams(opId, step.params, this.inputColumnsFor(id));
+    this.invalidateResultsFrom(this.stepIndex(id));
+    this.state.dirty = true;
+    this.emit('steps');
+    this.emit('selection');
+  };
+
+  // Updates settings of a step. Quick edits (typing) merge into one undo entry.
   Store.prototype.updateParams = function (id, patch, opts) {
     var step = this.getStep(id);
     if (!step) return;
@@ -182,19 +204,22 @@
     this.lastEditKey = key;
     this.lastEditAt = now;
     Object.keys(patch).forEach(function (k) { step.params[k] = patch[k]; });
+    this.invalidateResultsFrom(this.stepIndex(id));
     this.state.dirty = true;
     this.emit('params', id);
   };
 
-  Store.prototype.replaceSteps = function (steps) {
+  // Replaces all steps, for example when a saved workflow is opened.
+  Store.prototype.replaceWorkflow = function (wf) {
     this.pushHistory();
-    this.state.workflow.steps = steps.map(function (s) {
-      return { id: s.id || U.uid(), opId: s.opId, params: Object.assign(DL.defaultParams(s.opId), s.params || {}), enabled: s.enabled !== false };
-    });
-    this.state.selectedId = this.state.workflow.steps.length ? this.state.workflow.steps[this.state.workflow.steps.length - 1].id : 'source';
-    this.state.dirty = true;
+    var steps = (wf.steps || []).map(function (s) { return Store.normalizeStep(s, true); });
+    this.state.workflow = { id: wf.id || null, name: wf.name || '', steps: steps };
+    this.state.selectedId = steps.length ? steps[steps.length - 1].id : 'source';
+    this.invalidateResultsFrom(0);
+    this.state.dirty = false;
     this.emit('steps');
     this.emit('selection');
+    this.emit('workflow');
   };
 
   Store.prototype.select = function (id) {
@@ -203,22 +228,22 @@
     this.emit('selection');
   };
 
-  Store.prototype.setWorkflowMeta = function (patch) {
+  Store.prototype.setWorkflowMeta = function (patch, clean) {
     Object.assign(this.state.workflow, patch);
-    this.state.dirty = true;
+    this.state.dirty = !clean;
     this.emit('workflow');
   };
 
   /* ---------- Columns ---------- */
 
   Store.prototype.sourceColumns = function () {
-    return this.state.source.info ? this.state.source.info.columns.slice() : [];
+    return this.state.source.info ? this.state.source.info.columns.slice() : null;
   };
 
   // Columns that flow into the given step (the output of the step before it).
+  // Gives null when the columns are not known: no file, or an earlier step must run first.
   Store.prototype.inputColumnsFor = function (stepId) {
-    var idx = this.stepIndex(stepId);
-    return this.outputColumnsAt(idx - 1);
+    return this.outputColumnsAt(this.stepIndex(stepId) - 1);
   };
 
   // Output columns after step index i (-1 = source). Uses worker results when they exist.
@@ -229,18 +254,44 @@
       var s = steps[k];
       if (s.enabled === false) continue;
       var r = this.state.results[s.id];
-      if (r && r.columns && r.status !== 'blocked' && r.status !== 'invalid' && r.status !== 'error') cols = r.columns.slice();
-      else cols = DL.predictColumns(s.opId, s.params, cols);
+      if (r && r.hasTable) cols = r.columns.slice();
+      else if (cols) cols = DL.predictColumns(s.opId, s.params, cols);
+      if (!cols) return null;
     }
     return cols;
   };
 
+  // Problems with the settings of a step, checked against the input columns when they are known.
   Store.prototype.validateStep = function (id) {
     var step = this.getStep(id);
     if (!step) return [];
-    // Without a source file the column names are unknown, so only the settings themselves are checked.
-    var cols = this.state.source.status === 'ready' ? this.inputColumnsFor(id) : [];
-    return DL.validateParams(step.opId, step.params, cols);
+    return DL.validateParams(step.opId, step.params, this.inputColumnsFor(id));
+  };
+
+  /* ---------- Results ---------- */
+
+  Store.prototype.setResults = function (results) {
+    var map = {};
+    results.forEach(function (r) { map[r.stepId] = r; });
+    this.state.results = map;
+    this.emit('results');
+  };
+
+  // The step whose data the preview shows for the selected item. When the selected step
+  // cannot run, the nearest earlier step with data is shown, with a reason.
+  Store.prototype.displayResultFor = function (sel) {
+    var st = this.state;
+    if (st.source.status !== 'ready') return { stepId: null };
+    if (sel === 'source') return { stepId: 'source', result: null, reason: '' };
+    var idx = this.stepIndex(sel);
+    var steps = st.workflow.steps;
+    for (var i = idx; i >= 0; i--) {
+      var r = st.results[steps[i].id];
+      if (r && r.hasTable) {
+        return { stepId: steps[i].id, result: r, reason: i === idx ? '' : 'Showing the data going into step ' + (idx + 1) + ' until it can run.' };
+      }
+    }
+    return { stepId: 'source', result: null, reason: 'Showing the source file until step ' + (idx + 1) + ' can run.' };
   };
 
   /* ---------- Source ---------- */
@@ -252,7 +303,7 @@
     this.state.source.error = null;
     this.state.source.status = file ? 'loading' : 'empty';
     this.state.source.options.sheet = '';
-    this.state.results = {};
+    this.invalidateResultsFrom(0);
     this.emit('source');
   };
 
@@ -265,6 +316,7 @@
     this.state.source.info = info;
     this.state.source.status = 'ready';
     this.state.source.error = null;
+    this.invalidateResultsFrom(0);
     this.emit('source');
   };
 
@@ -272,15 +324,8 @@
     this.state.source.info = null;
     this.state.source.status = 'error';
     this.state.source.error = message;
-    this.state.results = {};
+    this.invalidateResultsFrom(0);
     this.emit('source');
-  };
-
-  Store.prototype.setResults = function (results) {
-    var map = {};
-    results.forEach(function (r) { map[r.stepId] = r; });
-    this.state.results = map;
-    this.emit('results');
   };
 
   /* ---------- Session persistence ---------- */
@@ -293,7 +338,7 @@
         sourceOptions: this.state.source.options,
         sourceName: this.state.source.file ? this.state.source.file.name : null
       }));
-    } catch (e) { /* storage may be full or blocked */ }
+    } catch (e) { /* storage can be full or blocked */ }
   };
 
   Store.prototype.restoreSession = function () {
@@ -305,25 +350,14 @@
         this.state.workflow = {
           id: data.workflow.id || null,
           name: data.workflow.name || '',
-          steps: data.workflow.steps.filter(function (s) { return DL.getOp(s.opId); }).map(function (s) {
-            return { id: s.id || U.uid(), opId: s.opId, params: Object.assign(DL.defaultParams(s.opId), s.params || {}), enabled: s.enabled !== false };
-          })
+          steps: data.workflow.steps.filter(function (s) { return s && DL.getOp(s.opId); }).map(function (s) { return Store.normalizeStep(s, true); })
         };
         this.restoredSourceName = data.sourceName || null;
       }
-      if (data.sourceOptions) this.state.source.options = Object.assign(Store.defaultSourceOptions(), data.sourceOptions, { sheet: '' });
-    } catch (e) { /* ignore corrupt session */ }
-  };
-
-  Store.prototype.clearWorkflow = function () {
-    this.pushHistory();
-    this.state.workflow = { id: null, name: '', steps: [] };
-    this.state.selectedId = 'source';
-    this.state.results = {};
-    this.state.dirty = false;
-    this.emit('steps');
-    this.emit('selection');
-    this.emit('workflow');
+      if (data.sourceOptions && typeof data.sourceOptions === 'object') {
+        this.state.source.options = Object.assign(DL.defaultSourceOptions(), data.sourceOptions, { sheet: '' });
+      }
+    } catch (e) { /* a broken session is ignored */ }
   };
 
   DL.Store = Store;

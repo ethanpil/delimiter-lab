@@ -66,7 +66,7 @@
     if (src.status === 'ready' && src.info) {
       meta = U.el('div', { class: 'step-meta' }, [
         U.el('span', { class: 'status-dot status-ok' }),
-        U.fmtInt(src.info.rowCount) + ' rows · ' + src.info.columns.length + ' columns'
+        DL.rowsAndColumns(src.info.rowCount, src.info.columns.length)
       ]);
     } else if (src.status === 'loading') {
       meta = U.el('div', { class: 'step-meta text-secondary' }, [U.el('span', { class: 'spinner-border spinner-border-sm' }), ' Reading file…']);
@@ -90,17 +90,16 @@
     var op = DL.getOp(step.opId);
     var res = st.results[step.id];
     var selected = st.selectedId === step.id;
-    var problems = this.store.validateStep(step.id);
     var disabled = step.enabled === false;
     var status, statusText;
-    if (disabled) { status = 'invalid'; statusText = 'Turned off'; }
-    else if (problems.length) { status = 'invalid'; statusText = 'Needs setup'; }
+    if (disabled) { status = 'skipped'; statusText = 'Turned off'; }
+    else if (res) {
+      status = res.status;
+      statusText = res.hasTable ? DL.rowsAndColumns(res.rowCount, res.columns.length) : DL.RESULT_STATUS[res.status].label;
+    }
+    else if (this.store.validateStep(step.id).length) { status = 'invalid'; statusText = 'Needs setup'; }
     else if (st.source.status !== 'ready') { status = 'invalid'; statusText = ''; }
-    else if (!res) { status = 'running'; statusText = 'Running…'; }
-    else if (res.status === 'error') { status = 'error'; statusText = 'Error'; }
-    else if (res.status === 'blocked' || res.status === 'invalid') { status = 'blocked'; statusText = 'Waiting'; }
-    else if (res.status === 'warning') { status = 'warning'; statusText = U.fmtInt(res.rowCount) + ' rows · ' + (res.columns || []).length + ' cols'; }
-    else { status = 'ok'; statusText = U.fmtInt(res.rowCount) + ' rows · ' + (res.columns || []).length + ' cols'; }
+    else { status = 'running'; statusText = 'Running…'; }
     var summary = '';
     try { summary = op.summary ? op.summary(step.params) : ''; } catch (e) { summary = ''; }
     return U.el('div', { class: 'step-card' + (selected ? ' is-selected' : '') + (disabled ? ' is-disabled' : ''), dataset: { step: step.id }, draggable: 'true', tabindex: '0', role: 'button' }, [

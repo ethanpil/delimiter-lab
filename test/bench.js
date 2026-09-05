@@ -3,13 +3,13 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const ctx = { self: null, console };
-ctx.self = ctx;
-vm.createContext(ctx);
-['js/engine/core.js', 'js/ops/text.js', 'js/ops/rows.js', 'js/ops/columns.js', 'js/ops/verify.js'].forEach((f) => {
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), ctx, { filename: f });
+global.self = global;
+require('../js/manifest.js');
+const manifest = global.DL;
+manifest.FILES.engine.concat(manifest.FILES.ops).forEach((f) => {
+  vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), { filename: f });
 });
-const DL = ctx.DL;
+const DL = global.DL;
 const N = parseInt(process.argv[2], 10) || 1200000;
 const first = ['john', 'JANE', 'maría', 'Li', 'Amara', 'Sam', 'Zoë', 'Ludwig'];
 const rows = new Array(N);

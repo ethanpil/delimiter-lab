@@ -27,11 +27,11 @@
     }
   }
 
-  W.get = function (id) {
-    return W.list().filter(function (w) { return w.id === id; })[0] || null;
-  };
+  function cleanStep(s) {
+    return { id: s.id, opId: s.opId, params: s.params, enabled: s.enabled !== false };
+  }
 
-  // Saves (or updates) a workflow. Returns the saved record.
+  // Saves (or updates) a workflow. Gives the saved record, or null when the save failed.
   W.save = function (wf) {
     var arr = W.list();
     var now = Date.now();
@@ -41,9 +41,9 @@
       steps: wf.steps.map(cleanStep),
       columns: wf.columns || [],
       sourceOptions: wf.sourceOptions || null,
-      createdAt: wf.createdAt || now,
+      createdAt: now,
       updatedAt: now,
-      uses: wf.uses || 0
+      uses: 0
     };
     var idx = -1;
     for (var i = 0; i < arr.length; i++) if (arr[i].id === rec.id) idx = i;
@@ -68,44 +68,23 @@
     write(W.list().filter(function (w) { return w.id !== id; }));
   };
 
-  function cleanStep(s) {
-    return { id: s.id, opId: s.opId, params: s.params, enabled: s.enabled !== false };
-  }
-
-  // How well a saved workflow fits the columns of the current file: 'full', 'partial' or 'none'.
+  // How well a workflow fits the columns of the current file: 'full', 'partial', 'none' or 'unknown'.
+  // Walks the steps with the real columns, so that columns made by earlier steps count as present.
   W.matchLevel = function (wf, columns) {
-    if (!columns || !columns.length) return 'unknown';
-    var needed = W.columnsUsed(wf);
-    if (!needed.length) return 'full';
-    var hit = needed.filter(function (c) { return columns.indexOf(c) >= 0; }).length;
-    if (hit === needed.length) return 'full';
-    if (hit > 0) return 'partial';
-    return 'none';
-  };
-
-  // Columns referenced by the steps of a workflow (input side only, best effort).
-  W.columnsUsed = function (wf) {
-    var out = [];
-    var add = function (c) { if (c && out.indexOf(c) < 0) out.push(c); };
-    (wf.steps || []).forEach(function (s) {
-      var op = DL.getOp(s.opId);
-      if (!op) return;
-      op.params.forEach(function (p) {
-        var v = s.params[p.key];
-        if (p.type === 'column') add(v);
-        else if (p.type === 'columns') (v || []).forEach(add);
-        else if (p.type === 'conditions' || p.type === 'rules' || p.type === 'sortKeys') (v || []).forEach(function (r) { add(r.column); });
+    if (!columns) return 'unknown';
+    var cols = columns.slice();
+    var found = 0, missing = 0;
+    var steps = (wf.steps || []).filter(function (s) { return s.enabled !== false && DL.getOp(s.opId); });
+    for (var i = 0; i < steps.length; i++) {
+      var params = DL.cleanParams(steps[i].opId, steps[i].params);
+      DL.columnsUsedByStep(steps[i].opId, params).forEach(function (c) {
+        if (cols.indexOf(c) >= 0) found++; else missing++;
       });
-    });
-    // Only columns that must come from the source file count. Columns created by earlier steps are skipped.
-    var created = [];
-    var cols = out.slice();
-    (wf.steps || []).forEach(function (s) {
-      var before = created.slice();
-      var after = DL.predictColumns(s.opId, s.params, before);
-      after.forEach(function (c) { if (created.indexOf(c) < 0) created.push(c); });
-    });
-    return cols.filter(function (c) { return created.indexOf(c) < 0; });
+      cols = DL.predictColumns(steps[i].opId, params, cols);
+      if (!cols) return missing ? 'partial' : 'unknown';
+    }
+    if (!missing) return 'full';
+    return found ? 'partial' : 'none';
   };
 
   W.toJSON = function (wf) {
@@ -125,15 +104,13 @@
     var data;
     try { data = JSON.parse(text); } catch (e) { throw new Error('This file is not a workflow file.'); }
     if (!data || data.format !== FORMAT || !Array.isArray(data.steps)) throw new Error('This file is not a Delimiter Lab workflow.');
-    var unknown = data.steps.filter(function (s) { return !DL.getOp(s.opId); }).map(function (s) { return s.opId; });
+    var unknown = data.steps.filter(function (s) { return !s || !DL.getOp(s.opId); }).map(function (s) { return s ? s.opId : '?'; });
     if (unknown.length) throw new Error('The workflow uses operations this version does not know: ' + unknown.join(', '));
     return {
-      name: data.name || 'Imported workflow',
-      columns: data.columns || [],
-      sourceOptions: data.sourceOptions || null,
-      steps: data.steps.map(function (s) {
-        return { id: U.uid(), opId: s.opId, params: Object.assign(DL.defaultParams(s.opId), s.params || {}), enabled: s.enabled !== false };
-      })
+      name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Imported workflow',
+      columns: Array.isArray(data.columns) ? data.columns.filter(function (c) { return typeof c === 'string'; }) : [],
+      sourceOptions: data.sourceOptions && typeof data.sourceOptions === 'object' ? data.sourceOptions : null,
+      steps: data.steps.map(function (s) { return DL.Store.normalizeStep(s, false); })
     };
   };
 })(typeof self !== 'undefined' ? self : this);

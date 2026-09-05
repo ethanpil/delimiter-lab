@@ -51,66 +51,48 @@
 
   /* ---------- Download ---------- */
   D.download = function (opts, onDownload) {
-    var fmt = U.el('select', { class: 'form-select' });
-    [['csv', 'CSV (comma separated)'], ['tsv', 'TSV (tab separated)'], ['custom', 'Text with another separator'], ['xlsx', 'Excel workbook (.xlsx)'], ['json', 'JSON']].forEach(function (x) { fmt.appendChild(U.el('option', { value: x[0], text: x[1] })); });
-    fmt.value = opts.lastFormat || 'csv';
-    var name = U.el('input', { type: 'text', class: 'form-control', value: opts.fileName || 'output' });
-    var delim = U.el('input', { type: 'text', class: 'form-control', value: ';', maxlength: '5' });
-    var quoteAll = check('Put quotes around every value', false);
-    var header = check('Include the header row', true);
-    var bom = check('Add a byte order mark (helps Excel show accents correctly)', true);
-    var newline = U.el('select', { class: 'form-select' });
-    [['crlf', 'Windows (CRLF)'], ['lf', 'Unix / Mac (LF)']].forEach(function (x) { newline.appendChild(U.el('option', { value: x[0], text: x[1] })); });
-    var sheetName = U.el('input', { type: 'text', class: 'form-control', value: 'Data', maxlength: '31' });
-    var pretty = check('Indent the JSON (easier to read, larger file)', false);
-
-    var rowDelim = field('Separator', delim), rowNewline = field('Line endings', newline), rowSheet = field('Sheet name', sheetName);
-    var textOpts = U.el('div', {}, [quoteAll.el, header.el, bom.el]);
+    var formats = DL.outputFormats;
+    var current = DL.outputFormatById(opts.lastFormat) || formats[0];
+    var values = {};
+    formats.forEach(function (f) { values[f.id] = Object.assign(DL.defaultFormatOptions(f), opts.lastOptions && opts.lastOptions[f.id] || {}); });
+    var name = U.el('input', { type: 'text', class: 'form-control', value: opts.baseName + current.extension });
+    var optionsBox = U.el('div');
+    var fmt = U.select(formats.map(function (f) { return { value: f.id, label: f.label }; }), current.id, function (v) {
+      var prev = current;
+      current = DL.outputFormatById(v);
+      name.value = name.value.replace(new RegExp(DL.escapeRegExp(prev.extension) + '$', 'i'), '') + current.extension;
+      renderOptions();
+    }, { class: 'form-select' });
+    function renderOptions() {
+      U.empty(optionsBox);
+      var rendered = DL.fields.renderAll(current.options, values[current.id], { columns: null, compact: true }, function (key, value) {
+        values[current.id][key] = value;
+      });
+      rendered.grid.classList.add('mt-1');
+      optionsBox.appendChild(rendered.grid);
+    }
+    renderOptions();
     var body = U.el('div', { class: 'd-flex flex-column gap-3' }, [
       opts.note ? U.el('div', { class: 'alert alert-info py-2 mb-0', text: opts.note }) : null,
-      field('Format', fmt), field('File name', name), rowDelim, rowNewline, textOpts, rowSheet, pretty.el
+      U.el('div', {}, [U.el('label', { class: 'form-label mb-1', text: 'Format' }), fmt]),
+      U.el('div', {}, [U.el('label', { class: 'form-label mb-1', text: 'File name' }), name]),
+      optionsBox
     ]);
-    function sync() {
-      var f = fmt.value;
-      rowDelim.hidden = f !== 'custom';
-      rowNewline.hidden = f === 'xlsx' || f === 'json';
-      textOpts.hidden = f === 'xlsx' || f === 'json';
-      header.el.hidden = f === 'json';
-      rowSheet.hidden = f !== 'xlsx';
-      pretty.el.hidden = f !== 'json';
-      var ext = f === 'xlsx' ? '.xlsx' : f === 'json' ? '.json' : f === 'tsv' ? '.tsv' : f === 'custom' ? '.txt' : '.csv';
-      name.value = name.value.replace(/\.(csv|tsv|txt|xlsx|json)$/i, '') + ext;
-    }
-    fmt.addEventListener('change', sync);
-    sync();
     var m = U.modal({
       title: 'Download',
+      enterSubmits: true,
       body: body,
       footer: [
         U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: 'Cancel' }),
         U.el('button', { type: 'button', class: 'btn btn-primary', onclick: function () {
-          var f = fmt.value;
+          var problems = [];
+          current.options.forEach(function (p) { problems = problems.concat(DL.paramTypes[p.type].validate(values[current.id][p.key], p, null)); });
+          if (problems.length) { U.toast(problems[0], 'warning'); return; }
           m.close();
-          onDownload({
-            format: f === 'custom' ? 'csv' : f,
-            delimiter: f === 'custom' ? delim.value : f === 'tsv' ? '\t' : ',',
-            quoteAll: quoteAll.input.checked,
-            header: header.input.checked,
-            bom: bom.input.checked,
-            newline: newline.value,
-            sheetName: sheetName.value || 'Data',
-            pretty: pretty.input.checked
-          }, U.safeFileName(name.value), f);
+          onDownload(Object.assign({ format: current.id }, values[current.id]), U.safeFileName(name.value), values);
         } }, [U.el('i', { class: 'bi bi-download' }), ' Download'])
       ]
     });
-    function field(label, control) { return U.el('div', {}, [U.el('label', { class: 'form-label mb-1', text: label }), control]); }
-    function check(label, on) {
-      var id = 'dl_' + Math.random().toString(36).slice(2, 7);
-      var input = U.el('input', { type: 'checkbox', class: 'form-check-input', id: id });
-      input.checked = on;
-      return { input: input, el: U.el('div', { class: 'form-check' }, [input, U.el('label', { class: 'form-check-label', for: id, text: label })]) };
-    }
   };
 
   /* ---------- Saved workflows ---------- */

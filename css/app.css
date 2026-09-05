@@ -69,7 +69,6 @@ body {
   max-height: 46%;
   overflow-y: auto;
 }
-.config-panel.is-collapsed { max-height: none; overflow: visible; }
 .preview-panel {
   flex: 1; min-height: 0;
   display: flex; flex-direction: column;
@@ -122,8 +121,7 @@ body {
 .status-ok { background: #198754; }
 .status-warning { background: #ffc107; }
 .status-error { background: #dc3545; }
-.status-invalid { background: #adb5bd; }
-.status-blocked { background: #adb5bd; }
+.status-invalid, .status-blocked, .status-skipped { background: #adb5bd; }
 .status-running { background: #0d6efd; }
 
 /* ---------- Config panel ---------- */
@@ -187,7 +185,6 @@ body {
   position: relative;
   font-variant-numeric: tabular-nums;
 }
-.grid-canvas { position: relative; }
 .grid-header {
   position: sticky; top: 0; z-index: 3;
   display: flex;

@@ -3,21 +3,15 @@
   'use strict';
   var DL = root.DL;
 
-  // Builds a function(rowIndex) -> string key from the given columns.
-  function keyFn(table, idxs, opts) {
-    var cols = idxs.map(function (i) { return DL.col(table, i); });
+  // Makes one key function(rowIndex) -> text per column, with the requested normalization.
+  function keyGetters(table, idxs, opts) {
     var trim = !!opts.trim, ignoreCase = !!opts.ignoreCase;
     var normalize = DL.normalizeKey;
-    var norm = (trim || ignoreCase) ? function (v) { return normalize(v, trim, ignoreCase); } : function (v) { return v; };
-    if (cols.length === 1) {
-      var c0 = cols[0];
-      return function (i) { return norm(c0[i]); };
-    }
-    return function (i) {
-      var k = '';
-      for (var j = 0; j < cols.length; j++) k += (j ? '\u0000' : '') + norm(cols[j][i]);
-      return k;
-    };
+    return idxs.map(function (i) {
+      var col = DL.col(table, i);
+      if (!trim && !ignoreCase) return function (r) { return col[r]; };
+      return function (r) { return normalize(col[r], trim, ignoreCase); };
+    });
   }
 
   /* ---------- Dedupe ---------- */
@@ -35,12 +29,11 @@
       { key: 'ignoreCase', label: 'Ignore case', type: 'boolean', default: true },
       { key: 'trim', label: 'Ignore spaces around values', type: 'boolean', default: true }
     ],
-    summary: function (p) { return (p.columns && p.columns.length) ? 'By ' + p.columns.join(', ') : 'Whole rows'; },
+    summary: function (p) { return p.columns.length ? 'By ' + p.columns.join(', ') : 'Whole rows'; },
     apply: function (table, p) {
-      var idxs = p.columns && p.columns.length ? DL.colIndexes(table, p.columns) : table.columns.map(function (c, i) { return i; });
-      var key = keyFn(table, idxs, p);
+      var idxs = DL.colIndexesOrAll(table, p.columns);
       var n = table.length;
-      var g = DL.groupRows(key, n);
+      var g = DL.groupRows(keyGetters(table, idxs, p), n);
       var first = g.first, count = g.count;
       var keep = [];
       var i;
@@ -81,7 +74,7 @@
     { value: 'notInList', label: 'is not one of (comma separated)', needs: 'text' }
   ];
 
-  // Builds a function(value) -> boolean for one condition.
+  // Makes a function(value) -> boolean for one condition.
   DL.buildCondition = function (c, opts) {
     var matchCase = !!(opts && opts.matchCase);
     var val = c.value == null ? '' : String(c.value);
@@ -102,17 +95,17 @@
       case 'regex':
         var re = new RegExp(val, matchCase ? 'u' : 'iu');
         return function (v) { return re.test(v); };
-      case 'gt': return function (v) { var x = toNumber(v); return x > n; };
-      case 'gte': return function (v) { var x = toNumber(v); return x >= n; };
-      case 'lt': return function (v) { var x = toNumber(v); return x < n; };
-      case 'lte': return function (v) { var x = toNumber(v); return x <= n; };
+      case 'gt': return function (v) { return toNumber(v) > n; };
+      case 'gte': return function (v) { return toNumber(v) >= n; };
+      case 'lt': return function (v) { return toNumber(v) < n; };
+      case 'lte': return function (v) { return toNumber(v) <= n; };
       case 'between':
         var lo = Math.min(n, n2), hi = Math.max(n, n2);
         return function (v) { var x = toNumber(v); return x >= lo && x <= hi; };
       case 'isNumber': return function (v) { return !isNaN(toNumber(v)); };
       case 'notNumber': return function (v) { return v.trim() !== '' && isNaN(toNumber(v)); };
-      case 'dateBefore': return function (v) { var x = DL.toDate(v); return x < d; };
-      case 'dateAfter': return function (v) { var x = DL.toDate(v); return x > d; };
+      case 'dateBefore': return function (v) { return DL.toDate(v) < d; };
+      case 'dateAfter': return function (v) { return DL.toDate(v) > d; };
       case 'inList':
       case 'notInList':
         list = new Set(val.split(',').map(function (s) { return norm(s.trim()); }).filter(function (s) { return s !== ''; }));
@@ -120,24 +113,6 @@
         return function (v) { return !list.has(norm(v.trim())); };
       default: throw new Error('Unknown filter rule "' + c.op + '".');
     }
-  };
-
-  DL.validateConditions = function (conds, cols) {
-    var out = [];
-    if (!conds || !conds.length) return ['Add at least one rule.'];
-    conds.forEach(function (c, i) {
-      var label = 'Rule ' + (i + 1);
-      if (!c.column) out.push(label + ': choose a column.');
-      else if (cols && cols.length && cols.indexOf(c.column) < 0) out.push(label + ': column "' + c.column + '" is not in the input.');
-      var def = DL.FILTER_OPERATORS.filter(function (o) { return o.value === c.op; })[0];
-      if (!def) { out.push(label + ': choose a test.'); return; }
-      if (def.needs === 'text' && (c.value == null || c.value === '')) out.push(label + ': enter a value.');
-      if (def.needs === 'number' && isNaN(DL.toNumber(c.value))) out.push(label + ': enter a number.');
-      if (def.needs === 'range' && (isNaN(DL.toNumber(c.value)) || isNaN(DL.toNumber(c.value2)))) out.push(label + ': enter two numbers.');
-      if (def.needs === 'date' && isNaN(DL.toDate(c.value))) out.push(label + ': enter a date such as 2024-01-31.');
-      if (c.op === 'regex') { try { new RegExp(c.value, 'u'); } catch (e) { out.push(label + ': the regular expression is not valid.'); } }
-    });
-    return out;
   };
 
   DL.registerOp({
@@ -152,19 +127,18 @@
         options: [{ value: 'keep', label: 'Keep matching rows' }, { value: 'remove', label: 'Remove matching rows' }] },
       { key: 'logic', label: 'A row matches when', type: 'select', default: 'all',
         options: [{ value: 'all', label: 'All rules are true' }, { value: 'any', label: 'Any rule is true' }] },
-      { key: 'conditions', label: 'Rules', type: 'conditions', default: [{ column: '', op: 'contains', value: '' }] },
+      { key: 'conditions', label: 'Rules', type: 'conditions' },
       { key: 'matchCase', label: 'Match case', type: 'boolean', default: false }
     ],
     summary: function (p) {
-      var c = p.conditions || [];
-      return (p.action === 'remove' ? 'Remove' : 'Keep') + ' rows where ' + c.map(function (x) { return x.column + ' ' + x.op + (x.value ? ' "' + x.value + '"' : ''); }).join(p.logic === 'any' ? ' or ' : ' and ');
+      return (p.action === 'remove' ? 'Remove' : 'Keep') + ' rows where ' + p.conditions.map(function (x) {
+        var def = DL.findOption(DL.FILTER_OPERATORS, x.op);
+        return x.column + ' ' + (def ? def.label : x.op) + (x.value ? ' "' + x.value + '"' : '');
+      }).join(p.logic === 'any' ? ' or ' : ' and ');
     },
-    validate: function (p, cols) { return DL.validateConditions(p.conditions, cols); },
     apply: function (table, p) {
-      var tests = (p.conditions || []).map(function (c) {
-        var idx = DL.colIndex(table, c.column);
-        if (idx < 0) throw new Error('Column "' + c.column + '" was not found.');
-        return { col: DL.col(table, idx), fn: DL.buildCondition(c, p) };
+      var tests = p.conditions.map(function (c) {
+        return { col: DL.col(table, DL.requireCol(table, c.column)), fn: DL.buildCondition(c, p) };
       });
       var any = p.logic === 'any';
       var keepMatch = p.action !== 'remove';
@@ -187,6 +161,37 @@
   });
 
   /* ---------- Sort ---------- */
+
+  // Sorts a text column: ranks the different values once, then does a counting sort by rank.
+  // This is much faster than a collator compare for every pair when values repeat.
+  function textRanks(col, n, dir, emptyLast) {
+    var g = DL.groupRows([function (i) { return col[i]; }], n);
+    var reps = [];
+    for (var i = 0; i < n; i++) if (g.first[i] === i) reps.push(i);
+    var cmp = DL.compareText;
+    reps.sort(function (a, b) {
+      var va = col[a], vb = col[b];
+      var ea = va === '', eb = vb === '';
+      if (ea || eb) { if (ea && eb) return 0; return (ea ? 1 : -1) * emptyLast; }
+      return cmp(va, vb) * dir;
+    });
+    var rankOf = new Int32Array(n); // first row of a group -> rank
+    for (i = 0; i < reps.length; i++) rankOf[reps[i]] = i;
+    var ranks = new Int32Array(n);
+    for (i = 0; i < n; i++) ranks[i] = rankOf[g.first[i]];
+    return { ranks: ranks, groups: reps.length };
+  }
+
+  function countingSort(order, ranks, groups) {
+    var n = ranks.length;
+    var starts = new Int32Array(groups + 1);
+    for (var i = 0; i < n; i++) starts[ranks[i] + 1]++;
+    for (i = 0; i < groups; i++) starts[i + 1] += starts[i];
+    var out = new Uint32Array(n);
+    for (i = 0; i < n; i++) { var r = order[i]; out[starts[ranks[r]]++] = r; }
+    return out;
+  }
+
   DL.registerOp({
     id: 'sort',
     name: 'Sort Rows',
@@ -195,71 +200,57 @@
     description: 'Order rows by one or more columns as text, numbers or dates.',
     keywords: 'order arrange ascending descending',
     params: [
-      { key: 'keys', label: 'Sort by', type: 'sortKeys', default: [{ column: '', type: 'auto', dir: 'asc' }] },
+      { key: 'keys', label: 'Sort by', type: 'sortKeys' },
       { key: 'emptyLast', label: 'Put empty values last', type: 'boolean', default: true }
     ],
-    summary: function (p) { return (p.keys || []).map(function (k) { return k.column + ' ' + (k.dir === 'desc' ? '↓' : '↑'); }).join(', '); },
-    validate: function (p, cols) {
-      var out = [];
-      if (!p.keys || !p.keys.length) return ['Add at least one column to sort by.'];
-      p.keys.forEach(function (k, i) {
-        if (!k.column) out.push('Sort key ' + (i + 1) + ': choose a column.');
-        else if (cols.length && cols.indexOf(k.column) < 0) out.push('Column "' + k.column + '" is not in the input.');
-      });
-      return out;
-    },
+    summary: function (p) { return p.keys.map(function (k) { return k.column + ' ' + (k.dir === 'desc' ? '↓' : '↑'); }).join(', '); },
     apply: function (table, p) {
       var n = table.length;
-      var keys = p.keys.map(function (k) {
-        var idx = DL.colIndex(table, k.column);
-        if (idx < 0) throw new Error('Column "' + k.column + '" was not found.');
-        var col = DL.col(table, idx);
-        var type = k.type === 'auto' || !k.type ? DL.detectType(col) : k.type;
-        // Pre-compute sort values once (avoids re-parsing in the comparator).
-        var vals;
-        if (type === 'number' || type === 'date') {
-          vals = new Float64Array(n);
-          var parse = type === 'number' ? DL.toNumber : DL.toDate;
-          for (var i = 0; i < n; i++) vals[i] = col[i] === '' ? NaN : parse(col[i]);
-        } else vals = col;
-        return { type: type, dir: k.dir === 'desc' ? -1 : 1, vals: vals };
-      });
-      var order = new Array(n);
-      for (var i = 0; i < n; i++) order[i] = i;
       var emptyLast = p.emptyLast !== false ? 1 : -1;
-      var cmpText = DL.compareText;
-      var single = keys.length === 1 ? keys[0] : null;
-      var cmp;
-      if (single && single.type !== 'text') {
-        var sv = single.vals, sd = single.dir;
-        cmp = function (a, b) {
-          var va = sv[a], vb = sv[b];
-          var na = va !== va, nb = vb !== vb;
-          if (na || nb) { if (na && nb) return a - b; return (na ? 1 : -1) * emptyLast; }
-          return va < vb ? -sd : va > vb ? sd : a - b;
-        };
+      var keys = p.keys.map(function (k) {
+        var col = DL.col(table, DL.requireCol(table, k.column));
+        var type = k.type === 'auto' || !k.type ? DL.detectType(col) : k.type;
+        var dir = k.dir === 'desc' ? -1 : 1;
+        var key = { column: k.column, type: type, dir: dir };
+        if (type === 'text') {
+          var tr = textRanks(col, n, dir, emptyLast);
+          key.ranks = tr.ranks;
+          key.groups = tr.groups;
+        } else {
+          // Parse once, so the comparator does not parse again.
+          var parse = type === 'number' ? DL.toNumber : DL.toDate;
+          var vals = new Float64Array(n);
+          for (var i = 0; i < n; i++) vals[i] = col[i] === '' ? NaN : parse(col[i]);
+          key.vals = vals;
+        }
+        return key;
+      });
+      var order;
+      if (keys.length === 1 && keys[0].ranks) {
+        var base = new Uint32Array(n);
+        for (var j = 0; j < n; j++) base[j] = j;
+        order = countingSort(base, keys[0].ranks, keys[0].groups);
       } else {
-        cmp = function (a, b) {
+        order = new Array(n);
+        for (j = 0; j < n; j++) order[j] = j;
+        order.sort(function (a, b) {
           for (var k = 0; k < keys.length; k++) {
             var key = keys[k];
-            var va = key.vals[a], vb = key.vals[b];
             var c;
-            if (key.type === 'text') {
-              var ea = va === '', eb = vb === '';
-              if (ea || eb) { if (ea && eb) continue; return (ea ? 1 : -1) * emptyLast; }
-              c = cmpText(va, vb);
+            if (key.ranks) {
+              c = key.ranks[a] - key.ranks[b]; // rank order already includes direction and empty placement
             } else {
+              var va = key.vals[a], vb = key.vals[b];
               var na = va !== va, nb = vb !== vb;
               if (na || nb) { if (na && nb) continue; return (na ? 1 : -1) * emptyLast; }
-              c = va < vb ? -1 : va > vb ? 1 : 0;
+              c = (va < vb ? -1 : va > vb ? 1 : 0) * key.dir;
             }
-            if (c !== 0) return c * key.dir;
+            if (c !== 0) return c;
           }
           return a - b; // stable
-        };
+        });
       }
-      order.sort(cmp);
-      return { table: DL.selectRows(table, order), notes: keys.map(function (k, j) { return p.keys[j].column + ' sorted as ' + k.type; }) };
+      return { table: DL.selectRows(table, order), notes: keys.map(function (k) { return k.column + ' sorted as ' + k.type; }) };
     }
   });
 
@@ -279,25 +270,23 @@
           { value: 'zscore', label: 'Standard deviations from the mean' },
           { value: 'percentile', label: 'Top and bottom percent' }
         ] },
-      { key: 'factor', label: 'IQR multiplier', type: 'number', default: 1.5, min: 0, help: '1.5 is the usual choice. Use 3 to only find extreme values.', showIf: function (p) { return p.method === 'iqr'; } },
-      { key: 'zthreshold', label: 'Standard deviations', type: 'number', default: 3, min: 0, showIf: function (p) { return p.method === 'zscore'; } },
-      { key: 'percent', label: 'Percent at each end', type: 'number', default: 1, min: 0, max: 50, showIf: function (p) { return p.method === 'percentile'; } },
+      { key: 'factor', label: 'IQR multiplier', type: 'number', default: 1.5, min: 0, required: true, help: '1.5 is the usual choice. Use 3 to only find extreme values.', showIf: function (p) { return p.method === 'iqr'; } },
+      { key: 'zthreshold', label: 'Standard deviations', type: 'number', default: 3, min: 0, required: true, showIf: function (p) { return p.method === 'zscore'; } },
+      { key: 'percent', label: 'Percent at each end', type: 'number', default: 1, min: 0, max: 50, required: true, showIf: function (p) { return p.method === 'percentile'; } },
       { key: 'action', label: 'Then', type: 'select', default: 'keep',
         options: [
           { value: 'keep', label: 'Keep only the outliers (to review them)' },
           { value: 'remove', label: 'Remove the outliers' },
           { value: 'flag', label: 'Add a column that marks outliers' }
         ] },
-      { key: 'flagColumn', label: 'Flag column name', type: 'text', default: 'Outlier', showIf: function (p) { return p.action === 'flag'; } }
+      { key: 'flagColumn', label: 'Flag column name', type: 'text', default: 'Outlier', notBlank: true, showIf: function (p) { return p.action === 'flag'; } }
     ],
     summary: function (p) { return p.action + ' outliers in "' + p.column + '" (' + p.method + ')'; },
     outputColumns: function (cols, p) {
-      return p.action === 'flag' ? cols.concat([DL.uniqueName(cols, p.flagColumn || 'Outlier')]) : cols;
+      return p.action === 'flag' ? cols.concat([DL.uniqueName(cols, DL.cleanName(p.flagColumn, 'Outlier'))]) : cols;
     },
     apply: function (table, p) {
-      var idx = DL.colIndex(table, p.column);
-      if (idx < 0) throw new Error('Column "' + p.column + '" was not found.');
-      var col = DL.col(table, idx);
+      var col = DL.col(table, DL.requireCol(table, p.column));
       var n = table.length;
       var nums = new Float64Array(n);
       var validCount = 0;
@@ -323,16 +312,15 @@
         var sd = 0;
         for (i = 0; i < sorted.length; i++) sd += (sorted[i] - mean) * (sorted[i] - mean);
         sd = Math.sqrt(sd / sorted.length);
-        var z = Number(p.zthreshold) || 3;
+        var z = Number(p.zthreshold);
         lo = mean - z * sd; hi = mean + z * sd;
         notes.push('Mean ' + round(mean) + ', standard deviation ' + round(sd) + '.');
       } else if (p.method === 'percentile') {
-        var pc = Math.min(50, Math.max(0, Number(p.percent) || 0)) / 100;
+        var pc = Math.min(50, Math.max(0, Number(p.percent))) / 100;
         lo = q(pc); hi = q(1 - pc);
       } else {
         var q1 = q(0.25), q3 = q(0.75), iqr = q3 - q1;
         var f = Number(p.factor);
-        if (isNaN(f)) f = 1.5;
         lo = q1 - f * iqr; hi = q3 + f * iqr;
       }
       notes.push('Normal range: ' + round(lo) + ' to ' + round(hi) + '.');
@@ -346,7 +334,7 @@
           if (isOut) count++;
           flags[i] = isOut ? (v < lo ? 'low' : 'high') : '';
         }
-        out = DL.addColumn(table, DL.uniqueName(table.columns, p.flagColumn || 'Outlier'), flags);
+        out = DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.flagColumn, 'Outlier')), flags);
       } else {
         var keepOut = p.action === 'keep';
         var keep = [];
@@ -381,24 +369,24 @@
       { key: 'sortBy', label: 'Order', type: 'select', default: 'first',
         options: [{ value: 'first', label: 'First appearance' }, { value: 'count', label: 'Most common first' }, { value: 'value', label: 'Value A → Z' }] }
     ],
-    summary: function (p) { return 'Unique ' + (p.columns || []).join(' + '); },
+    summary: function (p) { return 'Unique ' + p.columns.join(' + '); },
     outputColumns: function (cols, p) {
-      var out = (p.columns || []).slice();
+      var out = p.columns.filter(function (c) { return cols.indexOf(c) >= 0; });
       if (p.count) out.push(DL.uniqueName(out, 'Count'));
       return out;
     },
     apply: function (table, p) {
-      var idxs = DL.colIndexes(table, p.columns);
-      var key = keyFn(table, idxs, p);
+      var idxs = p.columns.map(function (c) { return DL.requireCol(table, c); });
       var n = table.length;
-      var g = DL.groupRows(key, n);
+      var getters = keyGetters(table, idxs, p);
+      var g = DL.groupRows(getters, n);
       var entries = [];
       for (var i = 0; i < n; i++) if (g.first[i] === i) entries.push({ row: i, count: g.count[i] });
+      var keyText = function (row) { return getters.map(function (get) { return get(row); }).join(' '); };
       if (p.sortBy === 'count') entries.sort(function (a, b) { return b.count - a.count || a.row - b.row; });
-      else if (p.sortBy === 'value') entries.sort(function (a, b) { return DL.compareText(key(a.row), key(b.row)); });
-      var picked = DL.pickColumns(table, idxs);
-      var out = DL.selectRows(picked, entries.map(function (e) { return e.row; }));
-      if (p.trim) out = DL.mapColumns(out, out.columns.map(function (c, j) { return j; }), function (v) { return v.trim(); });
+      else if (p.sortBy === 'value') entries.sort(function (a, b) { return DL.compareText(keyText(a.row), keyText(b.row)); });
+      var out = DL.selectRows(DL.pickColumns(table, idxs), entries.map(function (e) { return e.row; }));
+      if (p.trim) out = DL.mapColumns(out, DL.allIndexes(out), function (v) { return v.trim(); });
       if (p.count) out = DL.addColumn(out, DL.uniqueName(out.columns, 'Count'), entries.map(function (e) { return String(e.count); }));
       return { table: out, notes: [DL.pluralize(out.length, 'unique value') + ' in ' + DL.pluralize(n, 'row') + '.'] };
     }

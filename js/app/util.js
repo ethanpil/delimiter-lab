@@ -45,6 +45,11 @@
     return d.toLocaleDateString();
   };
 
+  var idCounter = 0;
+  U.domId = function (prefix) {
+    return (prefix || 'dl') + '_' + (++idCounter);
+  };
+
   // Builds an element: U.el('div', {class:'x', onclick: fn}, [children])
   U.el = function (tag, attrs, children) {
     var e = document.createElement(tag);
@@ -54,7 +59,6 @@
         if (v == null || v === false) return;
         if (k === 'class') e.className = v;
         else if (k === 'text') e.textContent = v;
-        else if (k === 'html') e.innerHTML = v;
         else if (k.indexOf('on') === 0 && typeof v === 'function') e.addEventListener(k.slice(2), v);
         else if (k === 'dataset') Object.keys(v).forEach(function (d) { e.dataset[d] = v[d]; });
         else if (v === true) e.setAttribute(k, '');
@@ -78,6 +82,30 @@
   U.empty = function (el) {
     while (el.firstChild) el.removeChild(el.firstChild);
     return el;
+  };
+
+  // A <select> from [{ value, label }] options.
+  U.select = function (options, value, onChange, attrs) {
+    var sel = U.el('select', Object.assign({ class: 'form-select form-select-sm' }, attrs || {}));
+    options.forEach(function (o) { sel.appendChild(U.el('option', { value: o.value, text: o.label })); });
+    sel.value = value == null ? '' : value;
+    if (onChange) sel.addEventListener('change', function () { onChange(sel.value); });
+    return sel;
+  };
+
+  // A checkbox with a label. Gives { el, input }.
+  U.check = function (label, on, onChange, opts) {
+    var id = U.domId('chk');
+    var input = U.el('input', { type: 'checkbox', class: 'form-check-input', id: id, role: opts && opts.switch ? 'switch' : null });
+    input.checked = !!on;
+    if (onChange) input.addEventListener('change', function () { onChange(input.checked); });
+    var lab = U.el('label', { class: 'form-check-label', for: id, text: label });
+    if (opts && opts.help) lab.appendChild(U.helpIcon(opts.help));
+    return { input: input, el: U.el('div', { class: 'form-check' + (opts && opts.switch ? ' form-switch' : '') + (opts && opts.class ? ' ' + opts.class : '') }, [input, lab]) };
+  };
+
+  U.helpIcon = function (text) {
+    return U.el('i', { class: 'bi bi-info-circle help-icon ms-1', title: text, tabindex: '0' });
   };
 
   U.toast = function (message, kind) {
@@ -110,8 +138,8 @@
       ])
     ]);
     host.appendChild(el);
-    var modal = new bootstrap.Modal(el, { backdrop: opts.static ? 'static' : true });
-    el.addEventListener('hidden.bs.modal', function () { modal.dispose(); el.remove(); if (opts.onClose) opts.onClose(); });
+    var modal = new bootstrap.Modal(el);
+    el.addEventListener('hidden.bs.modal', function () { modal.dispose(); el.remove(); });
     el.addEventListener('shown.bs.modal', function () {
       var f = el.querySelector('[autofocus], input:not([type=hidden]), button.btn-primary');
       if (f) f.focus();
@@ -165,12 +193,10 @@
     });
   };
 
-  U.initTooltips = function (scope) {
-    var els = (scope || document).querySelectorAll('[data-bs-toggle="tooltip"], [title]:not(.no-tip)');
-    els.forEach(function (e) {
-      if (bootstrap.Tooltip.getInstance(e)) return;
-      new bootstrap.Tooltip(e, { delay: { show: 500, hide: 0 }, trigger: 'hover' });
-    });
+  // One tooltip handler per container. Elements inside can come and go; nothing leaks.
+  U.tooltips = function (container) {
+    if (bootstrap.Tooltip.getInstance(container)) return;
+    new bootstrap.Tooltip(container, { selector: '[title]:not(.no-tip)', delay: { show: 500, hide: 0 }, trigger: 'hover' });
   };
 
   U.downloadBlob = function (blob, filename) {
@@ -189,7 +215,7 @@
     return String(s).replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 100) || 'output';
   };
 
-  // Estimates how many cells this browser can hold comfortably.
+  // Estimates the number of cells that this browser can hold without a slow user interface.
   U.cellBudget = function () {
     var gb = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 4;
     var cells = Math.round(gb * 2.5e6);

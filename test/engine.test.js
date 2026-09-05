@@ -5,13 +5,14 @@ const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
 
-const ctx = { self: null, console };
-ctx.self = ctx;
-vm.createContext(ctx);
-['js/engine/core.js', 'js/ops/text.js', 'js/ops/rows.js', 'js/ops/columns.js', 'js/ops/verify.js'].forEach((f) => {
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), ctx, { filename: f });
+// The engine runs in this realm (not a vm sandbox): cross-realm calls make the timings wrong.
+global.self = global;
+require('../js/manifest.js');
+const manifest = global.DL;
+manifest.FILES.engine.concat(manifest.FILES.ops).forEach((f) => {
+  vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), { filename: f });
 });
-const DL = ctx.DL;
+const DL = global.DL;
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -21,7 +22,7 @@ function test(name, fn) {
 const T = (cols, rows) => DL.fromRows(cols, rows);
 // Tests read results as rows for readability.
 const rowsOf = (t) => DL.rowsSlice(t, 0, t.length);
-// Objects made inside the vm context have different prototypes; compare by value.
+// Compare by value for short, clear failure messages.
 assert.deepStrictEqual = (a, b, m) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b), m || "deep equal");
 const run = (op, params, table) => DL.runOp(op, Object.assign(DL.defaultParams(op), params), table);
 
@@ -154,6 +155,8 @@ test('filter op', () => {
   const r6 = run('filter', { conditions: [{ column: 'Email', op: 'regex', value: '^\\S+@\\S+$' }] }, people);
   assert.strictEqual(rowsOf(r6.table).length, 2);
   assert.ok(DL.validateParams('filter', Object.assign(DL.defaultParams('filter'), { conditions: [{ column: '', op: 'gt', value: 'x' }] }), ['A']).length >= 2);
+  assert.deepStrictEqual(DL.validateParams('filter', Object.assign(DL.defaultParams('filter'), { conditions: [{ column: 'Zip', op: 'contains', value: 'x' }] }), ['A']), ['Rule 1: Column "Zip" is not in the input.']);
+  assert.deepStrictEqual(DL.validateParams('filter', Object.assign(DL.defaultParams('filter'), { conditions: [{ column: 'Zip', op: 'contains', value: 'x' }] }), null), []);
 });
 test('sort op', () => {
   const t = T(['N', 'S', 'D'], [['10', 'b', '2024-03-01'], ['9', 'a', '01/15/2023'], ['', 'C', ''], ['100', 'á', '2022-12-31']]);
@@ -191,6 +194,9 @@ test('rename op', () => {
   const r = run('rename', { map: { First: 'Given', Last: '' } }, people);
   assert.deepStrictEqual(r.table.columns, ['Given', 'Last', 'Age', 'Email']);
   assert.ok(DL.validateParams('rename', { map: { First: 'Last' } }, people.columns).length === 1);
+  const r2 = run('rename', { map: { First: 'B' } }, T(['First', 'constructor', 'toString'], [['a', 'b', 'c']]));
+  assert.deepStrictEqual(r2.table.columns, ['B', 'constructor', 'toString']);
+  assert.deepStrictEqual(DL.validateParams('rename', { map: { First: 'constructor' } }, ['First', 'x']), []);
 });
 test('reorder op', () => {
   const r = run('reorder', { order: ['Email', 'Age'] }, people);
@@ -216,6 +222,8 @@ test('calculate op', () => {
   assert.deepStrictEqual(rowsOf(r.table).map((x) => x[2]), ['3', '0.3', '', '5']);
   const r2 = run('calculate', { left: 'A', operator: '/', right: 'B', output: 'C', decimals: 2, onError: 'text' }, t);
   assert.deepStrictEqual(rowsOf(r2.table).map((x) => x[2]), ['0.50', '0.50', 'error', 'error']);
+  const r4 = run('calculate', { left: 'A', operator: '*', rightKind: 'number', rightNumber: '-1', output: 'C', decimals: 0 }, T(['A'], [['2.5'], ['0.125'], ['-2.5']]));
+  assert.deepStrictEqual(rowsOf(r4.table).map((x) => x[1]), ['-3', '0', '3']);
   const r3 = run('calculate', { left: 'A', operator: '*', rightKind: 'number', rightNumber: '3', output: 'C' }, t);
   assert.strictEqual(rowsOf(r3.table)[0][2], '3');
 });
@@ -249,6 +257,78 @@ test('verify op', () => {
   assert.strictEqual(rowsOf(r3.table).length, 1);
 });
 
+/* ---- fixes from the code review ---- */
+test('groupRows groups empty keys and multi-column keys', () => {
+  const t = T(['A', 'B'], [['', 'x'], ['', 'x'], ['a', ''], ['', 'x'], ['a', '']]);
+  const r = run('unique', { columns: ['A'], count: true }, t);
+  assert.deepStrictEqual(rowsOf(r.table), [['', '3'], ['a', '2']]);
+  const r2 = run('dedupe', { columns: ['A', 'B'] }, t);
+  assert.strictEqual(r2.table.length, 2);
+  const r3 = run('dedupe', { columns: [] }, T(['A', 'B'], [['a b', 'c'], ['a', 'b c']]));
+  assert.strictEqual(r3.table.length, 2, 'keys of different columns must not collide');
+  const r4 = run('verify', { rules: [{ column: 'A', op: 'unique', allowEmpty: true }], action: 'failed' }, t);
+  assert.strictEqual(r4.table.length, 2, 'empty values are skipped, "a" repeats');
+});
+test('toDate rejects impossible dates', () => {
+  assert.ok(isNaN(DL.toDate('2024-02-30')));
+  assert.ok(isNaN(DL.toDate('2024-13-01')));
+  assert.ok(isNaN(DL.toDate('02/31/2024')));
+  assert.ok(!isNaN(DL.toDate('2024-02-29')));
+  assert.strictEqual(new Date(DL.toDate('0050-01-01')).getFullYear(), 50);
+});
+test('splitName never throws', () => {
+  assert.deepStrictEqual(DL.splitName(','), { prefix: '', first: '', middle: '', last: '', suffix: '' });
+  assert.deepStrictEqual(DL.splitName(' , '), { prefix: '', first: '', middle: '', last: '', suffix: '' });
+});
+test('split ignores capture groups and predicts columns', () => {
+  const t = T(['A'], [['x, y, z'], ['q']]);
+  const r = run('split', { column: 'A', separator: '(\\s*,\\s*)', regex: true, trim: false }, t);
+  assert.deepStrictEqual(rowsOf(r.table)[0], ['x, y, z', 'x', 'y', 'z']);
+  const r2 = run('split', { column: 'A', separator: ',', maxParts: 2, trim: true }, t);
+  assert.deepStrictEqual(rowsOf(r2.table)[0], ['x, y, z', 'x', 'y, z']);
+  assert.strictEqual(DL.predictColumns('split', Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',' }), ['A']), null);
+  assert.deepStrictEqual(DL.predictColumns('split', Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',', maxParts: 2, removeSource: true }), ['A', 'B']), ['B', 'A - 1', 'A - 2']);
+});
+test('prototype names are safe in JavaScript rows', () => {
+  const t = T(['constructor', '__proto__'], [['a', 'b']]);
+  const r = run('javascript', { output: 'Out', code: 'return row["constructor"] + row["__proto__"];' }, t);
+  assert.strictEqual(rowsOf(r.table)[0][2], 'ab');
+});
+test('cleanParams repairs wrong shapes', () => {
+  const p = DL.cleanParams('case', { columns: 'Email', mode: 'nope', extra: 1 });
+  assert.deepStrictEqual(p, { columns: [], mode: 'upper' });
+  const f = DL.cleanParams('filter', { conditions: 'x' });
+  assert.strictEqual(f.conditions.length, 1);
+  const v = DL.cleanParams('verify', { rules: [{ column: 'E', op: 'isEmail' }] });
+  assert.strictEqual(v.rules[0].allowEmpty, true);
+  const m = DL.cleanParams('substitute', { columns: ['A'], mapping: [{ from: 1, to: null }, 'bad'] });
+  assert.deepStrictEqual(m.mapping, [{ from: '1', to: '' }]);
+});
+test('columnsUsedByStep and addColumn prediction', () => {
+  assert.deepStrictEqual(DL.columnsUsedByStep('filter', Object.assign(DL.defaultParams('filter'), { conditions: [{ column: 'A', op: 'empty' }] })), ['A']);
+  assert.deepStrictEqual(DL.columnsUsedByStep('calculate', Object.assign(DL.defaultParams('calculate'), { left: 'A', rightKind: 'number' })), ['A']);
+  assert.deepStrictEqual(DL.predictColumns('addColumn', Object.assign(DL.defaultParams('addColumn'), { name: ' Total ' }), ['A']), ['A', 'Total']);
+  const r = run('addColumn', { name: ' Total ' }, T(['A'], [['1']]));
+  assert.deepStrictEqual(r.table.columns, ['A', 'Total']);
+});
+test('formatNumber has no negative zero and rounds half away from zero', () => {
+  assert.strictEqual(DL.formatNumber(-0.004, 2, ',', '.', '', '', false), '0.00');
+  assert.strictEqual(DL.formatNumber(-2.5, 0, '', '.', '', '', false), '-3');
+  assert.strictEqual(DL.formatFixed(-2.5, 0), '-3');
+});
+test('hasEdgeSpace sees unicode spaces', () => {
+  assert.ok(DL.hasEdgeSpace('\u3000abc'));
+  assert.ok(DL.hasEdgeSpace('abc\u2003'));
+  assert.ok(!DL.hasEdgeSpace('abc'));
+});
+test('sort text uses ranks with direction and empties', () => {
+  const t = T(['S'], [['b'], [''], ['a'], ['B'], ['c']]);
+  const r = run('sort', { keys: [{ column: 'S', type: 'text', dir: 'desc' }] }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((x) => x[0]), ['c', 'b', 'B', 'a', '']);
+  const r2 = run('sort', { keys: [{ column: 'S', type: 'text', dir: 'asc' }], emptyLast: false }, t);
+  assert.deepStrictEqual(rowsOf(r2.table).map((x) => x[0]), ['', 'a', 'b', 'B', 'c']);
+});
+
 /* ---- registry ---- */
 test('every op has metadata and defaults', () => {
   DL.ops.forEach((op) => {
@@ -259,6 +339,28 @@ test('every op has metadata and defaults', () => {
     op.params.forEach((p) => assert.ok(p.key && p.label && p.type, op.id + ' param'));
   });
   assert.strictEqual(DL.ops.length, 20);
+  // Every operation that changes the columns must predict them correctly (or say null).
+  const fixture = T(['Full Name', 'Email', 'Amount'], [['John Smith', 'j@x.com', '1'], ['Ann Lee', 'a@y.com', '2']]);
+  const cases = {
+    concat: { columns: ['Full Name', 'Email'], output: 'X', removeSource: true },
+    splitName: { column: 'Full Name', parts: ['first', 'last'] },
+    outliers: { column: 'Amount', action: 'flag' },
+    unique: { columns: ['Email'] },
+    rename: { map: { Email: 'Mail' } },
+    reorder: { order: ['Amount'] },
+    remove: { columns: ['Amount'] },
+    addColumn: { name: 'N' },
+    calculate: { left: 'Amount', rightKind: 'number', rightNumber: 2, output: 'D' },
+    javascript: { output: 'J', code: 'return 1;' },
+    verify: { rules: [{ column: 'Email', op: 'isEmail' }], action: 'flag' },
+    split: { column: 'Full Name', separator: ' ', maxParts: 2 }
+  };
+  Object.keys(cases).forEach((id) => {
+    const params = Object.assign(DL.defaultParams(id), cases[id]);
+    const predicted = DL.predictColumns(id, params, fixture.columns);
+    const actual = DL.runOp(id, params, fixture).table.columns;
+    if (predicted !== null) assert.deepStrictEqual(predicted, actual, id + ' prediction');
+  });
 });
 
 /* ---- performance smoke ---- */
