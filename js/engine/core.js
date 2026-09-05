@@ -372,10 +372,24 @@
   // Makes a local timestamp from date parts. Gives NaN when the parts are not a real date.
   function makeDate(y, mo, d, h, mi, s) {
     if (mo < 1 || mo > 12 || d < 1 || d > daysInMonth(y, mo) || h > 23 || mi > 59 || s > 59) return NaN;
-    var date = new Date(2000, mo - 1, d, h, mi, s);
-    date.setFullYear(y); // years 0-99 must not become 1900-1999
+    var date = new Date(y, mo - 1, d, h, mi, s);
+    if (y < 100) date.setFullYear(y); // years 0-99 must not become 1900-1999
     return date.getTime();
   }
+
+  // Makes a timestamp from date parts and a zone such as "Z", "+01:00" or "-0500".
+  function makeZonedDate(y, mo, d, h, mi, s, ms, zone) {
+    if (mo < 1 || mo > 12 || d < 1 || d > daysInMonth(y, mo) || h > 23 || mi > 59 || s > 59) return NaN;
+    var t = Date.UTC(y, mo - 1, d, h, mi, s, ms);
+    if (zone !== 'Z') {
+      var sign = zone.charAt(0) === '-' ? -1 : 1;
+      var zh = +zone.slice(1, 3), zm = +zone.slice(-2);
+      t -= sign * (zh * 60 + zm) * 60000;
+    }
+    return t;
+  }
+
+  var MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i;
 
   // Parses common date formats. Gives a timestamp (ms) or NaN.
   // dayFirst: read "01/02/2024" as 1 February (true) or 2 January (false).
@@ -385,7 +399,7 @@
     if (s === '') return NaN;
     var m = isoRe.exec(s);
     if (m) {
-      if (m[8]) return Date.parse(s);
+      if (m[8]) return makeZonedDate(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0), +((m[7] || '0') + '00').slice(0, 3), m[8]);
       return makeDate(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
     }
     m = slashRe.exec(s);
@@ -408,10 +422,13 @@
       }
       return makeDate(y, mo, d, h, +(m[5] || 0), +(m[6] || 0));
     }
-    // Let the browser parse "March 5, 2024" and similar.
+    // Let the browser parse "March 5, 2024" and similar. A month name is required, because the
+    // browser also accepts text such as "Room 12" as a date.
+    if (!MONTH_RE.test(s) || !/\d/.test(s)) return NaN;
     var t = Date.parse(s);
-    if (!isNaN(t) && /[a-zA-Z]/.test(s)) return t;
-    return NaN;
+    if (isNaN(t)) return NaN;
+    var year = new Date(t).getFullYear();
+    return year >= 1000 && year <= 9999 ? t : NaN;
   };
 
   DL.formatDateISO = function (ts) {
@@ -436,7 +453,7 @@
     return v < 0 && abs !== 0 ? '-' + s : s;
   };
 
-  // Makes text from a number without floating point noise such as 0.30000000000000004.
+  // Makes text from a number. Removes the rounding error of values such as 0.30000000000000004.
   DL.numberText = function (v) {
     if (v !== v || v === Infinity || v === -Infinity) return '';
     if (v % 1 === 0) return String(v);
@@ -497,6 +514,11 @@
     return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   };
 
+  // Gives a problem message when the text is not a valid regular expression, or '' when it is.
+  DL.regexProblem = function (src, flags) {
+    try { new RegExp(src, flags || 'u'); return ''; } catch (e) { return 'The regular expression is not valid: ' + e.message; }
+  };
+
   DL.buildRegex = function (find, opts) {
     var flags = 'g' + (opts.matchCase ? '' : 'i');
     var src = opts.regex ? find : DL.escapeRegExp(find);
@@ -544,8 +566,9 @@
     return String(s).replace(/\\t/g, '\t').replace(/\\n/g, '\n').replace(/\\r/g, '\r');
   };
 
-  DL.pluralize = function (n, one, many) {
-    return n === 1 ? n + ' ' + one : n + ' ' + (many || one + 's');
+  // "1 row", "2,500 rows": the count with thousands separators and the word in the correct form.
+  DL.pluralize = function (n, one) {
+    return n.toLocaleString() + ' ' + (n === 1 ? one : one + 's');
   };
 
   DL.rowsAndColumns = function (rows, columns) {
@@ -572,13 +595,14 @@
     return true;
   };
 
-  // Builds a columnar table while rows arrive. Handles the header row, skipped rows and blank rows.
+  // Builds a columnar table while rows arrive. It reads the header row, skips rows and drops blank rows.
   // opts: { headers, skipRows, skipEmptyLines }
   DL.TableBuilder = function (opts) {
     this.headers = opts.headers !== false;
     this.toSkip = Math.max(0, Number(opts.skipRows) || 0);
     this.dropEmpty = opts.skipEmptyLines !== false;
-    this.columns = null;
+    this.columns = null;   // the header row, when there is one
+    this.expected = -1;    // the number of values a row must have (from the header or the first row)
     this.cols = [];
     this.n = 0;
     this.ragged = 0;
@@ -590,13 +614,12 @@
     if (this.dropEmpty && DL.isBlankRow(row)) return;
     if (this.columns === null && this.headers) {
       this.columns = row.map(DL.cellText);
+      this.expected = row.length;
       return;
     }
-    var w = this.cols.length;
-    if (row.length > w) {
-      for (var c = w; c < row.length; c++) this.cols.push(new Array(this.n).fill(''));
-      if (this.n > 0) this.ragged++;
-    } else if (row.length < w) this.ragged++;
+    if (this.expected < 0) this.expected = row.length;
+    else if (row.length !== this.expected) this.ragged++;
+    for (var c = this.cols.length; c < row.length; c++) this.cols.push(new Array(this.n).fill(''));
     for (c = 0; c < this.cols.length; c++) this.cols[c][this.n] = c < row.length ? DL.cellText(row[c]) : '';
     this.n++;
     this.cells += this.cols.length;
@@ -605,8 +628,7 @@
   DL.TableBuilder.prototype.finish = function () {
     var header = this.columns || [];
     while (this.cols.length < header.length) this.cols.push(new Array(this.n).fill(''));
-    var width = this.cols.length;
-    var names = this.headers && this.columns ? header.concat(new Array(width - header.length).fill('')) : new Array(width).fill('');
+    var names = header.concat(new Array(this.cols.length - header.length).fill(''));
     return DL.makeTable(DL.cleanHeaders(names), this.cols, this.n);
   };
 
@@ -637,7 +659,7 @@
       if (def.needs === 'number' && isNaN(DL.toNumber(r.value))) out.push(label + ': enter a number.');
       if (def.needs === 'range' && (isNaN(DL.toNumber(r.value)) || isNaN(DL.toNumber(r.value2)))) out.push(label + ': enter two numbers.');
       if (def.needs === 'date' && isNaN(DL.toDate(r.value))) out.push(label + ': enter a date such as 2024-01-31.');
-      if (r.op === 'regex') { try { new RegExp(r.value, 'u'); } catch (e) { out.push(label + ': the regular expression is not valid.'); } }
+      if (r.op === 'regex' && DL.regexProblem(r.value)) out.push(label + ': ' + DL.regexProblem(r.value));
     });
     return out;
   };
@@ -652,11 +674,12 @@
 
   DL.registerParamType = function (name, def) {
     DL.paramTypes[name] = {
-      empty: def.empty || function () { return ''; },
-      coerce: def.coerce || function (v, p) { return v == null ? this.empty(p) : v; },
+      empty: def.empty,
+      coerce: def.coerce,
       validate: def.validate || function () { return []; },
       columnsUsed: def.columnsUsed || function () { return []; },
-      init: def.init || null
+      init: def.init || null,
+      blank: def.blank || null
     };
   };
 
@@ -676,6 +699,7 @@
   DL.registerParamType('text', textType);
   DL.registerParamType('code', textType);
 
+  // A number field. p.integer: only whole numbers are accepted.
   DL.registerParamType('number', {
     empty: function (p) { return p && p.default != null ? p.default : ''; },
     coerce: function (v, p) {
@@ -688,6 +712,7 @@
       var n = Number(v);
       if (isNaN(n)) return ['Enter a number for "' + p.label + '".'];
       var out = [];
+      if (p.integer && n % 1 !== 0) out.push('"' + p.label + '" must be a whole number.');
       if (p.min != null && n < p.min) out.push('"' + p.label + '" must be at least ' + p.min + '.');
       if (p.max != null && n > p.max) out.push('"' + p.label + '" must be at most ' + p.max + '.');
       return out;
@@ -727,7 +752,12 @@
 
   var columnsType = {
     empty: function () { return []; },
-    coerce: function (v) { return Array.isArray(v) ? v.filter(isText).map(String) : []; },
+    coerce: function (v) {
+      if (!Array.isArray(v)) return [];
+      var out = [];
+      v.forEach(function (x) { if (isText(x) && out.indexOf(String(x)) < 0) out.push(String(x)); });
+      return out;
+    },
     validate: function (v, p, cols) {
       if (!v.length) return p.required !== false ? ['Choose at least one column for "' + p.label + '".'] : [];
       if (!cols) return [];
@@ -748,7 +778,7 @@
   DL.registerParamType('renameMap', {
     empty: function () { return {}; },
     coerce: function (v) {
-      var out = {};
+      var out = Object.create(null);
       if (v && typeof v === 'object' && !Array.isArray(v)) {
         Object.keys(v).forEach(function (k) { if (isText(v[k])) out[k] = String(v[k]); });
       }
@@ -759,6 +789,7 @@
 
   DL.registerParamType('mapping', {
     empty: function () { return [{ from: '', to: '' }]; },
+    blank: function () { return { from: '', to: '' }; },
     coerce: function (v) {
       if (!Array.isArray(v)) return this.empty();
       var out = v.filter(function (m) { return m && typeof m === 'object'; })
@@ -770,9 +801,14 @@
     }
   });
 
-  function ruleListType(what, operatorsName, blank) {
+  DL.SORT_TYPES = [{ value: 'auto', label: 'Detect type' }, { value: 'text', label: 'As text' }, { value: 'number', label: 'As numbers' }, { value: 'date', label: 'As dates' }];
+  DL.SORT_DIRS = [{ value: 'asc', label: 'A → Z / low → high' }, { value: 'desc', label: 'Z → A / high → low' }];
+
+  // A list of rules. blank() gives a new row; enums maps a row key to the list of allowed options.
+  function ruleListType(what, operatorsName, blank, enums) {
     return {
       empty: function () { return [blank()]; },
+      blank: blank,
       coerce: function (v) {
         if (!Array.isArray(v)) return this.empty();
         var out = v.filter(function (r) { return r && typeof r === 'object'; }).map(function (r) {
@@ -780,6 +816,7 @@
           Object.keys(b).forEach(function (k) {
             if (typeof b[k] === 'boolean') b[k] = typeof r[k] === 'boolean' ? r[k] : b[k];
             else if (isText(r[k])) b[k] = String(r[k]);
+            if (enums && enums[k] && !DL.findOption(enums[k], b[k])) b[k] = blank()[k];
           });
           if (r.value2 !== undefined) b.value2 = textOf(r.value2);
           return b;
@@ -792,7 +829,7 @@
   }
   DL.registerParamType('conditions', ruleListType('rule', 'FILTER_OPERATORS', function () { return { column: '', op: 'contains', value: '', value2: '' }; }));
   DL.registerParamType('rules', ruleListType('rule', 'VERIFY_RULES', function () { return { column: '', op: 'notEmpty', value: '', allowEmpty: true }; }));
-  DL.registerParamType('sortKeys', ruleListType('sort key', null, function () { return { column: '', type: 'auto', dir: 'asc' }; }));
+  DL.registerParamType('sortKeys', ruleListType('sort key', null, function () { return { column: '', type: 'auto', dir: 'asc' }; }, { type: DL.SORT_TYPES, dir: DL.SORT_DIRS }));
 
   /* ---------- Operation registry ---------- */
 
@@ -831,15 +868,13 @@
     return d;
   }
 
+  // The default value of a field: its declared default, or the empty value of its type.
+  DL.emptyValue = function (p) {
+    return p.default !== undefined ? copyValue(p.default) : DL.paramTypes[p.type].empty(p);
+  };
+
   DL.defaultParams = function (opId) {
-    var op = DL.getOp(opId);
-    var out = {};
-    if (!op) return out;
-    op.params.forEach(function (p) {
-      var type = DL.paramTypes[p.type];
-      out[p.key] = p.default !== undefined ? copyValue(p.default) : type.empty(p);
-    });
-    return out;
+    return DL.cleanParams(opId, {});
   };
 
   // Makes params complete and gives every value the correct shape. Unknown keys are dropped.
@@ -849,8 +884,7 @@
     if (!op) return out;
     params = params && typeof params === 'object' ? params : {};
     op.params.forEach(function (p) {
-      var type = DL.paramTypes[p.type];
-      out[p.key] = params[p.key] === undefined ? (p.default !== undefined ? copyValue(p.default) : type.empty(p)) : type.coerce(copyValue(params[p.key]), p);
+      out[p.key] = params[p.key] === undefined ? DL.emptyValue(p) : DL.paramTypes[p.type].coerce(copyValue(params[p.key]), p);
     });
     return out;
   };
@@ -917,23 +951,29 @@
     var result = op.apply(table, params);
     result.notes = result.notes || [];
     result.status = result.status || 'ok';
+    if (result.status !== 'ok' && result.status !== 'warning') throw new Error('Operation "' + op.name + '" gave the unknown status "' + result.status + '".');
+    if (!result.table) throw new Error('Operation "' + op.name + '" gave no table.');
     return result;
   };
 
   /* ---------- Step results ---------- */
 
-  // Every status a step result can have. hasTable: the step gives data that can be shown.
+  // Every status a step result can have, with the label shown in the steps list.
+  // Results with data carry hasTable: true. 'running' is used by the user interface only.
   DL.RESULT_STATUS = {
-    ok: { hasTable: true, label: 'Done' },
-    warning: { hasTable: true, label: 'Done with warnings' },
-    skipped: { hasTable: true, label: 'Turned off' },
-    invalid: { hasTable: false, label: 'Needs setup' },
-    blocked: { hasTable: false, label: 'Waiting' },
-    error: { hasTable: false, label: 'Error' }
+    ok: { label: 'Done' },
+    warning: { label: 'Done with warnings' },
+    skipped: { label: 'Turned off' },
+    invalid: { label: 'Needs setup' },
+    blocked: { label: 'Waiting' },
+    error: { label: 'Error' },
+    running: { label: 'Running…' }
   };
 
+  DL.SKIPPED_NOTE = 'This step is turned off. Data passes through unchanged.';
+
   DL.resultHasTable = function (result) {
-    return !!(result && DL.RESULT_STATUS[result.status] && DL.RESULT_STATUS[result.status].hasTable);
+    return !!(result && result.hasTable);
   };
 
   /* ---------- Input and output formats ---------- */
@@ -946,12 +986,8 @@
     return m ? m[1].toLowerCase() : '';
   };
 
-  DL.isSpreadsheet = function (name) {
-    return DL.SPREADSHEET_EXTENSIONS.indexOf(DL.fileExtension(name)) >= 0;
-  };
-
-  var headerOption = { key: 'headers', label: 'First row holds the column names', type: 'boolean', default: true, reload: 'now', help: 'Turn this off if the first row is data. Columns are then named "Column 1", "Column 2", …' };
-  var skipRowsOption = { key: 'skipRows', label: 'Skip rows at the top', type: 'number', default: 0, min: 0, max: 100000, help: 'Use this when the file starts with notes or a title before the real header row.' };
+  var headerOption = { key: 'headers', label: 'First row holds the column names', type: 'boolean', default: true, help: 'Turn this off if the first row is data. Columns are then named "Column 1", "Column 2", …' };
+  var skipRowsOption = { key: 'skipRows', label: 'Skip rows at the top', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file starts with notes or a title before the real header row.' };
 
   // Input formats. The worker registers a reader for each id. options are field definitions.
   DL.inputFormats = [
@@ -962,14 +998,14 @@
       options: [
         headerOption,
         skipRowsOption,
-        { key: 'delimiter', label: 'Column separator', type: 'select', default: 'auto', reload: 'now', help: 'The character between values. It is detected automatically in most files.',
+        { key: 'delimiter', label: 'Column separator', type: 'select', default: 'auto', help: 'The character between values. It is detected automatically in most files.',
           options: [{ value: 'auto', label: 'Detect automatically' }, { value: ',', label: 'Comma ( , )' }, { value: '\\t', label: 'Tab' }, { value: ';', label: 'Semicolon ( ; )' }, { value: '|', label: 'Pipe ( | )' }, { value: 'custom', label: 'Other…' }] },
         { key: 'customDelimiter', label: 'Other separator', type: 'text', default: '', showIf: function (o) { return o.delimiter === 'custom'; } },
-        { key: 'quoteChar', label: 'Text delimiter', type: 'select', default: '"', reload: 'now', help: 'The character around values that contain the separator, for example "Doe, Jane".',
+        { key: 'quoteChar', label: 'Text delimiter', type: 'select', default: '"', help: 'The character around values that contain the separator, for example "Doe, Jane".',
           options: [{ value: '"', label: 'Double quote ( " )' }, { value: "'", label: "Single quote ( ' )" }, { value: 'none', label: 'None' }] },
-        { key: 'encoding', label: 'File encoding', type: 'select', default: 'auto', reload: 'now', help: 'Change this if accented letters look wrong (for example Ã© instead of é).',
+        { key: 'encoding', label: 'File encoding', type: 'select', default: 'auto', help: 'Change this if accented letters look wrong (for example Ã© instead of é).',
           options: [{ value: 'auto', label: 'Detect automatically' }, { value: 'utf-8', label: 'UTF-8' }, { value: 'windows-1252', label: 'Windows-1252 (Western Europe)' }, { value: 'iso-8859-1', label: 'ISO-8859-1 (Latin 1)' }, { value: 'utf-16le', label: 'UTF-16' }, { value: 'macintosh', label: 'Mac Roman' }, { value: 'windows-1251', label: 'Windows-1251 (Cyrillic)' }, { value: 'shift_jis', label: 'Shift JIS (Japanese)' }, { value: 'gbk', label: 'GBK (Chinese)' }] },
-        { key: 'skipEmptyLines', label: 'Skip empty lines', type: 'boolean', default: true, reload: 'now' }
+        { key: 'skipEmptyLines', label: 'Skip empty lines', type: 'boolean', default: true }
       ]
     },
     {
@@ -980,7 +1016,7 @@
       options: [
         headerOption,
         skipRowsOption,
-        { key: 'skipEmptyLines', label: 'Skip empty rows', type: 'boolean', default: true, reload: 'now' }
+        { key: 'skipEmptyLines', label: 'Skip empty rows', type: 'boolean', default: true }
       ]
     }
   ];
@@ -1047,7 +1083,7 @@
   // Default values for the options of a format (input or output).
   DL.defaultFormatOptions = function (format) {
     var out = {};
-    format.options.forEach(function (p) { out[p.key] = p.default !== undefined ? copyValue(p.default) : DL.paramTypes[p.type].empty(p); });
+    format.options.forEach(function (p) { out[p.key] = DL.emptyValue(p); });
     return out;
   };
 })(typeof self !== 'undefined' ? self : this);

@@ -373,6 +373,56 @@ test('addColumn today gives a date without time', () => {
   assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(rowsOf(r.table)[0][1]));
 });
 
+test('toDate needs a month name for browser parsing and reads zones', () => {
+  assert.ok(isNaN(DL.toDate('Room 12')));
+  assert.ok(isNaN(DL.toDate('Ref 300')));
+  assert.ok(!isNaN(DL.toDate('March 5, 2024')));
+  assert.ok(!isNaN(DL.toDate('5 Mar 2024')));
+  assert.strictEqual(DL.toDate('2024-01-05T10:30:00Z'), Date.UTC(2024, 0, 5, 10, 30));
+  assert.strictEqual(DL.toDate('2024-01-05T10:30:00 +0100'), Date.UTC(2024, 0, 5, 9, 30));
+  assert.ok(isNaN(DL.toDate('2024-01-05T25:30:00Z')));
+});
+test('number fields can require whole numbers', () => {
+  const p = Object.assign(DL.defaultParams('calculate'), { left: 'A', rightKind: 'number', rightNumber: 1, decimals: '2.5' });
+  assert.ok(DL.validateParams('calculate', p, ['A']).some((m) => m.indexOf('whole number') >= 0));
+  p.decimals = '2';
+  assert.deepStrictEqual(DL.validateParams('calculate', p, ['A']), []);
+  assert.ok(DL.validateParams('padTrim', Object.assign(DL.defaultParams('padTrim'), { columns: ['A'], pad: 'left', length: '99999' }), ['A']).length === 1);
+});
+test('columns coerce drops repeated names, rule enums are checked', () => {
+  assert.deepStrictEqual(DL.cleanParams('case', { columns: ['A', 'A', 'B'] }).columns, ['A', 'B']);
+  const k = DL.cleanParams('sort', { keys: [{ column: 'A', type: 'bogus', dir: 'up' }] }).keys[0];
+  assert.strictEqual(k.type, 'auto');
+  assert.strictEqual(k.dir, 'asc');
+  assert.strictEqual(DL.regexProblem('(a'), 'The regular expression is not valid: Invalid regular expression: /(a/u: Unterminated group');
+  assert.strictEqual(DL.regexProblem('a+'), '');
+});
+test('sort treats collator-equal values as equal and keeps rows stable', () => {
+  const t = T(['S', 'N'], [['active', '3'], ['Active', '1'], ['ACTIVE', '2'], ['b', '0']]);
+  const r = run('sort', { keys: [{ column: 'S', type: 'text', dir: 'asc' }, { column: 'N', type: 'number', dir: 'asc' }] }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((x) => x[1]), ['1', '2', '3', '0']);
+  const r2 = run('sort', { keys: [{ column: 'S', type: 'text', dir: 'asc' }] }, T(['S'], [['a'], ['A'], ['a']]));
+  assert.deepStrictEqual(rowsOf(r2.table).map((x) => x[0]), ['a', 'A', 'a']);
+  const r3 = run('sort', { keys: [{ column: 'N', type: 'number', dir: 'desc' }] }, T(['N'], [['1'], [''], ['10'], ['2']]));
+  assert.deepStrictEqual(rowsOf(r3.table).map((x) => x[0]), ['10', '2', '1', '']);
+  const r4 = run('sort', { keys: [{ column: 'N', type: 'number', dir: 'asc' }], emptyLast: false }, T(['N'], [['1'], [''], ['10'], ['2']]));
+  assert.deepStrictEqual(rowsOf(r4.table).map((x) => x[0]), ['', '1', '2', '10']);
+});
+test('TableBuilder counts rows that differ from the header', () => {
+  const b = new DL.TableBuilder({ headers: true });
+  [['a', 'b'], ['1', '2', '3'], ['4', '5', '6'], ['7', '8']].forEach((r) => b.add(r));
+  assert.strictEqual(b.ragged, 2);
+  const c = new DL.TableBuilder({ headers: true });
+  [['a', 'b', 'c'], ['1', '2'], ['3', '4']].forEach((r) => c.add(r));
+  assert.strictEqual(c.ragged, 2);
+});
+test('split with names but no maximum has unknown columns', () => {
+  const p = Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',', names: 'P, Q' });
+  assert.strictEqual(DL.predictColumns('split', p, ['A']), null);
+  const r = run('split', { column: 'A', separator: ',', names: 'P, Q' }, T(['A'], [['x,y,z']]));
+  assert.deepStrictEqual(r.table.columns, ['A', 'P', 'Q', 'A - 3']);
+});
+
 /* ---- registry ---- */
 test('every op has metadata and defaults', () => {
   DL.ops.forEach((op) => {

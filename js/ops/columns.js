@@ -112,6 +112,7 @@
   });
 
   /* ---------- Add column ---------- */
+  var NEW_COLUMN = 'New Column';
   DL.registerOp({
     id: 'addColumn',
     name: 'Add Column',
@@ -120,7 +121,7 @@
     description: 'Add a new column with a fixed value, a row number, or today\'s date.',
     keywords: 'constant static new field index',
     params: [
-      { key: 'name', label: 'Column name', type: 'text', default: 'New Column', notBlank: true },
+      { key: 'name', label: 'Column name', type: 'text', default: NEW_COLUMN, notBlank: true },
       { key: 'kind', label: 'Fill with', type: 'select', default: 'value',
         options: [
           { value: 'value', label: 'A fixed value' },
@@ -129,17 +130,17 @@
           { value: 'empty', label: 'Nothing (empty)' }
         ] },
       { key: 'value', label: 'Value', type: 'text', default: '', showIf: function (p) { return p.kind === 'value'; } },
-      { key: 'start', label: 'Start at', type: 'number', default: 1, required: true, showIf: function (p) { return p.kind === 'rowNumber'; } },
+      { key: 'start', label: 'Start at', type: 'number', default: 1, required: true, integer: true, showIf: function (p) { return p.kind === 'rowNumber'; } },
       { key: 'position', label: 'Position', type: 'select', default: 'end',
         options: [{ value: 'end', label: 'Last column' }, { value: 'start', label: 'First column' }] }
     ],
     summary: function (p) { return '"' + p.name + '"' + (p.kind === 'value' ? ' = "' + p.value + '"' : ' (' + p.kind + ')'); },
     outputColumns: function (cols, p) {
-      var n = DL.uniqueName(cols, DL.cleanName(p.name, 'New Column'));
+      var n = DL.uniqueName(cols, DL.cleanName(p.name, NEW_COLUMN));
       return p.position === 'start' ? [n].concat(cols) : cols.concat([n]);
     },
     apply: function (table, p) {
-      var name = DL.uniqueName(table.columns, DL.cleanName(p.name, 'New Column'));
+      var name = DL.uniqueName(table.columns, DL.cleanName(p.name, NEW_COLUMN));
       var n = table.length;
       var values = new Array(n);
       var i;
@@ -155,6 +156,7 @@
   });
 
   /* ---------- Calculate ---------- */
+  var RESULT = 'Result';
   var CALC = {
     '+': function (a, b) { return a + b; },
     '-': function (a, b) { return a - b; },
@@ -182,13 +184,13 @@
         options: [{ value: 'column', label: 'Another column' }, { value: 'number', label: 'A fixed number' }] },
       { key: 'right', label: 'Second column', type: 'column', showIf: function (p) { return p.rightKind !== 'number'; } },
       { key: 'rightNumber', label: 'Number', type: 'number', default: 1, required: true, showIf: function (p) { return p.rightKind === 'number'; } },
-      { key: 'output', label: 'New column name', type: 'text', default: 'Result', notBlank: true },
-      { key: 'decimals', label: 'Round to decimals', type: 'number', default: '', min: 0, max: 15, help: 'Leave empty to keep all decimals.' },
+      { key: 'output', label: 'New column name', type: 'text', default: RESULT, notBlank: true },
+      { key: 'decimals', label: 'Round to decimals', type: 'number', default: '', min: 0, max: 15, integer: true, help: 'Leave empty to keep all decimals.' },
       { key: 'onError', label: 'When a value is not a number', type: 'select', default: 'blank',
         options: [{ value: 'blank', label: 'Leave the result empty' }, { value: 'zero', label: 'Treat it as 0' }, { value: 'text', label: 'Write "error"' }] }
     ],
     summary: function (p) { return p.output + ' = ' + p.left + ' ' + p.operator + ' ' + (p.rightKind === 'number' ? p.rightNumber : p.right); },
-    outputColumns: function (cols, p) { return cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, 'Result'))]); },
+    outputColumns: function (cols, p) { return cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, RESULT))]); },
     apply: function (table, p) {
       var useNum = p.rightKind === 'number';
       var left = DL.col(table, DL.requireCol(table, p.left));
@@ -214,7 +216,7 @@
         else values[i] = dec >= 0 ? DL.formatFixed(v, dec) : DL.numberText(v);
       }
       var notes = bad ? [DL.pluralize(bad, 'row') + ' could not be calculated.'] : [];
-      return { table: DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, 'Result')), values), notes: notes };
+      return { table: DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, RESULT)), values), notes: notes };
     }
   });
 
@@ -228,7 +230,7 @@
     keywords: 'decimal round currency thousands separator numeric',
     params: [
       { key: 'columns', label: 'Columns', type: 'columns' },
-      { key: 'decimals', label: 'Decimals', type: 'number', default: 2, min: 0, max: 15, required: true },
+      { key: 'decimals', label: 'Decimals', type: 'number', default: 2, min: 0, max: 15, integer: true, required: true },
       { key: 'thousands', label: 'Thousands separator', type: 'select', default: '',
         options: [{ value: '', label: 'None (1234567)' }, { value: ',', label: 'Comma (1,234,567)' }, { value: '.', label: 'Period (1.234.567)' }, { value: ' ', label: 'Space (1 234 567)' }, { value: "'", label: "Apostrophe (1'234'567)" }] },
       { key: 'decimalSep', label: 'Decimal separator', type: 'select', default: '.',
@@ -271,7 +273,7 @@
     description: 'Write a small JavaScript function that returns the value for a new column. Use row["Column name"] to read values.',
     keywords: 'code script formula custom function',
     params: [
-      { key: 'output', label: 'New column name', type: 'text', default: 'Result', notBlank: true },
+      { key: 'output', label: 'New column name', type: 'text', default: RESULT, notBlank: true },
       { key: 'code', label: 'Code', type: 'code', default: '// row is an object with one property per column.\n// index is the row number, starting at 0.\n// Return the value for the new column.\nreturn row["Column name"];',
         help: 'The code runs once per row as the body of a function (row, index, num, date). num(x) and date(x) turn text into a number or a date.' },
       { key: 'replaceColumn', label: 'Write into an existing column instead', type: 'column', required: false, help: 'Leave empty to create a new column.' }
@@ -282,11 +284,11 @@
       try { new Function('row', 'index', 'num', 'date', p.code); } catch (e) { return ['The code has a syntax error: ' + e.message]; }
       return [];
     },
-    outputColumns: function (cols, p) { return p.replaceColumn ? cols : cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, 'Result'))]); },
+    outputColumns: function (cols, p) { return p.replaceColumn ? cols : cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, RESULT))]); },
     apply: function (table, p) {
       var fn = new Function('row', 'index', 'num', 'date', p.code);
       var cols = table.columns;
-      var target = p.replaceColumn ? DL.colIndex(table, p.replaceColumn) : -1;
+      var target = p.replaceColumn ? DL.requireCol(table, p.replaceColumn) : -1;
       var errors = 0, firstError = '';
       var dateFn = function (x) { var t = DL.toDate(x); return isNaN(t) ? null : new Date(t); };
       var n = table.length;
@@ -294,7 +296,7 @@
       var get = cols.map(function (name, c) { return DL.cellGetter(table, c); });
       var values = new Array(n);
       for (var i = 0; i < n; i++) {
-        var row = Object.create(null); // no inherited names such as "constructor"
+        var row = new Row(); // no inherited names such as "constructor"; fast properties
         for (var c = 0; c < w; c++) row[cols[c]] = get[c](i);
         var v;
         try {
@@ -304,11 +306,7 @@
           if (!firstError) firstError = e.message;
           v = '';
         }
-        if (v == null) v = '';
-        else if (v instanceof Date) v = DL.formatDateISO(v.getTime());
-        else if (typeof v === 'number') v = DL.numberText(v);
-        else if (typeof v !== 'string') v = typeof v === 'object' ? JSON.stringify(v) : String(v);
-        values[i] = v;
+        values[i] = v != null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : DL.cellText(v);
       }
       var notes = errors ? [DL.pluralize(errors, 'row') + ' caused an error. First error: ' + firstError] : [];
       var out;
@@ -320,4 +318,8 @@
       return { table: out, notes: notes };
     }
   });
+
+  // Row objects for the JavaScript operation: no prototype, so column names never clash with Object members.
+  function Row() {}
+  Row.prototype = Object.create(null);
 })(typeof self !== 'undefined' ? self : this);

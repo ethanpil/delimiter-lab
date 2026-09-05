@@ -94,6 +94,8 @@
     };
   };
 
+  var PROBLEMS = 'Problems';
+
   DL.registerOp({
     id: 'verify',
     name: 'Verify Values',
@@ -109,11 +111,11 @@
           { value: 'failed', label: 'Keep only rows with problems' },
           { value: 'passed', label: 'Keep only rows without problems' }
         ] },
-      { key: 'flagColumn', label: 'Problems column name', type: 'text', default: 'Problems', notBlank: true, showIf: function (p) { return p.action === 'flag'; } }
+      { key: 'flagColumn', label: 'Problems column name', type: 'text', default: PROBLEMS, notBlank: true, showIf: function (p) { return p.action === 'flag'; } }
     ],
     summary: function (p) { return DL.pluralize(p.rules.length, 'rule') + ', ' + p.action; },
     outputColumns: function (cols, p) {
-      return p.action === 'flag' ? cols.concat([DL.uniqueName(cols, DL.cleanName(p.flagColumn, 'Problems'))]) : cols;
+      return p.action === 'flag' ? cols.concat([DL.uniqueName(cols, DL.cleanName(p.flagColumn, PROBLEMS))]) : cols;
     },
     apply: function (table, p) {
       var n = table.length;
@@ -137,7 +139,7 @@
         else if (wantFailed ? !!problems : !problems) keep.push(i);
       }
       var out = flag
-        ? DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.flagColumn, 'Problems')), flags)
+        ? DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.flagColumn, PROBLEMS)), flags)
         : DL.selectRows(table, keep);
       var notes = [];
       if (failedRows === 0) notes.push('All ' + DL.pluralize(n, 'row') + ' passed.');

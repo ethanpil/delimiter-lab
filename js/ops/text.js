@@ -34,6 +34,7 @@
   });
 
   /* ---------- Concat ---------- */
+  var COMBINED = 'Combined';
   DL.registerOp({
     id: 'concat',
     name: 'Combine Columns',
@@ -44,14 +45,14 @@
     params: [
       { key: 'columns', label: 'Columns to join (in order)', type: 'columns', ordered: true, help: 'Drag to change the order.' },
       { key: 'separator', label: 'Separator', type: 'text', default: ' ', help: 'Text placed between the values. Use \\t for a tab.' },
-      { key: 'output', label: 'New column name', type: 'text', default: 'Combined', notBlank: true },
+      { key: 'output', label: 'New column name', type: 'text', default: COMBINED, notBlank: true },
       { key: 'skipEmpty', label: 'Skip empty values', type: 'boolean', default: true, help: 'Avoids double separators when a value is empty.' },
       { key: 'removeSource', label: 'Remove the original columns', type: 'boolean', default: false }
     ],
     summary: function (p) { return p.columns.join(' + ') + ' → ' + p.output; },
     outputColumns: function (cols, p) {
       var out = p.removeSource ? cols.filter(function (c) { return p.columns.indexOf(c) < 0; }) : cols;
-      return out.concat([DL.uniqueName(out, DL.cleanName(p.output, 'Combined'))]);
+      return out.concat([DL.uniqueName(out, DL.cleanName(p.output, COMBINED))]);
     },
     apply: function (table, p) {
       var idxs = DL.colIndexes(table, p.columns);
@@ -72,7 +73,7 @@
         values[i] = out;
       }
       var base = p.removeSource ? DL.dropColumns(table, idxs) : table;
-      return { table: DL.addColumn(base, DL.uniqueName(base.columns, DL.cleanName(p.output, 'Combined')), values) };
+      return { table: DL.addColumn(base, DL.uniqueName(base.columns, DL.cleanName(p.output, COMBINED)), values) };
     }
   });
 
@@ -102,11 +103,10 @@
     return out;
   }
 
-  function splitNames(p, base) {
+  function splitNames(p) {
     var custom = (p.names || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-    var max = p.maxParts !== '' && p.maxParts != null ? Math.max(1, Number(p.maxParts)) : 0;
-    var known = max || custom.length; // number of columns known before the step runs
-    return { custom: custom, max: max, known: known, base: base };
+    var max = p.maxParts !== '' && p.maxParts != null ? Math.max(1, Math.round(Number(p.maxParts))) : 0;
+    return { custom: custom, max: max, column: p.column }; // with a maximum, the number of new columns is known
   }
 
   function splitColumnName(names, c) {
@@ -124,29 +124,26 @@
       { key: 'column', label: 'Column to split', type: 'column' },
       { key: 'separator', label: 'Separator', type: 'text', default: ',', required: true, help: 'Text to split on. Use \\t for a tab.' },
       { key: 'regex', label: 'Separator is a regular expression', type: 'boolean', default: false },
-      { key: 'maxParts', label: 'Maximum parts', type: 'number', default: '', min: 1, help: 'Leave empty to split into as many parts as needed. The last part keeps the rest of the text.' },
+      { key: 'maxParts', label: 'Maximum parts', type: 'number', default: '', min: 1, max: 1000, integer: true, help: 'Leave empty to split into as many parts as needed. The last part keeps the rest of the text.' },
       { key: 'names', label: 'New column names', type: 'text', default: '', help: 'Comma separated names for the new columns. Leave empty to use "Column - 1", "Column - 2", …' },
       { key: 'trim', label: 'Trim spaces around each part', type: 'boolean', default: true },
       { key: 'removeSource', label: 'Remove the original column', type: 'boolean', default: false }
     ],
     summary: function (p) { return 'Split "' + p.column + '" on "' + p.separator + '"'; },
     validate: function (p) {
-      if (p.regex) { try { new RegExp(p.separator); } catch (e) { return ['The regular expression is not valid: ' + e.message]; } }
-      return [];
+      return p.regex && DL.regexProblem(p.separator, 'g') ? [DL.regexProblem(p.separator, 'g')] : [];
     },
     outputColumns: function (cols, p) {
       var names = splitNames(p);
-      names.column = p.column;
-      if (!names.known) return null; // the number of parts depends on the data
+      if (!names.max) return null; // the number of parts depends on the data
       var out = p.removeSource ? cols.filter(function (c) { return c !== p.column; }) : cols.slice();
-      for (var c = 0; c < names.known; c++) out.push(DL.uniqueName(out, splitColumnName(names, c)));
+      for (var c = 0; c < names.max; c++) out.push(DL.uniqueName(out, splitColumnName(names, c)));
       return out;
     },
     apply: function (table, p) {
       var idx = DL.requireCol(table, p.column);
       var sep = p.regex ? new RegExp(p.separator, 'g') : unescapeText(p.separator);
       var names = splitNames(p);
-      names.column = p.column;
       var src = DL.col(table, idx);
       var n = table.length;
       var values = []; // one array per new column, made when a row has that many parts
@@ -159,7 +156,7 @@
           values[c][i] = trim ? parts[c].trim() : parts[c];
         }
       }
-      while (values.length < names.known) values.push(new Array(n).fill(''));
+      while (values.length < names.max) values.push(new Array(n).fill(''));
       var out = p.removeSource ? DL.dropColumns(table, [idx]) : table;
       for (c = 0; c < values.length; c++) out = DL.addColumn(out, DL.uniqueName(out.columns, splitColumnName(names, c)), values[c]);
       return { table: out, notes: ['Split into ' + DL.pluralize(values.length, 'column') + '.'] };
@@ -261,8 +258,11 @@
       var src = DL.col(table, idx);
       var n = table.length;
       var values = order.map(function () { return new Array(n); });
+      var cache = new Map(); // names repeat often: split each different value once
       for (var i = 0; i < n; i++) {
-        var parts = DL.splitName(src[i]);
+        var v = src[i];
+        var parts = cache.get(v);
+        if (!parts) { parts = DL.splitName(v); if (cache.size < 50000) cache.set(v, parts); }
         for (var k = 0; k < order.length; k++) values[k][i] = parts[order[k]];
       }
       var out = p.removeSource ? DL.dropColumns(table, [idx]) : table;
@@ -301,8 +301,7 @@
     ],
     summary: function (p) { return '"' + p.find + '" → "' + p.replace + '"'; },
     validate: function (p) {
-      if (p.regex) { try { new RegExp(p.find, 'u'); } catch (e) { return ['The regular expression is not valid: ' + e.message]; } }
-      return [];
+      return p.regex && DL.regexProblem(p.find) ? [DL.regexProblem(p.find)] : [];
     },
     apply: function (table, p) {
       var idxs = DL.colIndexesOrAll(table, p.columns);
@@ -408,7 +407,7 @@
           { value: 'left', label: 'Add at the start (e.g. leading zeros)' },
           { value: 'right', label: 'Add at the end' }
         ] },
-      { key: 'length', label: 'Pad to length', type: 'number', default: 5, min: 1, required: true, showIf: function (p) { return p.pad !== 'none'; } },
+      { key: 'length', label: 'Pad to length', type: 'number', default: 5, min: 1, max: 10000, integer: true, required: true, showIf: function (p) { return p.pad !== 'none'; } },
       { key: 'char', label: 'Pad character', type: 'text', default: '0', showIf: function (p) { return p.pad !== 'none'; } }
     ],
     summary: function (p) {

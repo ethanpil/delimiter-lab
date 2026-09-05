@@ -4,13 +4,15 @@
   var DL = root.DL;
 
   // Makes one key function(rowIndex) -> text per column, with the requested normalization.
+  // Each column is normalized once, so the hash and the comparisons read plain arrays.
   function keyGetters(table, idxs, opts) {
     var trim = !!opts.trim, ignoreCase = !!opts.ignoreCase;
-    var normalize = DL.normalizeKey;
     return idxs.map(function (i) {
       var col = DL.col(table, i);
-      if (!trim && !ignoreCase) return function (r) { return col[r]; };
-      return function (r) { return normalize(col[r], trim, ignoreCase); };
+      if (trim || ignoreCase) {
+        col = DL.mapColumns(DL.makeTable(['k'], [col], col.length), [0], function (v) { return DL.normalizeKey(v, trim, ignoreCase); }).cols[0];
+      }
+      return function (r) { return col[r]; };
     });
   }
 
@@ -162,30 +164,58 @@
 
   /* ---------- Sort ---------- */
 
-  // Sorts a text column: ranks the different values once, then does a counting sort by rank.
-  // This is much faster than a collator compare for every pair when values repeat.
+  // Ranks a text column: the different values are compared once, so that equal values
+  // (as the collator sees them) share a rank. Direction and empty placement are part of the rank.
   function textRanks(col, n, dir, emptyLast) {
     var g = DL.groupRows([function (i) { return col[i]; }], n);
     var reps = [];
     for (var i = 0; i < n; i++) if (g.first[i] === i) reps.push(i);
     var cmp = DL.compareText;
-    reps.sort(function (a, b) {
+    var compare = function (a, b) {
       var va = col[a], vb = col[b];
       var ea = va === '', eb = vb === '';
       if (ea || eb) { if (ea && eb) return 0; return (ea ? 1 : -1) * emptyLast; }
       return cmp(va, vb) * dir;
-    });
+    };
+    reps.sort(compare);
     var rankOf = new Int32Array(n); // first row of a group -> rank
-    for (i = 0; i < reps.length; i++) rankOf[reps[i]] = i;
+    var rank = 0;
+    for (i = 0; i < reps.length; i++) {
+      if (i > 0 && compare(reps[i - 1], reps[i]) !== 0) rank++;
+      rankOf[reps[i]] = rank;
+    }
     var ranks = new Int32Array(n);
     for (i = 0; i < n; i++) ranks[i] = rankOf[g.first[i]];
-    return { ranks: ranks, groups: reps.length };
+    return { ranks: ranks, groups: rank + 1 };
   }
 
+  // Ranks a number or date column with a native typed-array sort. Equal values share a rank.
+  function numberRanks(vals, n, dir, emptyLast) {
+    var sorted = [];
+    for (var i = 0; i < n; i++) if (vals[i] === vals[i]) sorted.push(vals[i]);
+    sorted = Float64Array.from(sorted).sort();
+    var distinct = [];
+    for (i = 0; i < sorted.length; i++) if (i === 0 || sorted[i] !== sorted[i - 1]) distinct.push(sorted[i]);
+    var groups = distinct.length;
+    var ranks = new Int32Array(n);
+    var emptyRank = emptyLast > 0 ? groups : 0;
+    var offset = emptyLast > 0 ? 0 : 1;
+    for (i = 0; i < n; i++) {
+      var v = vals[i];
+      if (v !== v) { ranks[i] = emptyRank; continue; }
+      // Binary search for the rank of v.
+      var lo = 0, hi = groups - 1;
+      while (lo < hi) { var mid = (lo + hi) >> 1; if (distinct[mid] < v) lo = mid + 1; else hi = mid; }
+      ranks[i] = offset + (dir > 0 ? lo : groups - 1 - lo);
+    }
+    return { ranks: ranks, groups: groups + 1 };
+  }
+
+  // A stable counting sort of the order by rank.
   function countingSort(order, ranks, groups) {
-    var n = ranks.length;
+    var n = order.length;
     var starts = new Int32Array(groups + 1);
-    for (var i = 0; i < n; i++) starts[ranks[i] + 1]++;
+    for (var i = 0; i < n; i++) starts[ranks[order[i]] + 1]++;
     for (i = 0; i < groups; i++) starts[i + 1] += starts[i];
     var out = new Uint32Array(n);
     for (i = 0; i < n; i++) { var r = order[i]; out[starts[ranks[r]]++] = r; }
@@ -209,52 +239,28 @@
       var emptyLast = p.emptyLast !== false ? 1 : -1;
       var keys = p.keys.map(function (k) {
         var col = DL.col(table, DL.requireCol(table, k.column));
-        var type = k.type === 'auto' || !k.type ? DL.detectType(col) : k.type;
+        var type = k.type === 'auto' ? DL.detectType(col) : k.type;
         var dir = k.dir === 'desc' ? -1 : 1;
-        var key = { column: k.column, type: type, dir: dir };
-        if (type === 'text') {
-          var tr = textRanks(col, n, dir, emptyLast);
-          key.ranks = tr.ranks;
-          key.groups = tr.groups;
-        } else {
-          // Parse once, so the comparator does not parse again.
+        var ranked;
+        if (type === 'text') ranked = textRanks(col, n, dir, emptyLast);
+        else {
           var parse = type === 'number' ? DL.toNumber : DL.toDate;
           var vals = new Float64Array(n);
           for (var i = 0; i < n; i++) vals[i] = col[i] === '' ? NaN : parse(col[i]);
-          key.vals = vals;
+          ranked = numberRanks(vals, n, dir, emptyLast);
         }
-        return key;
+        return { column: k.column, type: type, ranks: ranked.ranks, groups: ranked.groups };
       });
-      var order;
-      if (keys.length === 1 && keys[0].ranks) {
-        var base = new Uint32Array(n);
-        for (var j = 0; j < n; j++) base[j] = j;
-        order = countingSort(base, keys[0].ranks, keys[0].groups);
-      } else {
-        order = new Array(n);
-        for (j = 0; j < n; j++) order[j] = j;
-        order.sort(function (a, b) {
-          for (var k = 0; k < keys.length; k++) {
-            var key = keys[k];
-            var c;
-            if (key.ranks) {
-              c = key.ranks[a] - key.ranks[b]; // rank order already includes direction and empty placement
-            } else {
-              var va = key.vals[a], vb = key.vals[b];
-              var na = va !== va, nb = vb !== vb;
-              if (na || nb) { if (na && nb) continue; return (na ? 1 : -1) * emptyLast; }
-              c = (va < vb ? -1 : va > vb ? 1 : 0) * key.dir;
-            }
-            if (c !== 0) return c;
-          }
-          return a - b; // stable
-        });
-      }
+      // Stable counting sorts from the last key to the first give the same order as a comparator.
+      var order = new Uint32Array(n);
+      for (var j = 0; j < n; j++) order[j] = j;
+      for (var k = keys.length - 1; k >= 0; k--) order = countingSort(order, keys[k].ranks, keys[k].groups);
       return { table: DL.selectRows(table, order), notes: keys.map(function (k) { return k.column + ' sorted as ' + k.type; }) };
     }
   });
 
   /* ---------- Outliers ---------- */
+  var OUTLIER = 'Outlier';
   DL.registerOp({
     id: 'outliers',
     name: 'Find Outliers',
@@ -279,11 +285,11 @@
           { value: 'remove', label: 'Remove the outliers' },
           { value: 'flag', label: 'Add a column that marks outliers' }
         ] },
-      { key: 'flagColumn', label: 'Flag column name', type: 'text', default: 'Outlier', notBlank: true, showIf: function (p) { return p.action === 'flag'; } }
+      { key: 'flagColumn', label: 'Flag column name', type: 'text', default: OUTLIER, notBlank: true, showIf: function (p) { return p.action === 'flag'; } }
     ],
     summary: function (p) { return p.action + ' outliers in "' + p.column + '" (' + p.method + ')'; },
     outputColumns: function (cols, p) {
-      return p.action === 'flag' ? cols.concat([DL.uniqueName(cols, DL.cleanName(p.flagColumn, 'Outlier'))]) : cols;
+      return p.action === 'flag' ? cols.concat([DL.uniqueName(cols, DL.cleanName(p.flagColumn, OUTLIER))]) : cols;
     },
     apply: function (table, p) {
       var col = DL.col(table, DL.requireCol(table, p.column));
@@ -325,27 +331,19 @@
       }
       notes.push('Normal range: ' + round(lo) + ' to ' + round(hi) + '.');
       var count = 0;
-      var out;
-      if (p.action === 'flag') {
-        var flags = new Array(n);
-        for (i = 0; i < n; i++) {
-          var v = nums[i];
-          var isOut = v === v && (v < lo || v > hi);
-          if (isOut) count++;
-          flags[i] = isOut ? (v < lo ? 'low' : 'high') : '';
-        }
-        out = DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.flagColumn, 'Outlier')), flags);
-      } else {
-        var keepOut = p.action === 'keep';
-        var keep = [];
-        for (i = 0; i < n; i++) {
-          var y = nums[i];
-          var o = y === y && (y < lo || y > hi);
-          if (o) count++;
-          if (o === keepOut) keep.push(i);
-        }
-        out = DL.selectRows(table, keep);
+      var flags = p.action === 'flag' ? new Array(n) : null;
+      var keepOut = p.action === 'keep';
+      var keep = [];
+      for (i = 0; i < n; i++) {
+        var v = nums[i];
+        var isOut = v === v && (v < lo || v > hi);
+        if (isOut) count++;
+        if (flags) flags[i] = isOut ? (v < lo ? 'low' : 'high') : '';
+        else if (isOut === keepOut) keep.push(i);
       }
+      var out = flags
+        ? DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.flagColumn, OUTLIER)), flags)
+        : DL.selectRows(table, keep);
       notes.unshift('Found ' + DL.pluralize(count, 'outlier') + '.');
       return { table: out, notes: notes };
     }
@@ -382,7 +380,7 @@
       var g = DL.groupRows(getters, n);
       var entries = [];
       for (var i = 0; i < n; i++) if (g.first[i] === i) entries.push({ row: i, count: g.count[i] });
-      var keyText = function (row) { return getters.map(function (get) { return get(row); }).join(' '); };
+      var keyText = function (row) { return getters.map(function (get) { return get(row); }).join('\u0000'); };
       if (p.sortBy === 'count') entries.sort(function (a, b) { return b.count - a.count || a.row - b.row; });
       else if (p.sortBy === 'value') entries.sort(function (a, b) { return DL.compareText(keyText(a.row), keyText(b.row)); });
       var out = DL.selectRows(DL.pickColumns(table, idxs), entries.map(function (e) { return e.row; }));
