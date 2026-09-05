@@ -10,6 +10,7 @@
 - Change: the worker checks step settings against the real input columns (7fdb2f2).
 - Change: filtered and sorted results share text with their input, which uses much less memory (7fdb2f2).
 - Add: field type, input format and output format registries for extensions (7fdb2f2).
+- Fix: separator detection in small files, header cells with dates, sort key labels, one-column paste in the lookup list (35fce00).
 
 ## 1.0.0
 
