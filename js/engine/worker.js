@@ -4,8 +4,8 @@
 'use strict';
 var V = self.location.search || '';
 importScripts('../manifest.js' + V);
-importScripts.apply(self, ['../../vendor/papaparse.min.js'].concat(DL.FILES.engine, DL.FILES.ops).map(function (f) {
-  return (f.indexOf('vendor') === 0 || f.indexOf('../') === 0 ? f : '../../' + f) + V;
+importScripts.apply(self, ['../../vendor/papaparse.min.js' + V].concat(DL.FILES.engine, DL.FILES.ops).map(function (f) {
+  return f.indexOf('../') === 0 ? f : '../../' + f + V;
 }));
 
 var xlsxLoaded = false;
@@ -19,6 +19,8 @@ var state = {
   sourceKey: '',         // identifies the loaded file and options in step hashes
   steps: [],             // [{ id, opId, params, skip }]
   cache: new Map(),      // stepId -> entry (see makeEntry)
+  pinned: [],            // step ids on screen: their tables stay in memory
+  recent: [],            // step ids read most recently by the preview
   maxCells: 8e6,
   cacheBudgetCells: 24e6,
   useCounter: 0
@@ -117,11 +119,16 @@ TextStream.prototype.on = function (event, fn) { this.handlers[event] = fn; };
 TextStream.prototype.removeListener = function (event) { delete this.handlers[event]; };
 TextStream.prototype.emit = function (event, arg) { if (this.handlers[event]) this.handlers[event](arg); };
 
-// Finds the column separator from the first lines of the text. Blank lines are not counted.
-function guessDelimiter(text, quoteChar) {
+// Finds the column separator from the first lines of the text. Skipped and blank lines are not counted.
+function guessDelimiter(text, quoteChar, skipLines) {
   var sample = text.slice(0, 65536);
   var cut = sample.lastIndexOf('\n');
   if (cut > 0 && sample.length === 65536) sample = sample.slice(0, cut);
+  for (var i = 0; i < skipLines; i++) {
+    var nl = sample.indexOf('\n');
+    if (nl < 0) break;
+    sample = sample.slice(nl + 1);
+  }
   var res = Papa.parse(sample, { quoteChar: quoteChar, escapeChar: quoteChar, skipEmptyLines: 'greedy', preview: 50 });
   var failed = res.errors.some(function (e) { return e.type === 'Delimiter'; });
   return failed ? '' : res.meta.delimiter;
@@ -189,7 +196,7 @@ readers.delimited = function (file, opts) {
     if (!started) {
       started = true;
       if (!delimiter) {
-        delimiter = guessDelimiter(text, quoteChar);
+        delimiter = guessDelimiter(text, quoteChar, Math.max(0, Number(opts.skipRows) || 0));
         if (!delimiter) { errors.delimiter++; delimiter = ','; }
       }
       config.delimiter = delimiter;
@@ -266,13 +273,15 @@ function loadFile(msg, reply) {
 
 /* ---------- Chain execution with caching ---------- */
 
+// A 64-bit content hash from two 32-bit FNV-1a passes with different seeds.
 function hashOf(str) {
-  var h = 2166136261;
+  var h1 = 2166136261, h2 = 1234567891;
   for (var i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
+    var c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619);
+    h2 = Math.imul(h2 ^ c, 16777619);
   }
-  return (h >>> 0).toString(36);
+  return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
 }
 
 function stepHash(step, upstreamHash) {
@@ -332,9 +341,10 @@ function cacheCells() {
 }
 
 // Frees least-recently-used results when the cache is bigger than the budget.
-// The steps in protect (the ones on screen) are kept.
-function enforceBudget(protect) {
+// The steps on screen (state.pinned, state.recent) and the steps in keep are not freed.
+function enforceBudget(keep) {
   if (cacheCells() <= state.cacheBudgetCells) return;
+  var protect = state.pinned.concat(state.recent, keep || []);
   var entries = [];
   state.cache.forEach(function (entry, id) { if (entry.table && protect.indexOf(id) < 0) entries.push({ id: id, entry: entry }); });
   entries.sort(function (a, b) { return a.entry.lastUsed - b.entry.lastUsed; });
@@ -345,9 +355,10 @@ function enforceBudget(protect) {
 }
 
 // Runs the whole chain. Results with a table are kept by content hash. The other results are
-// quick to make and are made again on each run, so a step that is fixed or removed does not keep an old verdict.
+// quick to make, so each run makes them again. A step that is fixed or removed never shows an old result.
 function runChain(msg) {
   state.steps = msg.steps || [];
+  state.pinned = msg.protect || [];
   if (!state.source) return [];
   var results = [];
   var upstream = state.source;
@@ -371,13 +382,15 @@ function runChain(msg) {
     if (!entry.table) blocked = 'Waiting for step ' + (i + 1) + (entry.status === 'error' ? ' to be fixed.' : ' to be completed.');
     results.push(resultOf(step, entry));
     if (entry.table) { upstream = entry.table; upstreamHash = h; }
+    enforceBudget([step.id]); // keep memory in check while the chain runs
     if (Date.now() - progressAt > 150) {
       progressAt = Date.now();
       progress('Running step ' + (i + 1) + ' of ' + state.steps.length, Math.round(100 * (i + 1) / state.steps.length));
     }
   }
   Array.from(state.cache.keys()).forEach(function (id) { if (!live.has(id)) state.cache.delete(id); });
-  enforceBudget(msg.protect || []);
+  state.recent = state.recent.filter(function (id) { return live.has(id); });
+  enforceBudget([]);
   return results;
 }
 
@@ -388,6 +401,7 @@ function tableFor(stepId) {
   var idx = -1;
   for (var i = 0; i < state.steps.length; i++) if (state.steps[i].id === stepId) { idx = i; break; }
   if (idx < 0) return null;
+  state.recent = [stepId].concat(state.recent.filter(function (id) { return id !== stepId; })).slice(0, 2);
   var entry = state.cache.get(stepId);
   if (entry && entry.table) { touch(entry); return entry.table; }
   // Recompute from the nearest upstream result that is still in memory.
@@ -407,7 +421,7 @@ function tableFor(stepId) {
     upstream = ne.table;
     upstreamHash = h;
   }
-  enforceBudget([stepId]);
+  enforceBudget([]);
   return upstream;
 }
 
@@ -500,13 +514,20 @@ writers.xlsx = function (table, o, format) {
   ensureXlsx();
   var n = table.length;
   if (n > 1048575) throw new Error('Excel files can hold at most 1,048,576 rows. Use CSV for this data.');
-  progress('Building Excel file', 30);
-  var aoa = DL.rowsSlice(table, 0, n);
-  if (o.header !== false) aoa.unshift(table.columns);
-  var ws = XLSX.utils.aoa_to_sheet(aoa, { dense: true });
-  aoa = null;
+  // The Excel writer needs several copies of the data in memory.
+  if (n * table.columns.length > state.maxCells / 4) throw new Error('This table is too large for an Excel file in the browser. Use CSV for this data.');
+  var BLOCK = 20000;
+  var ws = XLSX.utils.aoa_to_sheet(o.header !== false ? [table.columns] : [], { dense: true });
+  var at = o.header !== false ? 1 : 0;
+  for (var start = 0; start < n; start += BLOCK) {
+    var end = Math.min(n, start + BLOCK);
+    XLSX.utils.sheet_add_aoa(ws, DL.rowsSlice(table, start, end), { origin: at + start });
+    progress('Building Excel file', Math.round(60 * end / n));
+  }
   var wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, DL.cleanName(o.sheetName, 'Data').slice(0, 31));
+  var sheetName = DL.cleanName(o.sheetName, 'Data').replace(/[:\\\/?*\[\]]/g, '_').slice(0, 31);
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  progress('Building Excel file', 80);
   var out = XLSX.write(wb, { type: 'array', bookType: 'xlsx', compression: true });
   return new Blob([out], { type: format.mime });
 };
