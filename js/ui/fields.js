@@ -108,8 +108,9 @@
     return ul;
   }
 
-  // A list of rows with an "Add" button. opts = { blank(), renderRow(row, api) -> element, addLabel, focusSelector }
-  // api = { emit(merge), remove() }. Rows are copied before they go to the store.
+  // A list of rows with an "Add" button. opts = { blank(), renderRow(row, api, index) -> element, addLabel, focusSelector }
+  // api = { emit(merge), remove(), edit(fn) }. edit(fn) calls fn(rows, index), then rebuilds the list.
+  // Rows are copied before they go to the store.
   function listEditor(param, value, ctx, opts) {
     var rows = (value && value.length ? value : [opts.blank()]).map(function (r) { return Object.assign(opts.blank(), r); });
     var box = U.el('div', { class: 'rows-editor' });
@@ -120,8 +121,8 @@
         box.appendChild(opts.renderRow(r, {
           emit: emit,
           remove: function () { rows.splice(i, 1); if (!rows.length) rows.push(opts.blank()); rebuild(); emit(); },
-          replace: function (list) { rows.splice.apply(rows, [i, 1].concat(list.map(function (x) { return Object.assign(opts.blank(), x); }))); rebuild(); emit(); }
-        }));
+          edit: function (fn) { fn(rows, i); if (!rows.length) rows.push(opts.blank()); rebuild(); emit(); }
+        }, i));
       });
     }
     rebuild();
@@ -336,19 +337,32 @@
         from.addEventListener('input', function () { r.from = from.value; api.emit(true); });
         to.addEventListener('input', function () { r.to = to.value; api.emit(true); });
         // A pasted block of two tab separated columns fills many rows at once.
-        var paste = function (e) {
+        // One pasted column fills the box it was pasted into, and the boxes below it.
+        var paste = function (e, isTo) {
           var text = (e.clipboardData || window.clipboardData).getData('text');
           if (!text || (text.indexOf('\n') < 0 && text.indexOf('\t') < 0)) return;
-          e.preventDefault();
           var lines = text.split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
-          api.replace(lines.map(function (l) {
+          if (!lines.length) return;
+          e.preventDefault();
+          var parsed = lines.map(function (l) {
             var parts = l.split('\t');
             if (parts.length < 2) parts = l.split(',');
             return { from: (parts[0] || '').trim(), to: parts.slice(1).join(',').trim() };
-          }));
+          });
+          var oneColumn = parsed.every(function (p) { return p.to === ''; });
+          api.edit(function (rows, i) {
+            if (oneColumn) {
+              parsed.forEach(function (p, k) {
+                if (!rows[i + k]) rows.push({ from: '', to: '' });
+                rows[i + k][isTo ? 'to' : 'from'] = p.from;
+              });
+            } else {
+              rows.splice.apply(rows, [i, 1].concat(parsed));
+            }
+          });
         };
-        from.addEventListener('paste', paste);
-        to.addEventListener('paste', paste);
+        from.addEventListener('paste', function (e) { paste(e, false); });
+        to.addEventListener('paste', function (e) { paste(e, true); });
         return U.el('div', { class: 'rule-row' }, [from, U.el('i', { class: 'bi bi-arrow-right text-secondary', style: 'flex:0 0 auto' }), to, removeButton('Remove', api.remove)]);
       }
     });
@@ -401,15 +415,14 @@
   var SORT_DIRS = [{ value: 'asc', label: 'A → Z / low → high' }, { value: 'desc', label: 'Z → A / high → low' }];
 
   renderers.sortKeys = function (param, value, ctx) {
-    var index = 0;
     var editor = listEditor(param, value, ctx, {
       blank: function () { return { column: '', type: 'auto', dir: 'asc' }; },
       addLabel: 'Add another column',
-      renderRow: function (k, api) {
+      renderRow: function (k, api, index) {
         var col = colSelect(ctx.columns, k.column);
         col.addEventListener('change', function () { k.column = col.value; api.emit(); });
         var row = U.el('div', { class: 'rule-row' }, [
-          U.el('span', { class: 'text-secondary small', style: 'flex:0 0 auto', text: index++ === 0 ? 'Sort by' : 'then by' }),
+          U.el('span', { class: 'text-secondary small', style: 'flex:0 0 auto', text: index === 0 ? 'Sort by' : 'then by' }),
           col,
           U.select(SORT_TYPES, k.type, function (v) { k.type = v; api.emit(); }),
           U.select(SORT_DIRS, k.dir, function (v) { k.dir = v; api.emit(); }),

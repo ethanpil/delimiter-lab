@@ -90,7 +90,7 @@
       self.rowsEl.style.height = Math.max(1, Math.round(self.total * ROW_H * self.scale)) + 'px';
       self.renderHeader();
       self.renderRows();
-      if (!self.total) self.showMessage(self.columns.length ? 'No rows. ' + (message || '') : (message || 'No data.'));
+      if (!self.total) self.showMessage(self.columns.length ? 'No rows.' : 'No data.');
       self.engine.columnInfo(stepId).then(function (r) {
         if (self.showVersion !== version) return;
         self.info = r.info;

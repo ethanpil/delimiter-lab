@@ -552,6 +552,64 @@
     return DL.pluralize(rows, 'row') + ' · ' + DL.pluralize(columns, 'column');
   };
 
+  /* ---------- Table builder (used by the file readers) ---------- */
+
+  // Makes text from a cell value: dates become "2024-01-31", numbers keep full precision.
+  DL.cellText = function (v) {
+    if (typeof v === 'string') return v;
+    if (v == null) return '';
+    if (v instanceof Date) return isNaN(v.getTime()) ? '' : DL.formatDateISO(v.getTime());
+    if (typeof v === 'number') return DL.numberText(v);
+    if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+    return String(v);
+  };
+
+  DL.isBlankRow = function (row) {
+    for (var i = 0; i < row.length; i++) {
+      var v = row[i];
+      if (v != null && v !== '' && String(v).trim() !== '') return false;
+    }
+    return true;
+  };
+
+  // Builds a columnar table while rows arrive. Handles the header row, skipped rows and blank rows.
+  // opts: { headers, skipRows, skipEmptyLines }
+  DL.TableBuilder = function (opts) {
+    this.headers = opts.headers !== false;
+    this.toSkip = Math.max(0, Number(opts.skipRows) || 0);
+    this.dropEmpty = opts.skipEmptyLines !== false;
+    this.columns = null;
+    this.cols = [];
+    this.n = 0;
+    this.ragged = 0;
+    this.cells = 0;
+  };
+
+  DL.TableBuilder.prototype.add = function (row) {
+    if (this.toSkip > 0) { this.toSkip--; return; }
+    if (this.dropEmpty && DL.isBlankRow(row)) return;
+    if (this.columns === null && this.headers) {
+      this.columns = row.map(DL.cellText);
+      return;
+    }
+    var w = this.cols.length;
+    if (row.length > w) {
+      for (var c = w; c < row.length; c++) this.cols.push(new Array(this.n).fill(''));
+      if (this.n > 0) this.ragged++;
+    } else if (row.length < w) this.ragged++;
+    for (c = 0; c < this.cols.length; c++) this.cols[c][this.n] = c < row.length ? DL.cellText(row[c]) : '';
+    this.n++;
+    this.cells += this.cols.length;
+  };
+
+  DL.TableBuilder.prototype.finish = function () {
+    var header = this.columns || [];
+    while (this.cols.length < header.length) this.cols.push(new Array(this.n).fill(''));
+    var width = this.cols.length;
+    var names = this.headers && this.columns ? header.concat(new Array(width - header.length).fill('')) : new Array(width).fill('');
+    return DL.makeTable(DL.cleanHeaders(names), this.cols, this.n);
+  };
+
   /* ---------- Rule lists (shared by Filter, Verify and Sort) ---------- */
 
   DL.findOption = function (list, value) {
@@ -622,7 +680,8 @@
     empty: function (p) { return p && p.default != null ? p.default : ''; },
     coerce: function (v, p) {
       if (v === '' || v == null) return p.required ? this.empty(p) : '';
-      return isNaN(Number(v)) ? this.empty(p) : v;
+      if (!isText(v) || isNaN(Number(v))) return this.empty(p);
+      return v;
     },
     validate: function (v, p) {
       if (v === '' || v == null) return p.required ? ['Enter a number for "' + p.label + '".'] : [];
@@ -678,10 +737,10 @@
   };
   DL.registerParamType('columns', columnsType);
 
+  // An empty list means: keep the original order.
   DL.registerParamType('columnOrder', {
     empty: function () { return []; },
     coerce: columnsType.coerce,
-    validate: function (v) { return v.length ? [] : ['Arrange the columns.']; },
     columnsUsed: function (v) { return v.slice(); },
     init: function (columns) { return columns.slice(); }
   });
@@ -946,6 +1005,19 @@
       f.options.forEach(function (p) { if (!(p.key in out)) out[p.key] = p.default; });
     });
     out.sheet = '';
+    return out;
+  };
+
+  // Gives complete source options with values of the correct shape.
+  DL.cleanSourceOptions = function (o) {
+    var out = DL.defaultSourceOptions();
+    if (!o || typeof o !== 'object') return out;
+    DL.inputFormats.forEach(function (f) {
+      f.options.forEach(function (p) {
+        if (o[p.key] !== undefined) out[p.key] = DL.paramTypes[p.type].coerce(o[p.key], p);
+      });
+    });
+    if (typeof o.sheet === 'string') out.sheet = o.sheet;
     return out;
   };
 

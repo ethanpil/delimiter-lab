@@ -109,7 +109,7 @@
     return {
       name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Imported workflow',
       columns: Array.isArray(data.columns) ? data.columns.filter(function (c) { return typeof c === 'string'; }) : [],
-      sourceOptions: data.sourceOptions && typeof data.sourceOptions === 'object' ? data.sourceOptions : null,
+      sourceOptions: data.sourceOptions && typeof data.sourceOptions === 'object' ? DL.cleanSourceOptions(data.sourceOptions) : null,
       steps: data.steps.map(function (s) { return DL.Store.normalizeStep(s, false); })
     };
   };

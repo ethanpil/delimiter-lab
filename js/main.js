@@ -160,8 +160,8 @@
     if (shown.reason) stats += (stats ? ' · ' : '') + shown.reason;
     $('previewTitle').textContent = title;
     $('previewStats').textContent = stats;
-    var message = st.source.status === 'loading' ? 'Reading the file…' : 'Open a file to see a preview.';
-    var key = (shown.stepId || 'none') + '|' + resultKey(shown.stepId || 'source') + '|' + (shown.stepId ? '' : message);
+    var message = shown.stepId ? '' : (st.source.status === 'loading' ? 'Reading the file…' : 'Open a file to see a preview.');
+    var key = (shown.stepId || 'none') + '|' + resultKey(shown.stepId || 'source') + '|' + message;
     if (key !== previewKey) {
       previewKey = key;
       grid.show(shown.stepId, message).then(function () {

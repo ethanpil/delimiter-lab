@@ -329,6 +329,50 @@ test('sort text uses ranks with direction and empties', () => {
   assert.deepStrictEqual(rowsOf(r2.table).map((x) => x[0]), ['', 'a', 'b', 'B', 'c']);
 });
 
+test('TableBuilder handles headers, skipped rows, blank rows and ragged rows', () => {
+  const b = new DL.TableBuilder({ headers: true, skipRows: 1, skipEmptyLines: true });
+  [['title line'], ['a', 'b'], ['', ''], ['1', '2'], ['3'], ['4', '5', '6']].forEach((r) => b.add(r));
+  const t = b.finish();
+  assert.deepStrictEqual(t.columns, ['a', 'b', 'Column 3']);
+  assert.deepStrictEqual(rowsOf(t), [['1', '2', ''], ['3', '', ''], ['4', '5', '6']]);
+  assert.strictEqual(b.ragged, 2);
+  const h = new DL.TableBuilder({ headers: true });
+  h.add(['Name', new Date(2025, 0, 1), 1.5]);
+  h.add(['x', new Date(2025, 1, 15), 2]);
+  assert.deepStrictEqual(h.finish().columns, ['Name', '2025-01-01', '1.5']);
+  const n = new DL.TableBuilder({ headers: false });
+  n.add(['x', 'y']);
+  assert.deepStrictEqual(n.finish().columns, ['Column 1', 'Column 2']);
+  const e = new DL.TableBuilder({ headers: true });
+  assert.deepStrictEqual(e.finish().columns, []);
+  const wide = new DL.TableBuilder({ headers: true });
+  wide.add(['a', 'b', 'c']);
+  wide.add(['1']);
+  assert.deepStrictEqual(wide.finish().columns, ['a', 'b', 'c']);
+  assert.deepStrictEqual(rowsOf(wide.finish()), [['1', '', '']]);
+});
+test('param type coercion rejects wrong shapes', () => {
+  assert.strictEqual(DL.cleanParams('padTrim', { length: true }).length, 5);
+  assert.strictEqual(DL.cleanParams('padTrim', { length: '7' }).length, '7');
+  assert.strictEqual(DL.cleanParams('case', { mode: 'lower' }).mode, 'lower');
+  assert.strictEqual(DL.cleanParams('concat', { skipEmpty: 'yes' }).skipEmpty, true);
+  assert.deepStrictEqual(DL.cleanParams('splitName', { parts: ['first', 'bogus'] }).parts, ['first']);
+  assert.deepStrictEqual(DL.cleanParams('reorder', { order: [1, 'A'] }).order, ['1', 'A']);
+  const so = DL.cleanSourceOptions({ headers: undefined, skipRows: 'x', delimiter: 'bogus', sheet: 'S' });
+  assert.strictEqual(so.headers, true);
+  assert.strictEqual(so.skipRows, 0);
+  assert.strictEqual(so.delimiter, 'auto');
+  assert.strictEqual(so.sheet, 'S');
+  assert.deepStrictEqual(DL.validateParams('reorder', { order: [] }, ['A']), []);
+  assert.strictEqual(DL.inputFormatFor('x.XLSX').id, 'spreadsheet');
+  assert.strictEqual(DL.inputFormatFor('x.csv').id, 'delimited');
+  assert.strictEqual(DL.inputFormatFor('noext').id, 'delimited');
+});
+test('addColumn today gives a date without time', () => {
+  const r = run('addColumn', { name: 'D', kind: 'today' }, T(['A'], [['1']]));
+  assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(rowsOf(r.table)[0][1]));
+});
+
 /* ---- registry ---- */
 test('every op has metadata and defaults', () => {
   DL.ops.forEach((op) => {

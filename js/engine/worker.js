@@ -102,70 +102,6 @@ function makeDecoder(encoding, notes) {
   }
 }
 
-// Builds a columnar table while rows arrive. Handles header row, skipped rows and blank rows.
-function TableBuilder(opts) {
-  this.headers = opts.headers !== false;
-  this.toSkip = Math.max(0, Number(opts.skipRows) || 0);
-  this.dropEmpty = opts.skipEmptyLines !== false;
-  this.columns = null;
-  this.cols = [];
-  this.n = 0;
-  this.ragged = 0;
-  this.cells = 0;
-}
-
-TableBuilder.prototype.add = function (row) {
-  if (this.toSkip > 0) { this.toSkip--; return; }
-  if (this.dropEmpty && isBlankRow(row)) return;
-  if (this.columns === null && this.headers) {
-    this.columns = row;
-    return;
-  }
-  var w = this.cols.length;
-  if (row.length > w) {
-    for (var c = w; c < row.length; c++) {
-      var arr = new Array(this.n);
-      for (var i = 0; i < this.n; i++) arr[i] = '';
-      this.cols.push(arr);
-    }
-    if (this.n > 0) this.ragged++;
-  } else if (row.length < w) this.ragged++;
-  for (c = 0; c < this.cols.length; c++) this.cols[c][this.n] = c < row.length ? cellText(row[c]) : '';
-  this.n++;
-  this.cells += this.cols.length;
-};
-
-TableBuilder.prototype.finish = function () {
-  var width = this.cols.length;
-  var header = this.columns || [];
-  if (header.length > width) {
-    for (var c = width; c < header.length; c++) { var arr = new Array(this.n); for (var i = 0; i < this.n; i++) arr[i] = ''; this.cols.push(arr); }
-    width = header.length;
-  }
-  var columns = this.headers && this.columns
-    ? DL.cleanHeaders(header.concat(new Array(width - header.length).fill('')))
-    : DL.cleanHeaders(new Array(width).fill(''));
-  return DL.makeTable(columns, this.cols, this.n);
-};
-
-// Makes text from a spreadsheet cell value: dates become "2024-01-31", numbers keep full precision.
-function cellText(v) {
-  if (typeof v === 'string') return v;
-  if (v == null) return '';
-  if (v instanceof Date) return isNaN(v.getTime()) ? '' : DL.formatDateISO(v.getTime());
-  if (typeof v === 'number') return DL.numberText(v);
-  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
-  return String(v);
-}
-
-function isBlankRow(row) {
-  for (var i = 0; i < row.length; i++) {
-    var v = row[i];
-    if (v != null && v !== '' && String(v).trim() !== '') return false;
-  }
-  return true;
-}
-
 // Readers by input format id. Each gives { table, notes, meta }.
 var readers = {};
 
@@ -180,6 +116,16 @@ TextStream.prototype.resume = function () {};
 TextStream.prototype.on = function (event, fn) { this.handlers[event] = fn; };
 TextStream.prototype.removeListener = function (event) { delete this.handlers[event]; };
 TextStream.prototype.emit = function (event, arg) { if (this.handlers[event]) this.handlers[event](arg); };
+
+// Finds the column separator from the first lines of the text. Blank lines are not counted.
+function guessDelimiter(text, quoteChar) {
+  var sample = text.slice(0, 65536);
+  var cut = sample.lastIndexOf('\n');
+  if (cut > 0 && sample.length === 65536) sample = sample.slice(0, cut);
+  var res = Papa.parse(sample, { quoteChar: quoteChar, escapeChar: quoteChar, skipEmptyLines: 'greedy', preview: 50 });
+  var failed = res.errors.some(function (e) { return e.type === 'Delimiter'; });
+  return failed ? '' : res.meta.delimiter;
+}
 
 function delimiterOf(opts) {
   var d = opts.delimiter;
@@ -212,50 +158,54 @@ readers.delimited = function (file, opts) {
   var quoteChar = opts.quoteChar === 'none' ? '\u0000' : (opts.quoteChar || '"');
   checkSize(file, decoder, delimiter, quoteChar);
 
-  var builder = new TableBuilder(opts);
+  var builder = new DL.TableBuilder(opts);
   var errors = { quotes: 0, delimiter: 0, other: 0 };
-  var detected = '';
   var stopped = null;
   var config = {
     quoteChar: quoteChar,
     escapeChar: quoteChar,
     skipEmptyLines: false,
     chunk: function (results, parser) {
-      if (!detected && results.meta && results.meta.delimiter) detected = results.meta.delimiter;
       var data = results.data;
       for (var i = 0; i < data.length; i++) builder.add(data[i]);
       var errs = results.errors;
       for (var k = 0; k < errs.length; k++) {
         if (errs[k].type === 'Quotes') errors.quotes++;
-        else if (errs[k].type === 'Delimiter') errors.delimiter++;
-        else if (errs[k].type !== 'FieldMismatch') errors.other++;
+        else if (errs[k].type !== 'FieldMismatch' && errs[k].type !== 'Delimiter') errors.other++;
       }
       if (builder.cells > state.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
     }
   };
-  if (delimiter) config.delimiter = delimiter;
-
   // Decode the bytes in slices with one streaming decoder, so that multi-byte characters
   // that cross a slice boundary stay intact. PapaParse joins partial rows across chunks.
-  var stream = new TextStream();
-  Papa.parse(stream, config);
   var SLICE = 8 * 1024 * 1024;
   var offset = 0;
+  var stream = new TextStream();
+  var started = false;
   while (offset < file.size && !stopped) {
     var end = Math.min(file.size, offset + SLICE);
     var text = decoder.decode(readBuffer(file.slice(offset, end)), { stream: end < file.size });
     offset = end;
+    if (!started) {
+      started = true;
+      if (!delimiter) {
+        delimiter = guessDelimiter(text, quoteChar);
+        if (!delimiter) { errors.delimiter++; delimiter = ','; }
+      }
+      config.delimiter = delimiter;
+      Papa.parse(stream, config);
+    }
     stream.emit('data', text);
     progress('Reading file', Math.min(99, Math.round(100 * offset / file.size)));
   }
   if (stopped) throw stopped;
-  stream.emit('end');
+  if (started) stream.emit('end');
 
   var table = builder.finish();
   if (errors.quotes) notes.push(DL.pluralize(errors.quotes, 'value') + ' had unbalanced quotes. Check the text delimiter setting if data looks wrong.');
   if (errors.other) notes.push(DL.pluralize(errors.other, 'problem') + ' found while reading the file.');
   if (errors.delimiter && table.columns.length === 1) notes.push('The column separator could not be detected. Choose it in the options if the data looks wrong.');
-  return { table: table, notes: notes, ragged: builder.ragged, meta: { encoding: encoding, delimiter: detected || delimiter } };
+  return { table: table, notes: notes, ragged: builder.ragged, meta: { encoding: encoding, delimiter: delimiter } };
 };
 
 function readWorkbook(file, sheetsOnly) {
@@ -275,7 +225,7 @@ readers.spreadsheet = function (file, opts) {
   progress('Reading sheet "' + sheetName + '"', 50);
   var raw = ws ? XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: true }) : [];
   wb = null;
-  var builder = new TableBuilder(opts);
+  var builder = new DL.TableBuilder(opts);
   for (var i = 0; i < raw.length; i++) {
     builder.add(raw[i]);
     raw[i] = null;

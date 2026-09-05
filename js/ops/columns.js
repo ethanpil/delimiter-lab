@@ -147,7 +147,7 @@
         var start = Number(p.start) || 0;
         for (i = 0; i < n; i++) values[i] = String(start + i);
       } else {
-        var val = p.kind === 'value' ? p.value : p.kind === 'today' ? DL.formatDateISO(Date.now()) : '';
+        var val = p.kind === 'value' ? p.value : p.kind === 'today' ? DL.formatDateISO(new Date().setHours(0, 0, 0, 0)) : '';
         for (i = 0; i < n; i++) values[i] = val;
       }
       return { table: DL.addColumn(table, name, values, p.position) };

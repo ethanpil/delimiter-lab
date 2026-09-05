@@ -354,9 +354,7 @@
         };
         this.restoredSourceName = data.sourceName || null;
       }
-      if (data.sourceOptions && typeof data.sourceOptions === 'object') {
-        this.state.source.options = Object.assign(DL.defaultSourceOptions(), data.sourceOptions, { sheet: '' });
-      }
+      if (data.sourceOptions) this.state.source.options = Object.assign(DL.cleanSourceOptions(data.sourceOptions), { sheet: '' });
     } catch (e) { /* a broken session is ignored */ }
   };
 
