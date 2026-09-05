@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delimiter Lab</title>
+  <meta name="description" content="Transform CSV, TSV and Excel files step by step, in your browser. No upload, no code.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d6efd'/%3E%3Cpath d='M8 10h16M8 16h10M8 22h14' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="vendor/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="css/app.css?v=14">
+</head>
+<body>
+  <noscript><div class="p-4">Delimiter Lab needs JavaScript to run.</div></noscript>
+
+  <header class="app-header navbar navbar-expand px-3">
+    <a class="navbar-brand d-flex align-items-center gap-2" href="#" id="brand">
+      <span class="brand-mark"><i class="bi bi-list-ul"></i></span>
+      <span class="fw-semibold">Delimiter Lab</span>
+    </a>
+    <div class="workflow-name-wrap d-flex align-items-center gap-2 ms-3">
+      <input id="workflowName" class="form-control form-control-sm workflow-name" type="text" placeholder="Untitled workflow" maxlength="80" title="Workflow name" aria-label="Workflow name">
+      <span id="saveState" class="text-secondary small"></span>
+    </div>
+    <div class="ms-auto d-flex align-items-center gap-2">
+      <div class="btn-group btn-group-sm" role="group" aria-label="Undo and redo">
+        <button id="btnUndo" class="btn btn-outline-secondary" type="button" title="Undo (Ctrl+Z)" disabled><i class="bi bi-arrow-counterclockwise"></i></button>
+        <button id="btnRedo" class="btn btn-outline-secondary" type="button" title="Redo (Ctrl+Y)" disabled><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+      <div class="btn-group btn-group-sm">
+        <button id="btnSave" class="btn btn-outline-primary" type="button" title="Save this workflow in the browser (Ctrl+S)"><i class="bi bi-bookmark-plus"></i><span class="btn-label"> Save</span></button>
+        <button id="btnWorkflows" class="btn btn-outline-primary" type="button" title="Open a saved workflow"><i class="bi bi-collection"></i><span class="btn-label"> Workflows</span></button>
+      </div>
+      <button id="btnDownload" class="btn btn-primary btn-sm" type="button" title="Download the result of the selected step (Ctrl+D)"><i class="bi bi-download"></i><span class="btn-label"> Download</span></button>
+      <button id="btnHelp" class="btn btn-outline-secondary btn-sm" type="button" title="Help"><i class="bi bi-question-circle"></i></button>
+    </div>
+  </header>
+
+  <div id="progress" class="app-progress" hidden>
+    <div class="progress" role="progressbar"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div></div>
+    <div class="app-progress-label small text-secondary"></div>
+  </div>
+
+  <main class="app-body">
+    <aside class="app-sidebar" id="sidebar">
+      <div class="sidebar-head d-flex align-items-center justify-content-between">
+        <span class="fw-semibold">Steps</span>
+        <span class="text-secondary small">Click a step to edit it</span>
+      </div>
+      <div id="chain" class="chain"></div>
+      <div class="sidebar-foot">
+        <button id="btnAddStep" class="btn btn-primary w-100" type="button"><i class="bi bi-plus-lg"></i> Add step</button>
+      </div>
+    </aside>
+
+    <section class="app-main">
+      <div id="config" class="config-panel"></div>
+      <div id="preview" class="preview-panel">
+        <div class="preview-toolbar d-flex align-items-center gap-2 flex-wrap">
+          <span id="previewTitle" class="fw-semibold"></span>
+          <span id="previewStats" class="text-secondary small"></span>
+          <div class="ms-auto d-flex align-items-center gap-2">
+            <div class="input-group input-group-sm preview-search">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input id="previewSearch" type="search" class="form-control" placeholder="Find in preview" aria-label="Find in preview">
+              <button id="previewSearchPrev" class="btn btn-outline-secondary" type="button" title="Previous match" disabled><i class="bi bi-chevron-up"></i></button>
+              <button id="previewSearchNext" class="btn btn-outline-secondary" type="button" title="Next match" disabled><i class="bi bi-chevron-down"></i></button>
+            </div>
+            <span id="previewSearchInfo" class="text-secondary small"></span>
+            <button id="btnCompare" class="btn btn-outline-secondary btn-sm" type="button" title="Show the input of this step next to its output" data-bs-toggle="button"><i class="bi bi-layout-split"></i><span class="btn-label"> Compare</span></button>
+          </div>
+        </div>
+        <div id="gridWrap" class="grid-wrap">
+          <div id="gridBefore" class="grid-side" hidden></div>
+          <div id="grid" class="grid-side"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="modals"></div>
+  <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+  <script src="vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/engine/core.js?v=14"></script>
+  <script src="js/ops/text.js?v=14"></script>
+  <script src="js/ops/rows.js?v=14"></script>
+  <script src="js/ops/columns.js?v=14"></script>
+  <script src="js/ops/verify.js?v=14"></script>
+  <script src="js/app/util.js?v=14"></script>
+  <script src="js/app/store.js?v=14"></script>
+  <script src="js/app/engineClient.js?v=14"></script>
+  <script src="js/app/workflows.js?v=14"></script>
+  <script src="js/ui/fields.js?v=14"></script>
+  <script src="js/ui/chain.js?v=14"></script>
+  <script src="js/ui/source.js?v=14"></script>
+  <script src="js/ui/config.js?v=14"></script>
+  <script src="js/ui/grid.js?v=14"></script>
+  <script src="js/ui/dialogs.js?v=14"></script>
+  <script src="js/main.js?v=14"></script>
+</body>
+</html>
