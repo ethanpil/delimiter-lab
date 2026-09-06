@@ -155,6 +155,70 @@
     }
   });
 
+  /* ---------- Fill empty values ---------- */
+  DL.registerOp({
+    id: 'fill',
+    name: 'Fill Empty Values',
+    category: 'Columns',
+    icon: 'bi-arrow-bar-down',
+    description: 'Fill empty cells with the value above, a fixed value, the average or the most common value.',
+    keywords: 'fill down blank missing null default impute',
+    params: [
+      { key: 'columns', label: 'Columns', type: 'columns' },
+      { key: 'mode', label: 'Fill with', type: 'select', default: 'above',
+        options: [
+          { value: 'above', label: 'The value above (fill down)' },
+          { value: 'below', label: 'The value below (fill up)' },
+          { value: 'value', label: 'A fixed value' },
+          { value: 'average', label: 'The average of the column' },
+          { value: 'common', label: 'The most common value' }
+        ] },
+      { key: 'value', label: 'Fixed value', type: 'text', default: '', showIf: function (p) { return p.mode === 'value'; } },
+      { key: 'decimals', label: 'Decimals for the average', type: 'number', default: 2, min: 0, max: 15, integer: true, required: true, showIf: function (p) { return p.mode === 'average'; } },
+      { key: 'blankIsEmpty', label: 'Treat cells with only spaces as empty', type: 'boolean', default: true }
+    ],
+    summary: function (p) { return p.mode + ': ' + p.columns.join(', '); },
+    apply: function (table, p) {
+      var idxs = DL.colIndexes(table, p.columns);
+      var n = table.length;
+      var blankIsEmpty = !!p.blankIsEmpty;
+      var isEmpty = function (v) { return v === '' || (blankIsEmpty && v.trim() === ''); };
+      var cols = table.cols.slice();
+      var filled = 0;
+      idxs.forEach(function (c) {
+        var src = DL.col(table, c);
+        var out = new Array(n);
+        var i, v;
+        if (p.mode === 'above' || p.mode === 'below') {
+          var last = '';
+          var start = p.mode === 'above' ? 0 : n - 1, step = p.mode === 'above' ? 1 : -1;
+          for (i = start; i >= 0 && i < n; i += step) {
+            v = src[i];
+            if (isEmpty(v)) { out[i] = last; if (last !== '') filled++; } else { out[i] = v; last = v; }
+          }
+        } else {
+          var fillValue = p.value;
+          if (p.mode === 'average') {
+            var sum = 0, count = 0;
+            for (i = 0; i < n; i++) { var x = DL.toNumber(src[i]); if (x === x) { sum += x; count++; } }
+            fillValue = count ? DL.formatFixed(sum / count, Number(p.decimals)) : '';
+          } else if (p.mode === 'common') {
+            var g = DL.groupRows([function (r) { return src[r]; }], n);
+            var best = -1, bestCount = 0;
+            for (i = 0; i < n; i++) if (g.first[i] === i && !isEmpty(src[i]) && g.count[i] > bestCount) { best = i; bestCount = g.count[i]; }
+            fillValue = best >= 0 ? src[best] : '';
+          }
+          for (i = 0; i < n; i++) {
+            v = src[i];
+            if (isEmpty(v)) { out[i] = fillValue; if (fillValue !== '') filled++; } else out[i] = v;
+          }
+        }
+        cols[c] = out;
+      });
+      return { table: DL.makeTable(table.columns, cols, n), notes: ['Filled ' + DL.pluralize(filled, 'cell') + '.'] };
+    }
+  });
+
   /* ---------- Calculate ---------- */
   var RESULT = 'Result';
   var CALC = {

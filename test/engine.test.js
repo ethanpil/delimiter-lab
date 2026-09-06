@@ -432,7 +432,7 @@ test('every op has metadata and defaults', () => {
     assert.ok(typeof op.summary === 'function', op.id + ' summary');
     op.params.forEach((p) => assert.ok(p.key && p.label && p.type, op.id + ' param'));
   });
-  assert.strictEqual(DL.ops.length, 20);
+  assert.strictEqual(DL.ops.length, 25);
   // Every operation that changes the columns must predict them correctly (or say null).
   const fixture = T(['Full Name', 'Email', 'Amount'], [['John Smith', 'j@x.com', '1'], ['Ann Lee', 'a@y.com', '2']]);
   const cases = {
@@ -447,7 +447,9 @@ test('every op has metadata and defaults', () => {
     calculate: { left: 'Amount', rightKind: 'number', rightNumber: 2, output: 'D' },
     javascript: { output: 'J', code: 'return 1;' },
     verify: { rules: [{ column: 'Email', op: 'isEmail' }], action: 'flag' },
-    split: { column: 'Full Name', separator: ' ', maxParts: 2 }
+    split: { column: 'Full Name', separator: ' ', maxParts: 2 },
+    extract: { column: 'Email', pattern: '@(.+)$', group: 1, output: 'Domain' },
+    dateMath: { column: 'Amount', mode: 'part', part: 'year', output: 'Y' }
   };
   Object.keys(cases).forEach((id) => {
     const params = Object.assign(DL.defaultParams(id), cases[id]);
@@ -455,6 +457,72 @@ test('every op has metadata and defaults', () => {
     const actual = DL.runOp(id, params, fixture).table.columns;
     if (predicted !== null) assert.deepStrictEqual(predicted, actual, id + ' prediction');
   });
+});
+
+/* ---- new operations ---- */
+test('formatDate writes tokens', () => {
+  const t = new Date(2024, 0, 3, 9, 5, 7).getTime();
+  assert.strictEqual(DL.formatDate(t, 'YYYY-MM-DD HH:mm:ss'), '2024-01-03 09:05:07');
+  assert.strictEqual(DL.formatDate(t, 'D MMM YYYY'), '3 Jan 2024');
+  assert.strictEqual(DL.formatDate(t, 'DDDD, MMMM D, YY h A'), 'Wednesday, January 3, 24 h AM');
+});
+
+test('dateFormat reads many formats and writes one', () => {
+  const t = T(['D'], [['2024-01-31'], ['31/01/2024'], ['Jan 31, 2024'], ['not a date'], ['']]);
+  const r = run('dateFormat', { columns: ['D'], dayFirst: true, format: 'DD.MM.YYYY' }, t);
+  assert.deepStrictEqual(rowsOf(r.table), [['31.01.2024'], ['31.01.2024'], ['31.01.2024'], ['not a date'], ['']]);
+  assert.ok(r.notes[0].indexOf('1 value') === 0);
+  const b = run('dateFormat', { columns: ['D'], format: 'custom', pattern: 'YYYYMMDD', onError: 'blank' }, t);
+  assert.strictEqual(rowsOf(b.table)[3][0], '');
+});
+
+test('dateMath adds, differs and takes parts', () => {
+  const t = T(['A', 'B'], [['2024-01-31', '2024-03-01'], ['2023-12-31', '2024-01-01'], ['x', '2024-01-01']]);
+  const add = run('dateMath', { column: 'A', mode: 'add', amount: 1, unit: 'months', output: 'R' }, t);
+  assert.deepStrictEqual(rowsOf(add.table).map((r) => r[2]), ['2024-02-29', '2024-01-31', '']);
+  const diff = run('dateMath', { column: 'A', mode: 'diff', otherKind: 'column', other: 'B', unit: 'days', output: 'R' }, t);
+  assert.deepStrictEqual(rowsOf(diff.table).map((r) => r[2]), ['30', '1', '']);
+  const months = run('dateMath', { column: 'A', mode: 'diff', otherKind: 'fixed', fixedDate: '2025-01-30', unit: 'months', output: 'R' }, t);
+  assert.deepStrictEqual(rowsOf(months.table).map((r) => r[2]), ['11', '12', '']);
+  const part = run('dateMath', { column: 'A', mode: 'part', part: 'week', output: 'R' }, t);
+  assert.deepStrictEqual(rowsOf(part.table).map((r) => r[2]), ['5', '52', '']);
+  const wd = run('dateMath', { column: 'A', mode: 'part', part: 'weekday', output: 'R' }, t);
+  assert.strictEqual(rowsOf(wd.table)[0][2], 'Wednesday');
+  assert.ok(DL.validateParams('dateMath', Object.assign(DL.defaultParams('dateMath'), { column: 'A', mode: 'diff', otherKind: 'fixed', fixedDate: 'nope' }), ['A']).length);
+});
+
+test('extract takes groups and all matches', () => {
+  const t = T(['E'], [['a@x.com'], ['none'], ['1 and 22 and 333']]);
+  const r = run('extract', { column: 'E', pattern: '@(.+)$', group: 1, output: 'Dom' }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((r) => r[1]), ['x.com', '', '']);
+  const all = run('extract', { column: 'E', pattern: '\\d+', all: true, joiner: '|', noMatch: 'keep', output: 'N' }, t);
+  assert.deepStrictEqual(rowsOf(all.table).map((r) => r[1]), ['a@x.com', 'none', '1|22|333']);
+  const bad = DL.validateParams('extract', Object.assign(DL.defaultParams('extract'), { column: 'E', pattern: 'x', group: 1 }), ['E']);
+  assert.ok(bad.length, 'group beyond count');
+  assert.ok(DL.validateParams('extract', Object.assign(DL.defaultParams('extract'), { column: 'E', pattern: '(' }), ['E']).length, 'bad regex');
+});
+
+test('fill fills empty cells in several ways', () => {
+  const t = T(['A', 'N'], [['x', '1'], ['', '3'], [' ', ''], ['y', '2'], ['', 'x']]);
+  const down = run('fill', { columns: ['A'], mode: 'above' }, t);
+  assert.deepStrictEqual(rowsOf(down.table).map((r) => r[0]), ['x', 'x', 'x', 'y', 'y']);
+  const up = run('fill', { columns: ['A'], mode: 'below' }, t);
+  assert.deepStrictEqual(rowsOf(up.table).map((r) => r[0]), ['x', 'y', 'y', 'y', '']);
+  const fixed = run('fill', { columns: ['A'], mode: 'value', value: '-', blankIsEmpty: false }, t);
+  assert.deepStrictEqual(rowsOf(fixed.table).map((r) => r[0]), ['x', '-', ' ', 'y', '-']);
+  const avg = run('fill', { columns: ['N'], mode: 'average', decimals: 1 }, t);
+  assert.deepStrictEqual(rowsOf(avg.table).map((r) => r[1]), ['1', '3', '2.0', '2', 'x']);
+  const common = run('fill', { columns: ['A'], mode: 'common' }, T(['A'], [['b'], [''], ['a'], ['b'], ['']]));
+  assert.deepStrictEqual(rowsOf(common.table).map((r) => r[0]), ['b', 'b', 'a', 'b', 'b']);
+});
+
+test('textClean removes html, accents, control characters and odd spaces', () => {
+  const t = T(['A'], [['<b>Caf\u00e9</b>&amp;\u00a0 bar\u0007'], ['\u201cHi\u201d \u2014 ok'], ['e\u0301']]);
+  const r = run('textClean', { steps: ['html', 'control', 'spaces', 'quotes', 'accents', 'unicode'] }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((r) => r[0]), ['Cafe& bar', '"Hi" - ok', 'e']);
+  const nfc = run('textClean', { steps: ['unicode'] }, t);
+  assert.strictEqual(rowsOf(nfc.table)[2][0], '\u00e9');
+  assert.ok(r.notes[0].indexOf('3 cells') > 0);
 });
 
 /* ---- performance smoke ---- */

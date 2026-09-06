@@ -5,7 +5,7 @@
   var U = DL.util;
   var D = DL.dialogs = {};
 
-  var CATEGORY_ORDER = ['Text', 'Rows', 'Columns', 'Quality', 'Advanced', 'Other'];
+  var CATEGORY_ORDER = ['Text', 'Dates', 'Rows', 'Columns', 'Quality', 'Advanced', 'Other'];
 
   /* ---------- Operation picker ---------- */
   D.pickOperation = function (opts, onPick) {

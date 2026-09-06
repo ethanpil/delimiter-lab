@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add: Format Dates, Date Math, Extract Text, Clean Text and Fill Empty Values operations.
+
 ## 1.2.0
 
 - Fix: text such as "Room 12" is not read as a date; time zones are read (c55740a).

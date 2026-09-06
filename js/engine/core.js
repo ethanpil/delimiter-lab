@@ -441,6 +441,40 @@
     return out;
   };
 
+  DL.MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  DL.DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  var TOKEN_RE = /YYYY|YY|MMMM|MMM|MM|M|DDDD|DDD|DD|D|HH|H|mm|ss|A|a/g;
+
+  // Writes a local timestamp with a pattern such as "YYYY-MM-DD" or "D MMM YYYY HH:mm".
+  // Tokens: YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A a. Other characters are copied.
+  DL.formatDate = function (ts, pattern) {
+    var d = new Date(ts);
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var h = d.getHours();
+    return pattern.replace(TOKEN_RE, function (t) {
+      switch (t) {
+        case 'YYYY': return String(d.getFullYear());
+        case 'YY': return pad(d.getFullYear() % 100);
+        case 'MMMM': return DL.MONTH_NAMES[d.getMonth()];
+        case 'MMM': return DL.MONTH_NAMES[d.getMonth()].slice(0, 3);
+        case 'MM': return pad(d.getMonth() + 1);
+        case 'M': return String(d.getMonth() + 1);
+        case 'DDDD': return DL.DAY_NAMES[d.getDay()];
+        case 'DDD': return DL.DAY_NAMES[d.getDay()].slice(0, 3);
+        case 'DD': return pad(d.getDate());
+        case 'D': return String(d.getDate());
+        case 'HH': return pad(h);
+        case 'H': return String(h);
+        case 'mm': return pad(d.getMinutes());
+        case 'ss': return pad(d.getSeconds());
+        case 'A': return h < 12 ? 'AM' : 'PM';
+        case 'a': return h < 12 ? 'am' : 'pm';
+        default: return t;
+      }
+    });
+  };
+
   /* ---------- Number formatting ---------- */
 
   var POW10 = [1, 10, 100, 1000, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15];

@@ -433,4 +433,122 @@
       return { table: out };
     }
   });
+
+  /* ---------- Extract ---------- */
+  var EXTRACTED = 'Extracted';
+  DL.registerOp({
+    id: 'extract',
+    name: 'Extract Text',
+    category: 'Text',
+    icon: 'bi-braces-asterisk',
+    description: 'Pull a part of the text into a new column with a pattern, for example the digits of a product code or the domain of an email address.',
+    keywords: 'regex pattern capture group substring match',
+    params: [
+      { key: 'column', label: 'Column', type: 'column' },
+      { key: 'pattern', label: 'Pattern (regular expression)', type: 'text', default: '', required: true, help: 'For example \\d+ for the first number, or @(.+)$ with group 1 for an email domain.' },
+      { key: 'group', label: 'Group', type: 'number', default: 0, min: 0, max: 20, integer: true, required: true, help: '0 gives the whole match. 1, 2, … give the text inside the first, second, … pair of parentheses.' },
+      { key: 'matchCase', label: 'Match case', type: 'boolean', default: false },
+      { key: 'all', label: 'All matches', type: 'boolean', default: false, help: 'Join every match in the text instead of the first one only.' },
+      { key: 'joiner', label: 'Separator between matches', type: 'text', default: ', ', showIf: function (p) { return p.all; } },
+      { key: 'noMatch', label: 'When nothing matches', type: 'select', default: 'blank',
+        options: [{ value: 'blank', label: 'Leave the result empty' }, { value: 'keep', label: 'Keep the original text' }] },
+      { key: 'output', label: 'New column name', type: 'text', default: EXTRACTED, notBlank: true }
+    ],
+    summary: function (p) { return p.output + ' = /' + p.pattern + '/ from ' + p.column; },
+    validate: function (p) {
+      var problem = DL.regexProblem(p.pattern, 'gu');
+      if (problem) return [problem];
+      var groups = new RegExp(p.pattern + '|', 'u').exec('').length - 1;
+      if (Number(p.group) > groups) return ['The pattern has only ' + DL.pluralize(groups, 'group') + '. Choose a smaller group number.'];
+      return [];
+    },
+    outputColumns: function (cols, p) { return cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, EXTRACTED))]); },
+    apply: function (table, p) {
+      var idx = DL.requireCol(table, p.column);
+      var re = new RegExp(p.pattern, (p.matchCase ? '' : 'i') + 'gu');
+      var group = Number(p.group) || 0;
+      var joiner = unescapeText(p.joiner);
+      var keep = p.noMatch === 'keep';
+      var stats = {};
+      var picked = DL.mapColumns(DL.makeTable(['x'], [DL.col(table, idx)], table.length), [0], function (v, ctx) {
+        re.lastIndex = 0;
+        if (!p.all) {
+          var m = re.exec(v);
+          if (!m) { ctx.tag(); return keep ? v : ''; }
+          return m[group] == null ? '' : m[group];
+        }
+        var parts = [];
+        var hit;
+        while ((hit = re.exec(v)) !== null) {
+          parts.push(hit[group] == null ? '' : hit[group]);
+          if (hit[0].length === 0) re.lastIndex++;
+        }
+        if (!parts.length) { ctx.tag(); return keep ? v : ''; }
+        return parts.join(joiner);
+      }, stats);
+      var out = DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, EXTRACTED)), picked.cols[0]);
+      return { table: out, notes: stats.tagged ? [DL.pluralize(stats.tagged, 'value') + ' had no match.'] : [] };
+    }
+  });
+
+  /* ---------- Text clean ---------- */
+  var HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', copy: '\u00a9', reg: '\u00ae', euro: '\u20ac', pound: '\u00a3' };
+
+  function stripHtml(s) {
+    if (s.indexOf('<') < 0 && s.indexOf('&') < 0) return s;
+    return s.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (m, code) {
+      var c = code.toLowerCase();
+      if (c.charAt(0) === '#') {
+        var n = c.charAt(1) === 'x' ? parseInt(c.slice(2), 16) : parseInt(c.slice(1), 10);
+        return n >= 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : m;
+      }
+      return HTML_ENTITIES[c] !== undefined ? HTML_ENTITIES[c] : m;
+    });
+  }
+
+  var CLEAN_STEPS = {
+    accents: function (s) { return s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); },
+    html: stripHtml,
+    control: function (s) { return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, ''); },
+    quotes: function (s) { return s.replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...'); },
+    spaces: function (s) { return s.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ').replace(/\s{2,}/g, ' ').trim(); },
+    unicode: function (s) { return s.normalize('NFC'); }
+  };
+
+  DL.registerOp({
+    id: 'textClean',
+    name: 'Clean Text',
+    category: 'Text',
+    icon: 'bi-stars',
+    description: 'Remove accents, HTML tags, hidden control characters and odd spaces, and make quotes plain.',
+    keywords: 'accent diacritic html tags entities unicode normalize whitespace nbsp smart quotes control characters',
+    params: [
+      { key: 'columns', label: 'Columns', type: 'columns', required: false, help: 'Leave empty to clean all columns.' },
+      { key: 'steps', label: 'Clean', type: 'checkboxes', default: ['html', 'control', 'spaces', 'unicode'],
+        options: [
+          { value: 'html', label: 'Remove HTML tags and decode &amp;, &lt;, …' },
+          { value: 'control', label: 'Remove hidden control characters' },
+          { value: 'spaces', label: 'Replace odd spaces, collapse repeated spaces, trim' },
+          { value: 'quotes', label: 'Make curly quotes and dashes plain' },
+          { value: 'accents', label: 'Remove accents (é → e)' },
+          { value: 'unicode', label: 'Normalize Unicode (same letter, one code)' }
+        ] }
+    ],
+    summary: function (p) { return p.steps.join(', ') + ': ' + (p.columns.length ? p.columns.join(', ') : 'all columns'); },
+    validate: function (p) { return p.steps.length ? [] : ['Choose at least one clean step.']; },
+    apply: function (table, p) {
+      var idxs = DL.colIndexesOrAll(table, p.columns);
+      var order = ['html', 'control', 'quotes', 'accents', 'unicode', 'spaces'].filter(function (k) { return p.steps.indexOf(k) >= 0; });
+      var fns = order.map(function (k) { return CLEAN_STEPS[k]; });
+      var stats = {};
+      var out = DL.mapColumns(table, idxs, function (v, ctx) {
+        if (v === '') return v;
+        var r = v;
+        for (var i = 0; i < fns.length; i++) r = fns[i](r);
+        if (r !== v) ctx.tag();
+        return r;
+      }, stats);
+      return { table: out, notes: ['Changed ' + DL.pluralize(stats.tagged, 'cell') + '.'] };
+    }
+  });
 })(typeof self !== 'undefined' ? self : this);
