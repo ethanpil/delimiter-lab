@@ -25,6 +25,7 @@
   --dl-badge-bg: #b8e6c8;
   --dl-badge-fg: #146c43;
 }
+[data-bs-theme="dark"] .toast.text-bg-dark { background-color: #343a40 !important; border: 1px solid var(--dl-border-strong); }
 [data-bs-theme="dark"] {
   --dl-surface: #1e2229;
   --dl-surface-2: #161920;

@@ -9,7 +9,7 @@
 - Add: a click on a Verify result shows the rows that failed the rule (dcc533d).
 - Add: apply the steps to many files at once and download a zip file (7db3961).
 - Add: Cancel button that stops a run or a batch before the next step or file (31d3558).
-- Add: dark theme with a switch in the header.
+- Add: dark theme with a switch in the header (0cf8166).
 
 ## 1.2.0
 

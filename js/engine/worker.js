@@ -34,7 +34,13 @@ var busy = false;
 
 self.onmessage = function (e) {
   var msg = e.data;
-  if (msg.type === 'cancel') { state.cancelRun = msg.runId; self.postMessage({ type: 'ok', requestId: msg.requestId }); return; }
+  // A cancel message applies to the active run and to the runs that wait in the queue.
+  if (msg.type === 'cancel') {
+    if (busy) state.cancelRun = true;
+    queue.forEach(function (m) { if (m.type === 'run') m.cancelled = true; });
+    self.postMessage({ type: 'ok', requestId: msg.requestId });
+    return;
+  }
   if (busy) { queue.push(msg); return; }
   handle(msg);
 };
@@ -56,7 +62,11 @@ function handle(msg) {
       case 'load': loadFile(msg, reply); break;
       case 'run':
         busy = true;
-        runChain(msg, function (results, cancelled) { reply({ type: 'ran', results: results, cancelled: cancelled }); drain(); });
+        runChain(msg, function (results, cancelled, err) {
+          if (err) reply({ type: 'error', message: err && err.message ? err.message : String(err) });
+          else reply({ type: 'ran', results: results, cancelled: cancelled });
+          drain();
+        });
         break;
       case 'slice': reply({ type: 'slice', stepId: msg.stepId, data: getSlice(msg) }); break;
       case 'export': exportStep(msg, reply); break;
@@ -382,39 +392,41 @@ function enforceBudget(keep) {
 
 var CANCELLED_NOTE = 'The run was cancelled. Change a setting or turn a step off and on to run again.';
 
-// Runs the whole chain and calls done(results, cancelled). Results with a table are kept by content
-// hash. The other results are quick to make, so each run makes them again. A step that is fixed or
-// removed never shows an old result. Between two steps the worker reads its messages, so a cancel
-// message can stop the run before the next step.
+// Runs the whole chain and calls done(results, cancelled, error). Results with a table are kept by
+// content hash. The other results are quick to make, so each run makes them again. A step that is
+// fixed or removed never shows an old result. Between two steps the worker reads its messages, so
+// a cancel message can stop the run before the next step.
 function runChain(msg, done) {
   state.steps = msg.steps || [];
   state.pinned = msg.protect || [];
-  state.cancelRun = null;
+  state.cancelRun = !!msg.cancelled;
   if (!state.source) { done([], false); return; }
   var results = [];
   var upstream = state.source;
   var upstreamHash = state.sourceKey;
   var blocked = null;
+  var cancelled = false;
   var live = new Set();
   var progressAt = Date.now();
   var i = 0;
-  var runId = msg.runId;
 
-  function finish(cancelled) {
+  function finish() {
     Array.from(state.cache.keys()).forEach(function (id) { if (!live.has(id)) state.cache.delete(id); });
     state.recent = state.recent.filter(function (id) { return live.has(id); });
     enforceBudget([]);
     done(results, cancelled);
   }
 
+  // The loop runs from a timer after the first slice, outside the try of handle(), so it has its own.
   function stepLoop() {
+    try { stepSlice(); } catch (err) { done(null, false, err); }
+  }
+
+  function stepSlice() {
     var sliceStart = Date.now();
     while (i < state.steps.length) {
-      if (state.cancelRun === runId) {
-        for (; i < state.steps.length; i++) { live.add(state.steps[i].id); results.push(resultOf(state.steps[i], makeEntry('', 'blocked', null, [CANCELLED_NOTE]))); state.cache.delete(state.steps[i].id); }
-        finish(true);
-        return;
-      }
+      // The steps after a cancel are blocked, like the steps after an invalid step.
+      if (state.cancelRun && !cancelled) { cancelled = true; blocked = CANCELLED_NOTE; }
       var step = state.steps[i];
       live.add(step.id);
       var h = stepHash(step, upstreamHash);
@@ -437,9 +449,9 @@ function runChain(msg, done) {
         progress('Running step ' + i + ' of ' + state.steps.length, Math.round(100 * i / state.steps.length));
       }
       // After 50 ms of work, let the message queue run so a cancel message can arrive.
-      if (Date.now() - sliceStart > 50 && i < state.steps.length) { setTimeout(stepLoop, 0); return; }
+      if (Date.now() - sliceStart > 50 && i < state.steps.length && !blocked) { setTimeout(stepLoop, 0); return; }
     }
-    finish(false);
+    finish();
   }
   stepLoop();
 }

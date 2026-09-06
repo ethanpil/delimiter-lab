@@ -34,12 +34,13 @@
   /* ---------- Progress ---------- */
   var progressTimer = null;
   var batchLabel = ''; // "File 2 of 5: x.csv" while a batch runs; worker messages go after it
-  var runInFlight = false; // true while the worker runs the chain: the bar stays and Cancel shows
+  var runInFlight = false; // true while the worker runs the chain: the bar stays until the run ends
+  var cancelable = false;  // true while a click on Cancel can stop the work
   function showProgress(label, percent) {
     progressEl.hidden = false;
     progressEl.querySelector('.progress-bar').style.width = Math.max(2, percent || 0) + '%';
     progressEl.querySelector('.app-progress-label').textContent = batchLabel ? batchLabel + (label ? ' · ' + label : '') : (label || '');
-    $('btnCancel').hidden = !(runInFlight || batchLabel);
+    $('btnCancel').hidden = !cancelable;
     clearTimeout(progressTimer);
     if (!batchLabel && !runInFlight) progressTimer = setTimeout(hideProgress, 4000);
   }
@@ -152,18 +153,21 @@
     var slowTimer = setTimeout(function () { showProgress('Running steps…', 50); }, 400);
     armStop();
     runInFlight = true;
-    engine.run(steps, protectedSteps(), token).then(function (msg) {
+    cancelable = true;
+    engine.run(steps, protectedSteps()).then(function (msg) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
       runInFlight = false;
+      cancelable = false;
       disarmStop();
-      if (Date.now() - started > 400) hideProgress();
+      if (!batchLabel) hideProgress();
       store.setResults(msg.results);
       if (msg.cancelled) U.toast('The run was cancelled. The steps that ran keep their results.', 'info');
     }).catch(function (err) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
       runInFlight = false;
+      cancelable = false;
       disarmStop();
       hideProgress();
       U.toast('Something went wrong while running the steps: ' + err.message, 'danger');
@@ -171,9 +175,10 @@
   }
 
   $('btnCancel').addEventListener('click', function () {
+    cancelable = false;
     $('btnCancel').hidden = true;
     if (batchRunning) { cancelBatch(); return; }
-    engine.cancel(runToken).catch(function () { /* the worker is gone; Stop handles that */ });
+    engine.cancel().catch(function () { /* the worker is gone; Stop handles that */ });
   });
 
   // Results of a run that started before the latest change are out of date: drop them and run again.
@@ -525,13 +530,14 @@
       usedNames[name] = true;
       return name;
     }
-    function end() { batchRunning = false; batchLabel = ''; disarmStop(); hideProgress(); }
+    function end() { batchRunning = false; batchLabel = ''; cancelable = false; disarmStop(); hideProgress(); }
     function next() {
       if (token !== batchToken) return;
       if (batchCancelled) { for (; i < files.length; i++) items.push({ name: files[i].name, error: 'Cancelled.' }); }
       if (i >= files.length) { finish(); return; }
       var file = files[i++];
       batchLabel = 'File ' + i + ' of ' + files.length + ': ' + file.name;
+      cancelable = !batchCancelled;
       showProgress('', Math.round(100 * (i - 1) / files.length));
       armStop();
       engine.batch(file, sourceOptions, steps, output).then(function (msg) {
@@ -549,6 +555,7 @@
       var done = items.filter(function (it) { return it.blob; });
       if (!done.length) { end(); DL.dialogs.batchReport(items); return; }
       batchLabel = 'Making the zip file';
+      cancelable = false;
       showProgress('', 95);
       engine.zip(done.map(function (it) { return { name: it.name, blob: it.blob }; })).then(function (msg) {
         end();
