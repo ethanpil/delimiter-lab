@@ -100,17 +100,22 @@
     });
   };
 
-  // Shows what happened to each file of a batch.
+  // Shows what happened to each file of a batch: the result, the error and the notes.
   D.batchReport = function (items) {
     var failed = items.filter(function (it) { return it.error; });
     U.modal({
       title: failed.length ? DL.pluralize(failed.length, 'file') + ' of ' + items.length + ' failed' : 'All ' + DL.pluralize(items.length, 'file') + ' done',
       scrollable: true,
-      body: U.el('ul', { class: 'file-list' }, items.map(function (it) {
-        return U.el('li', { class: it.error ? 'text-danger' : '' }, [
-          U.el('i', { class: 'bi ' + (it.error ? 'bi-x-circle' : 'bi-check-circle text-success') + ' me-2' }),
-          U.el('span', { text: it.name }),
-          U.el('span', { class: 'text-secondary', text: it.error ? (it.step ? 'Step ' + it.step + ': ' : '') + it.error : DL.pluralize(it.rowCount, 'row') })
+      body: U.el('ul', { class: 'file-list report-list' }, items.map(function (it) {
+        var icon = it.error ? 'bi-x-circle text-danger' : it.notes && it.notes.length ? 'bi-exclamation-triangle text-warning' : 'bi-check-circle text-success';
+        return U.el('li', {}, [
+          U.el('div', { class: 'd-flex gap-2' }, [
+            U.el('i', { class: 'bi ' + icon }),
+            U.el('span', { class: 'fw-semibold', text: it.name }),
+            U.el('span', { class: 'text-secondary ms-auto', text: it.error ? '' : DL.pluralize(it.rowCount, 'row') })
+          ]),
+          it.error ? U.el('div', { class: 'small text-danger', text: (it.step ? 'Step ' + it.step + ': ' : '') + it.error }) : null,
+          it.notes && it.notes.length ? U.el('ul', { class: 'notes-list small text-secondary' }, it.notes.map(function (n) { return U.el('li', { text: n }); })) : null
         ]);
       })),
       footer: [U.el('button', { type: 'button', class: 'btn btn-primary', 'data-bs-dismiss': 'modal', text: 'Close' })]

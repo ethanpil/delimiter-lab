@@ -33,12 +33,13 @@
 
   /* ---------- Progress ---------- */
   var progressTimer = null;
+  var batchLabel = ''; // "File 2 of 5: x.csv" while a batch runs; worker messages go after it
   function showProgress(label, percent) {
     progressEl.hidden = false;
     progressEl.querySelector('.progress-bar').style.width = Math.max(2, percent || 0) + '%';
-    progressEl.querySelector('.app-progress-label').textContent = label || '';
+    progressEl.querySelector('.app-progress-label').textContent = batchLabel ? batchLabel + (label ? ' · ' + label : '') : (label || '');
     clearTimeout(progressTimer);
-    progressTimer = setTimeout(hideProgress, 4000);
+    if (!batchLabel) progressTimer = setTimeout(hideProgress, 4000);
   }
   function hideProgress() { clearTimeout(progressTimer); progressEl.hidden = true; $('btnStop').hidden = true; }
 
@@ -52,6 +53,7 @@
   function disarmStop() { clearTimeout(stopTimer); $('btnStop').hidden = true; }
   $('btnStop').addEventListener('click', function () {
     disarmStop();
+    if (batchRunning) { stopBatch(); return; }
     engine.restart();
     var sel = store.state.selectedId;
     if (sel !== 'source' && store.getStep(sel) && store.getStep(sel).enabled !== false) {
@@ -460,9 +462,26 @@
 
   /* ---------- Batch: apply the workflow to many files ---------- */
   var batchRunning = false;
+  var batchToken = 0;
+
+  // Ends a batch that does not finish: the worker restarts and the open file is read again.
+  function stopBatch() {
+    batchToken++;
+    batchRunning = false;
+    batchLabel = '';
+    engine.restart();
+    grid.show(null, 'Reading the file…');
+    previewKey = null;
+    if (store.state.source.file) loadSource();
+    U.toast('The batch was stopped.', 'warning');
+  }
 
   function batchApply(files) {
     if (batchRunning) { U.toast('A batch is still running.', 'info'); return; }
+    var accepted = DL.acceptedExtensions();
+    var skipped = files.filter(function (f) { return accepted.indexOf('.' + DL.fileExtension(f.name)) < 0; });
+    files = files.filter(function (f) { return skipped.indexOf(f) < 0; });
+    if (!files.length) { U.toast('None of the files is a data file (' + accepted.join(', ') + ').', 'warning'); return; }
     var st = store.state;
     var steps = st.workflow.steps.map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
     var wfName = U.safeFileName((st.workflow.name || '').trim() || 'workflow');
@@ -470,42 +489,56 @@
     DL.dialogs.download({ files: files, baseName: wfName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, zipName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
-      runBatch(files, steps, options, zipName);
+      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: 'Not a data file.' }; }));
     });
   }
 
-  function runBatch(files, steps, output, zipName) {
+  function runBatch(files, steps, output, zipName, items) {
     var format = DL.outputFormatById(output.format);
     var sourceOptions = store.state.source.options;
-    var items = [];
+    var usedNames = {};
+    var token = ++batchToken;
     var i = 0;
     batchRunning = true;
+    // Two inputs with the same base name (a.csv, a.xlsx) get different names in the zip.
+    function outputName(file) {
+      var base = U.baseName(file.name);
+      var name = base + format.extension;
+      for (var n = 2; usedNames[name]; n++) name = base + ' (' + n + ')' + format.extension;
+      usedNames[name] = true;
+      return name;
+    }
+    function end() { batchRunning = false; batchLabel = ''; disarmStop(); hideProgress(); }
     function next() {
+      if (token !== batchToken) return;
       if (i >= files.length) { finish(); return; }
       var file = files[i++];
-      showProgress('File ' + i + ' of ' + files.length + ': ' + file.name, Math.round(100 * (i - 1) / files.length));
+      batchLabel = 'File ' + i + ' of ' + files.length + ': ' + file.name;
+      showProgress('', Math.round(100 * (i - 1) / files.length));
+      armStop();
       engine.batch(file, sourceOptions, steps, output).then(function (msg) {
         var r = msg.result;
-        var name = U.baseName(file.name) + format.extension;
-        if (r.error) items.push({ name: file.name, error: r.error, step: r.step });
-        else items.push({ name: name, blob: r.blob, rowCount: r.rowCount });
+        if (r.error) items.push({ name: file.name, error: r.error, step: r.step, notes: r.notes });
+        else items.push({ name: outputName(file), blob: r.blob, rowCount: r.rowCount, notes: r.notes });
         next();
       }).catch(function (err) {
+        if (token !== batchToken) return;
         items.push({ name: file.name, error: err.message || String(err) });
         next();
       });
     }
     function finish() {
       var done = items.filter(function (it) { return it.blob; });
-      if (!done.length) { batchRunning = false; hideProgress(); DL.dialogs.batchReport(items); return; }
-      showProgress('Making the zip file', 95);
+      if (!done.length) { end(); DL.dialogs.batchReport(items); return; }
+      batchLabel = 'Making the zip file';
+      showProgress('', 95);
       engine.zip(done.map(function (it) { return { name: it.name, blob: it.blob }; })).then(function (msg) {
-        batchRunning = false;
-        hideProgress();
+        end();
         U.downloadBlob(msg.blob, zipName);
-        if (items.some(function (it) { return it.error; })) DL.dialogs.batchReport(items);
+        var attention = items.some(function (it) { return it.error || (it.notes && it.notes.length); });
+        if (attention) DL.dialogs.batchReport(items);
         else U.toast('Downloaded ' + zipName + ' with ' + DL.pluralize(done.length, 'file') + '.', 'success');
-      }).catch(function (err) { batchRunning = false; hideProgress(); U.toast(err.message, 'danger'); });
+      }).catch(function (err) { if (token !== batchToken) return; end(); U.toast(err.message, 'danger'); });
     }
     next();
   }

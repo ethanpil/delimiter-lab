@@ -236,6 +236,8 @@ body {
 .file-list li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--dl-border); }
 .file-list li span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-list li span:last-child { flex: 0 0 auto; }
+.report-list li { display: block; }
+.report-list .notes-list { margin: 2px 0 0 22px; }
 .note-link { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
 .note-link:hover { color: #0a58ca; }
 .profile-popover { max-width: 340px; }

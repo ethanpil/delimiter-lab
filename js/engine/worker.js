@@ -626,26 +626,25 @@ function findRows(msg) {
 /* ---------- Batch: one file through the whole workflow ---------- */
 
 // Reads a file, runs every step and writes the result. The interactive source and cache stay as they are.
-// Gives { blob, rowCount } or { error, step } where step is the 1-based number of the step that failed.
+// Gives { blob, rowCount, notes } or { error, step, notes } where step is the 1-based number of the step that failed.
+// The notes hold the reader notes and the notes of the steps that gave a warning.
 function batchFile(msg) {
   var file = msg.file;
   var format = DL.inputFormatFor(file.name);
-  var table = readers[format.id](file, msg.options || {}).table;
+  var read = readers[format.id](file, msg.options || {});
+  var table = read.table;
+  var notes = read.notes.slice();
+  if (read.ragged) notes.push(DL.pluralize(read.ragged, 'row') + ' had a different number of values than the header.');
   var steps = msg.steps || [];
   for (var i = 0; i < steps.length; i++) {
-    var step = steps[i];
-    if (step.skip) continue;
-    var problems = DL.validateParams(step.opId, step.params, table.columns);
-    if (problems.length) return { error: problems[0], step: i + 1 };
-    try {
-      table = DL.runOp(step.opId, step.params, table).table;
-    } catch (err) {
-      return { error: err && err.message ? err.message : String(err), step: i + 1 };
-    }
+    var entry = computeStep(steps[i], table, '');
+    if (!entry.table) return { error: entry.error || entry.notes[0], step: i + 1, notes: notes };
+    if (entry.status === 'warning') entry.notes.forEach(function (n) { notes.push('Step ' + (i + 1) + ': ' + DL.noteText(n)); });
+    table = entry.table;
   }
   var o = msg.output || {};
   var out = DL.outputFormatById(o.format) || DL.outputFormats[0];
-  return { blob: writers[out.id](table, o, out), rowCount: table.length };
+  return { blob: writers[out.id](table, o, out), rowCount: table.length, notes: notes };
 }
 
 /* ---------- Zip (store only, no compression) ---------- */
@@ -666,8 +665,9 @@ function crc32(bytes) {
   return (c ^ -1) >>> 0;
 }
 
-// Makes a zip file from [{ name, blob }]. The files are stored without compression, because the
-// browser cannot read a deflate stream faster than it can read the plain bytes, and the zip stays simple.
+// Makes a zip file from [{ name, blob }]. The files are stored without compression. Deflate would
+// need a library or an asynchronous stream, and the zip stays simple. Every file is read into memory
+// while the zip is made, so the peak memory is about two times the total output size.
 function makeZip(entries) {
   var now = new Date();
   var dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
