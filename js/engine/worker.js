@@ -21,10 +21,11 @@ var state = {
   cache: new Map(),      // stepId -> entry (see makeEntry)
   pinned: [],            // step ids on screen: their tables stay in memory
   recent: [],            // step ids read most recently by the preview
-  maxCells: 8e6,
   cacheBudgetCells: 24e6,
   useCounter: 0,
-  diffMemo: new WeakMap() // output table -> { input, summary }
+  cancelRun: false,        // true after a cancel message: the run stops at the next step that must be computed
+  cancelledFrom: -1,       // index of the first step that a cancel blocked; those steps are not computed on demand
+  diffMemo: new Map()      // stepId -> { table, input, summary }
 };
 
 // A run gives control back between the steps, so a cancel message can arrive. The other
@@ -35,6 +36,7 @@ var busy = false;
 self.onmessage = function (e) {
   var msg = e.data;
   // A cancel message applies to the active run and to the runs that wait in the queue.
+  // A cancelled run still uses the results in the cache; it stops at the first step that must be computed.
   if (msg.type === 'cancel') {
     if (busy) state.cancelRun = true;
     queue.forEach(function (m) { if (m.type === 'run') m.cancelled = true; });
@@ -57,13 +59,13 @@ function handle(msg) {
   };
   try {
     switch (msg.type) {
-      case 'config': state.maxCells = DL.maxCells = msg.maxCells; state.cacheBudgetCells = msg.maxCells * 3; reply({ type: 'ok' }); break;
+      case 'config': DL.maxCells = msg.maxCells; state.cacheBudgetCells = msg.maxCells * 3; reply({ type: 'ok' }); break;
       case 'sheets': reply({ type: 'sheets', sheets: sheetNames(msg.file) }); break;
       case 'load': loadFile(msg, reply); break;
       case 'run':
         busy = true;
         runChain(msg, function (results, cancelled, err) {
-          if (err) reply({ type: 'error', message: err && err.message ? err.message : String(err) });
+          if (err) reply({ type: 'error', message: err && err.message ? err.message : String(err), tooLarge: !!(err && err.tooLarge) });
           else reply({ type: 'ran', results: results, cancelled: cancelled });
           drain();
         });
@@ -77,7 +79,7 @@ function handle(msg) {
       case 'diffSummary': reply({ type: 'diffSummary', stepId: msg.stepId, summary: diffSummary(msg) }); break;
       case 'search': reply({ type: 'search', stepId: msg.stepId, result: search(msg) }); break;
       case 'findRows': reply({ type: 'findRows', stepId: msg.stepId, result: findRows(msg) }); break;
-      case 'memory': reply({ type: 'memory', cells: cacheCells(), maxCells: state.maxCells }); break;
+      case 'memory': reply({ type: 'memory', cells: cacheCells(), maxCells: DL.maxCells }); break;
       default: reply({ type: 'error', message: 'Unknown request "' + msg.type + '".' });
     }
   } catch (err) {
@@ -98,7 +100,7 @@ function humanNumber(n) {
 
 function tooLarge(cells) {
   var err = new Error('This file is too large for your browser to work with smoothly. It has about ' + humanNumber(cells) +
-    ' values, and the safe limit on this computer is about ' + humanNumber(state.maxCells) + '. Try splitting the file, or use a computer with more memory.');
+    ' values, and the safe limit on this computer is about ' + humanNumber(DL.maxCells) + '. Try splitting the file, or use a computer with more memory.');
   err.tooLarge = true;
   return err;
 }
@@ -191,7 +193,7 @@ function checkSize(file, decoder, delimiter, quoteChar) {
   var cells = 0;
   for (var i = 0; i < res.data.length; i++) cells += res.data[i].length;
   var projected = cells * (file.size / Math.max(1, sampleBytes));
-  if (projected > state.maxCells * 1.3) throw tooLarge(projected);
+  if (projected > DL.maxCells * 1.3) throw tooLarge(projected);
 }
 
 readers.delimited = function (file, opts) {
@@ -217,7 +219,7 @@ readers.delimited = function (file, opts) {
         if (errs[k].type === 'Quotes') errors.quotes++;
         else if (errs[k].type !== 'FieldMismatch' && errs[k].type !== 'Delimiter') errors.other++;
       }
-      if (builder.cells > state.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
+      if (builder.cells > DL.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
     }
   };
   // Decode the bytes in slices with one streaming decoder, so that multi-byte characters
@@ -264,7 +266,9 @@ function sheetNames(file) {
 readers.spreadsheet = function (file, opts) {
   progress('Reading workbook', 10);
   var wb = readWorkbook(file, false);
-  var sheetName = opts.sheet && wb.SheetNames.indexOf(opts.sheet) >= 0 ? opts.sheet : wb.SheetNames[0];
+  var found = !opts.sheet || wb.SheetNames.indexOf(opts.sheet) >= 0;
+  var sheetName = found ? opts.sheet || wb.SheetNames[0] : wb.SheetNames[0];
+  var notes = found ? [] : ['Sheet "' + opts.sheet + '" is not in this workbook. The first sheet "' + sheetName + '" was read.'];
   var ws = wb.Sheets[sheetName];
   progress('Reading sheet "' + sheetName + '"', 50);
   var raw = ws ? XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: true }) : [];
@@ -273,10 +277,14 @@ readers.spreadsheet = function (file, opts) {
   for (var i = 0; i < raw.length; i++) {
     builder.add(raw[i]);
     raw[i] = null;
-    if (builder.cells > state.maxCells) throw tooLarge(builder.cells * (raw.length / (i + 1)));
+    if (builder.cells > DL.maxCells) throw tooLarge(builder.cells * (raw.length / (i + 1)));
   }
-  return { table: builder.finish(), notes: [], ragged: 0, meta: { sheet: sheetName } };
+  return { table: builder.finish(), notes: notes, ragged: 0, meta: { sheet: sheetName } };
 };
+
+function RAGGED_NOTE(count) {
+  return DL.pluralize(count, 'row') + ' had a different number of values than the header. Missing values were left empty and extra values were kept in new columns.';
+}
 
 function loadFile(msg, reply) {
   var file = msg.file;
@@ -291,7 +299,7 @@ function loadFile(msg, reply) {
   var notes = result.notes;
   var skip = Math.max(0, Number(opts.skipRows) || 0);
   if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + '.');
-  if (result.ragged) notes.push(DL.pluralize(result.ragged, 'row') + ' had a different number of values than the header. Missing values were left empty and extra values were kept in new columns.');
+  if (result.ragged) notes.push(RAGGED_NOTE(result.ragged));
   state.source = table;
   state.sourceKey = 'src:' + file.name + ':' + file.size + ':' + file.lastModified + ':' + JSON.stringify(opts);
   state.sourceInfo = {
@@ -322,7 +330,15 @@ function hashOf(str) {
 }
 
 function stepHash(step, upstreamHash) {
-  return hashOf(upstreamHash + '|' + step.opId + '|' + (step.skip ? 'skip' : '') + '|' + JSON.stringify(step.params));
+  var op = DL.getOp(step.opId);
+  var extra = op && op.hashExtra ? op.hashExtra(step.params) : '';
+  return hashOf(upstreamHash + '|' + step.opId + '|' + (step.skip ? 'skip' : '') + '|' + JSON.stringify(step.params) + '|' + extra);
+}
+
+// Gives the position of a step id in the chain, or -1.
+function stepIndex(stepId) {
+  for (var i = 0; i < state.steps.length; i++) if (state.steps[i].id === stepId) return i;
+  return -1;
 }
 
 function makeEntry(hash, status, table, notes, error, ms) {
@@ -401,6 +417,7 @@ function runChain(msg, done) {
   state.steps = msg.steps || [];
   state.pinned = msg.protect || [];
   state.cancelRun = !!msg.cancelled;
+  state.cancelledFrom = -1;
   if (!state.source) { done([], false); return; }
   var results = [];
   var upstream = state.source;
@@ -426,17 +443,21 @@ function runChain(msg, done) {
   function stepSlice() {
     var sliceStart = Date.now();
     while (i < state.steps.length) {
-      // The steps after a cancel are blocked, like the steps after an invalid step.
-      if (state.cancelRun && !cancelled) { cancelled = true; blocked = CANCELLED_NOTE; }
       var step = state.steps[i];
       live.add(step.id);
       var h = stepHash(step, upstreamHash);
       var entry;
+      if (!blocked) {
+        entry = state.cache.get(step.id);
+        var hit = entry && entry.hash === h && entry.table;
+        // After a cancel, the results in the cache are still used. The first step that must be
+        // computed is blocked, like the steps after an invalid step.
+        if (!hit && state.cancelRun) { cancelled = true; blocked = CANCELLED_NOTE; state.cancelledFrom = i; }
+      }
       if (blocked) {
         entry = makeEntry(h, 'blocked', null, [blocked]);
       } else {
-        entry = state.cache.get(step.id);
-        if (!entry || entry.hash !== h || !entry.table) entry = computeStep(step, upstream, h);
+        if (!hit) entry = computeStep(step, upstream, h);
         touch(entry);
       }
       if (entry.table) state.cache.set(step.id, entry); else state.cache.delete(step.id);
@@ -461,9 +482,9 @@ function runChain(msg, done) {
 function tableFor(stepId) {
   if (!state.source) return null;
   if (stepId === 'source' || !stepId) return state.source;
-  var idx = -1;
-  for (var i = 0; i < state.steps.length; i++) if (state.steps[i].id === stepId) { idx = i; break; }
+  var idx = stepIndex(stepId);
   if (idx < 0) return null;
+  if (state.cancelledFrom >= 0 && idx >= state.cancelledFrom) return null; // cancelled: not computed on demand
   state.recent = [stepId].concat(state.recent.filter(function (id) { return id !== stepId; })).slice(0, 2);
   var entry = state.cache.get(stepId);
   if (entry && entry.table) { touch(entry); return entry.table; }
@@ -491,10 +512,9 @@ function tableFor(stepId) {
 // Gives the table that feeds a step: the output of the step before it, or the source.
 function inputFor(stepId) {
   if (!state.source || stepId === 'source' || !stepId) return null;
-  for (var i = 0; i < state.steps.length; i++) {
-    if (state.steps[i].id === stepId) return i === 0 ? state.source : tableFor(state.steps[i - 1].id);
-  }
-  return null;
+  var i = stepIndex(stepId);
+  if (i < 0) return null;
+  return i === 0 ? state.source : tableFor(state.steps[i - 1].id);
 }
 
 /* ---------- Preview slices ---------- */
@@ -509,12 +529,37 @@ function getSlice(msg) {
   return data;
 }
 
-// Gives, for each row of the slice, the indexes of the cells that differ from the input table.
-// A new column counts as changed in every row. Gives null when the row count differs.
-function sliceChanges(table, input, start, end) {
-  if (!input || input.length !== table.length) return null;
-  var w = table.columns.length;
+// Pairs the columns of an output table with the columns of its input: first by name, then by shared
+// data (a renamed column). Gives an array output column -> input column, or -1 for a new column.
+function columnPairs(table, input) {
   var map = table.columns.map(function (name) { return input.columns.indexOf(name); });
+  var taken = {};
+  map.forEach(function (u) { if (u >= 0) taken[u] = true; });
+  for (var c = 0; c < map.length; c++) {
+    if (map[c] >= 0) continue;
+    for (var u = 0; u < input.columns.length; u++) {
+      if (!taken[u] && sameColumn(table.cols[c], input.cols[u])) { map[c] = u; taken[u] = true; break; }
+    }
+  }
+  return map;
+}
+
+// Gives the input row of each output row when the step kept, removed or moved rows (DL.selectRows),
+// or null when the rows are in the same places.
+function rowMapOf(table, input) {
+  if (table === input) return null; // a step that passes the data through
+  if (table.rowMap && table.rowMap.length === table.length) return table.rowMap;
+  return table.length === input.length ? null : undefined;
+}
+
+// Gives, for each row of the slice, the indexes of the cells that differ from the input table.
+// A new column counts as changed in every row. Gives null when the rows cannot be paired.
+function sliceChanges(table, input, start, end) {
+  if (!input) return null;
+  var rows = rowMapOf(table, input);
+  if (rows === undefined) return null;
+  var w = table.columns.length;
+  var map = columnPairs(table, input);
   var getA = [], getB = [];
   for (var c = 0; c < w; c++) {
     getA.push(DL.cellGetter(table, c));
@@ -522,41 +567,45 @@ function sliceChanges(table, input, start, end) {
   }
   var out = [];
   for (var i = start; i < end; i++) {
+    var r = rows ? rows[i] : i;
     var changed = [];
     for (c = 0; c < w; c++) {
-      if (getB[c] === null || getA[c](i) !== getB[c](i)) changed.push(c);
+      if (getB[c] === null || getA[c](i) !== getB[c](r)) changed.push(c);
     }
     out.push(changed);
   }
   return out;
 }
 
-// Counts the cells that a step changed, column by column. The count is kept for each output table.
+// Counts the cells that a step changed, column by column. The count is kept per step.
 function diffSummary(msg) {
   var table = tableFor(msg.stepId);
   var input = inputFor(msg.stepId);
   if (!table || !input) return null;
-  var memo = state.diffMemo.get(table);
-  if (memo && memo.input === input) return memo.summary;
+  var memo = state.diffMemo.get(msg.stepId);
+  if (memo && memo.table === table && memo.input === input) return memo.summary;
   var summary = compareTables(table, input);
-  state.diffMemo.set(table, { input: input, summary: summary });
+  state.diffMemo.set(msg.stepId, { table: table, input: input, summary: summary });
   return summary;
 }
 
 function compareTables(table, input) {
-  var sameRows = table.length === input.length;
+  var rows = rowMapOf(table, input);
+  var comparable = rows !== undefined;
   var n = table.length;
+  var map = columnPairs(table, input);
   var columns = table.columns.map(function (name, c) {
-    var u = input.columns.indexOf(name);
-    if (u < 0) return { name: name, isNew: true, changed: sameRows ? n : 0 };
-    if (!sameRows || sameColumn(table.cols[c], input.cols[u])) return { name: name, isNew: false, changed: 0 };
+    var u = map[c];
+    if (u < 0) return { name: name, isNew: true, changed: comparable ? n : 0 };
+    var renamed = input.columns[u] !== name;
+    if (!comparable || (!rows && sameColumn(table.cols[c], input.cols[u]))) return { name: name, isNew: false, renamed: renamed, changed: 0 };
     var a = DL.cellGetter(table, c), b = DL.cellGetter(input, u);
     var changed = 0;
-    for (var i = 0; i < n; i++) if (a(i) !== b(i)) changed++;
-    return { name: name, isNew: false, changed: changed };
+    for (var i = 0; i < n; i++) if (a(i) !== b(rows ? rows[i] : i)) changed++;
+    return { name: name, isNew: false, renamed: renamed, changed: changed };
   });
-  var removed = input.columns.filter(function (name) { return table.columns.indexOf(name) < 0; });
-  return { sameRows: sameRows, rowsBefore: input.length, rowsAfter: n, columns: columns, removed: removed };
+  var removed = input.columns.filter(function (name, u) { return map.indexOf(u) < 0; });
+  return { sameRows: comparable, rowsBefore: input.length, rowsAfter: n, columns: columns, removed: removed };
 }
 
 // True when two columns share the same data, so no cell can differ.
@@ -673,10 +722,9 @@ function search(msg) {
 
 // Finds the rows that a result note is about (for example the rows that failed a Verify rule).
 function findRows(msg) {
+  var step = state.steps[stepIndex(msg.stepId)];
   var input = inputFor(msg.stepId);
-  var step = null;
-  for (var i = 0; i < state.steps.length; i++) if (state.steps[i].id === msg.stepId) step = state.steps[i];
-  if (!input || !step) return { matches: [], total: 0 };
+  if (!step || !input || !tableFor(msg.stepId)) return { matches: [], total: 0 }; // the step has no result now
   return DL.findRows(step.opId, step.params, input, msg.lookup, msg.limit);
 }
 
@@ -691,7 +739,7 @@ function batchFile(msg) {
   var read = readers[format.id](file, msg.options || {});
   var table = read.table;
   var notes = read.notes.slice();
-  if (read.ragged) notes.push(DL.pluralize(read.ragged, 'row') + ' had a different number of values than the header.');
+  if (read.ragged) notes.push(RAGGED_NOTE(read.ragged));
   var steps = msg.steps || [];
   for (var i = 0; i < steps.length; i++) {
     var entry = computeStep(steps[i], table, '');
@@ -716,16 +764,27 @@ var CRC_TABLE = (function () {
   return t;
 })();
 
-function crc32(bytes) {
+// CRC-32 of a blob, read in slices so that the whole file is not in memory at one time.
+function crc32(blob) {
   var c = -1;
-  for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  var SLICE = 8 * 1024 * 1024;
+  for (var at = 0; at < blob.size; at += SLICE) {
+    var bytes = new Uint8Array(readBuffer(blob.slice(at, Math.min(blob.size, at + SLICE))));
+    for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  }
   return (c ^ -1) >>> 0;
 }
 
-// Makes a zip file from [{ name, blob }]. The files are stored without compression. Deflate would
-// need a library or an asynchronous stream, and the zip stays simple. Every file is read into memory
-// while the zip is made, so the peak memory is about two times the total output size.
+var ZIP_MAX_BYTES = 4 * 1024 * 1024 * 1024 - 1;
+var ZIP_MAX_ENTRIES = 65535;
+
+// Makes a zip file from [{ name, blob }]. The zip stores the files without compression: deflate
+// needs a library or an asynchronous stream. The zip refers to the blobs, so no file is copied.
 function makeZip(entries) {
+  var total = entries.reduce(function (sum, e) { return sum + e.blob.size; }, 0);
+  if (entries.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) {
+    throw new Error('A zip file can hold at most ' + ZIP_MAX_ENTRIES + ' files and 4 GB. Apply the workflow to fewer files at one time.');
+  }
   var now = new Date();
   var dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
   var dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
@@ -734,9 +793,9 @@ function makeZip(entries) {
   var central = [];
   var offset = 0;
   entries.forEach(function (e) {
-    var data = new Uint8Array(readBuffer(e.blob));
+    var size = e.blob.size;
     var name = encoder.encode(e.name);
-    var crc = crc32(data);
+    var crc = crc32(e.blob);
     var local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);
     local.setUint16(4, 20, true);       // version needed
@@ -745,13 +804,13 @@ function makeZip(entries) {
     local.setUint16(10, dosTime, true);
     local.setUint16(12, dosDate, true);
     local.setUint32(14, crc, true);
-    local.setUint32(18, data.length, true);
-    local.setUint32(22, data.length, true);
+    local.setUint32(18, size, true);
+    local.setUint32(22, size, true);
     local.setUint16(26, name.length, true);
     local.setUint16(28, 0, true);
-    parts.push(local.buffer, name, data);
-    central.push({ name: name, crc: crc, size: data.length, offset: offset });
-    offset += 30 + name.length + data.length;
+    parts.push(local.buffer, name, e.blob);
+    central.push({ name: name, crc: crc, size: size, offset: offset });
+    offset += 30 + name.length + size;
   });
   var centralStart = offset;
   central.forEach(function (c) {
@@ -820,7 +879,7 @@ writers.xlsx = function (table, o, format) {
   var n = table.length;
   if (n > 1048575) throw new Error('Excel files can hold at most 1,048,576 rows. Use CSV for this data.');
   // The Excel writer needs several copies of the data in memory.
-  if (n * table.columns.length > state.maxCells / 4) throw new Error('This table is too large for an Excel file in the browser. Use CSV for this data.');
+  if (n * table.columns.length > DL.maxCells / 4) throw new Error('This table is too large for an Excel file in the browser. Use CSV for this data.');
   var BLOCK = 20000;
   var ws = XLSX.utils.aoa_to_sheet(o.header !== false ? [table.columns] : [], { dense: true });
   var at = o.header !== false ? 1 : 0;

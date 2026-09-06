@@ -231,7 +231,9 @@
         cols[c] = { src: col.src, idx: comp };
       }
     }
-    return DL.makeTable(table.columns, cols, n);
+    var out = DL.makeTable(table.columns, cols, n);
+    out.rowMap = idx; // output row -> row of the input table, for the Changes view
+    return out;
   };
 
   /* ---------- Grouping ---------- */
