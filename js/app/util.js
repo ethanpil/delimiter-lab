@@ -181,7 +181,7 @@
     if (opts.alt) {
       buttons.push(U.el('button', { type: 'button', class: 'btn btn-outline-primary', text: opts.alt, onclick: function () { chosen = true; m.closeThen(function () { if (onAlt) onAlt(); }); } }));
     }
-    buttons.push(U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () { chosen = true; m.closeThen(onYes); } }));
+    buttons.push(U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () { chosen = true; m.closeThen(function () { if (onYes) onYes(); }); } }));
     m = U.modal({
       onHidden: function () { if (!chosen && onCancel) onCancel(); },
       enterSubmits: true,

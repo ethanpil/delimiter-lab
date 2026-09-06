@@ -396,18 +396,27 @@
   }
 
   /* ---------- Workflows ---------- */
-  // Saves the workflow. then(record) runs after a save; then(null) runs when the user stops.
+  // Builds the record to save. Without an open file the columns and the source options of the saved
+  // record stay as they are. The live state does not hold them, and an empty value writes over good data.
+  function currentRecord(name) {
+    var st = store.state;
+    var cols = store.sourceColumns();
+    var old = st.workflow.id ? DL.workflows.get(st.workflow.id) : null;
+    return {
+      id: st.workflow.id,
+      name: name,
+      steps: st.workflow.steps,
+      columns: cols || (old ? old.columns : []),
+      sourceOptions: cols ? st.source.options : (old ? old.sourceOptions : st.source.options)
+    };
+  }
+
+  // Saves the workflow. then(record) runs after a save. then(null) runs when the user stops.
   function saveWorkflow(then) {
     var st = store.state;
     if (!st.workflow.steps.length) { U.toast(DL.t('msg.addStepBeforeSave'), 'info'); if (then) then(null); return; }
     var doSave = function (name) {
-      var rec = DL.workflows.save({
-        id: st.workflow.id,
-        name: name,
-        steps: st.workflow.steps,
-        columns: store.sourceColumns() || [],
-        sourceOptions: st.source.options
-      });
+      var rec = DL.workflows.save(currentRecord(name));
       if (!rec) { if (then) then(null); return; }
       store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
       U.toast(DL.t('msg.workflowSaved', { name: rec.name }), 'success');
@@ -428,6 +437,7 @@
     var b = $('btnAutosave');
     b.classList.toggle('active', autosaveOn);
     b.setAttribute('aria-pressed', autosaveOn ? 'true' : 'false');
+    b.setAttribute('title', DL.t(autosaveOn ? 'header.autosaveOnTitle' : 'header.autosaveTitle'));
   }
 
   function setAutosave(on) {
@@ -436,25 +446,38 @@
     showAutosave();
   }
 
-  // Writes the open workflow to its saved record. It waits for a pause in the changes.
+  var askingName = false; // the save dialog is open: do not open a second one
+
+  // Writes the open workflow to its record, without a dialog. It does nothing when there is no record.
+  function autosaveNow() {
+    var st = store.state;
+    if (!autosaveOn || !st.workflow.id || !st.workflow.name || !st.workflow.steps.length || !st.dirty) return;
+    var rec = DL.workflows.save(currentRecord(st.workflow.name));
+    if (!rec) { setAutosave(false); U.toast(DL.t('msg.autosaveStopped'), 'danger'); return; }
+    store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
+  }
+
+  // Autosaves after a pause in the changes.
   var autosaveSoon = U.debounce(function () {
     var st = store.state;
-    if (!autosaveOn || !st.workflow.id || !st.workflow.steps.length || !st.dirty) return;
-    var rec = DL.workflows.save({
-      id: st.workflow.id,
-      name: st.workflow.name,
-      steps: st.workflow.steps,
-      columns: store.sourceColumns() || [],
-      sourceOptions: st.source.options
-    });
-    if (rec) store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
+    if (!autosaveOn || askingName || !st.workflow.steps.length) return;
+    // Autosave needs a record with a name. Ask for one, and stop autosave when the user does not give it.
+    if (!st.workflow.id || !st.workflow.name) {
+      askingName = true;
+      saveWorkflow(function (rec) { askingName = false; if (!rec) setAutosave(false); });
+      return;
+    }
+    autosaveNow();
   }, 800);
+
+  window.addEventListener('pagehide', function () { autosaveSoon.cancel(); autosaveNow(); });
 
   $('btnAutosave').addEventListener('click', function () {
     if (autosaveOn) { setAutosave(false); U.toast(DL.t('msg.autosaveOff'), 'info'); return; }
     var st = store.state;
-    // Autosave needs a saved workflow: ask for a name first.
-    if (st.workflow.steps.length && !st.workflow.id) {
+    // Autosave needs a saved workflow. Ask for a name first.
+    if (!st.workflow.id || !st.workflow.name) {
+      if (!st.workflow.steps.length) { U.toast(DL.t('msg.addStepBeforeSave'), 'info'); return; }
       saveWorkflow(function (rec) {
         if (!rec) return; // the user stopped: autosave stays off
         setAutosave(true);
@@ -463,10 +486,14 @@
       return;
     }
     setAutosave(true);
-    U.toast(st.workflow.id ? DL.t('msg.autosaveOn', { name: st.workflow.name }) : DL.t('msg.autosaveOff'), 'success');
+    U.toast(DL.t('msg.autosaveOn', { name: st.workflow.name }), 'success');
   });
 
   function applyWorkflow(wf, then) {
+    // Write a waiting autosave first: it decides whether the steps count as saved. autosaveNow() opens
+    // no dialog, so it cannot put the save dialog under the dialogs below.
+    autosaveSoon.cancel();
+    autosaveNow();
     var go = function () {
       store.replaceWorkflow(wf);
       if (then) then();
@@ -482,23 +509,36 @@
       var level = DL.workflows.matchLevel(wf, store.sourceColumns());
       if (level === 'partial' || level === 'none') U.toast(DL.t('msg.columnsMissing'), 'warning');
     };
-    var cur = store.state.workflow;
-    var hasCode = (wf.steps || []).some(function (s) { return s.opId === 'javascript'; });
-    var warning = hasCode ? DL.t('msg.codeWarning') + ' ' : '';
-    // The steps on screen are not in a saved record, or they changed after the last save.
-    if (cur.steps.length && (!cur.id || store.state.dirty)) {
-      U.confirm({
-        title: DL.t('msg.unsavedTitle'),
-        message: warning + DL.t('msg.unsavedMessage', { name: wf.name }),
-        yes: DL.t('msg.saveAndUse'),
-        alt: DL.t('msg.useWithoutSaving')
-      }, function () { saveWorkflow(function (rec) { if (rec) go(); }); }, null, go);
+    var saveThenGo = function () {
+      saveWorkflow(function (rec) {
+        if (!rec) { U.toast(DL.t('msg.notOpened', { name: wf.name }), 'info'); return; }
+        // The save went into the record we are about to open: read it again, or the steps
+        // that the save wrote go away.
+        if (rec.id === wf.id) wf = DL.workflows.get(wf.id) || wf;
+        go();
+      });
+    };
+    var ask = function () {
+      var cur = store.state.workflow;
+      if (!cur.steps.length) { go(); return; }
+      // The steps on screen are not in a saved record, or they changed after the last save.
+      if (!cur.id || store.state.dirty) {
+        U.confirm({
+          title: DL.t('msg.unsavedTitle'),
+          message: DL.t('msg.unsavedMessage', { name: wf.name }),
+          yes: DL.t('msg.saveAndUse'),
+          alt: DL.t('msg.useWithoutSaving')
+        }, saveThenGo, null, go);
+        return;
+      }
+      U.confirm({ title: DL.t('msg.replaceTitle'), message: DL.t('msg.replaceMessage'), yes: DL.t('msg.replace') }, go);
+    };
+    // A workflow with code gets its own warning first. The question about saving must not hide it.
+    if ((wf.steps || []).some(function (s) { return s.opId === 'javascript'; })) {
+      U.confirm({ title: DL.t('msg.applyTitle'), message: DL.t('msg.codeWarning'), yes: DL.t('common.use'), danger: true }, ask);
       return;
     }
-    if (cur.steps.length || hasCode) {
-      var message = warning + (cur.steps.length ? DL.t('msg.replaceMessage') : '');
-      U.confirm({ title: cur.steps.length ? DL.t('msg.replaceTitle') : DL.t('msg.applyTitle'), message: message.trim(), yes: cur.steps.length ? DL.t('msg.replace') : DL.t('common.use') }, go);
-    } else go();
+    ask();
   }
 
   function importWorkflowFile(file) {
@@ -685,7 +725,7 @@
         updateUndoButtons();
         updateSaveState();
         store.saveSession();
-        autosaveSoon();
+        if (autosaveOn) autosaveSoon();
         refreshPreview();
         break;
       case 'params':
@@ -695,7 +735,7 @@
         updateUndoButtons();
         updateSaveState();
         store.saveSession();
-        autosaveSoon();
+        if (autosaveOn) autosaveSoon();
         break;
       case 'selection':
         chain.render(true);
@@ -717,9 +757,11 @@
         refreshPreview();
         break;
       case 'workflow':
-        $('workflowName').value = st.workflow.name || '';
+        // Not while the user types in the box: the box holds a name that the store does not have yet.
+        if (document.activeElement !== $('workflowName')) $('workflowName').value = st.workflow.name || '';
         updateSaveState();
         store.saveSession();
+        if (autosaveOn) autosaveSoon();
         break;
     }
   });
@@ -728,7 +770,7 @@
   $('btnAddStep').addEventListener('click', addStep);
   $('btnUndo').addEventListener('click', function () { store.undo(); });
   $('btnRedo').addEventListener('click', function () { store.redo(); });
-  $('btnSave').addEventListener('click', saveWorkflow);
+  $('btnSave').addEventListener('click', function () { saveWorkflow(); });
   $('btnWorkflows').addEventListener('click', openWorkflows);
   $('btnDownload').addEventListener('click', download);
   $('btnHelp').addEventListener('click', DL.dialogs.help);
