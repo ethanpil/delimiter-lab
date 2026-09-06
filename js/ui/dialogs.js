@@ -146,6 +146,15 @@
     importInput.addEventListener('change', function () {
       if (importInput.files[0]) { actions.importFile(importInput.files[0]); m.close(); }
     });
+    // One file input for "Run a file". runWf holds the workflow that the user chose.
+    var runWf = null;
+    var runInput = U.el('input', { type: 'file', accept: DL.acceptedExtensions().join(','), multiple: true, hidden: true });
+    runInput.addEventListener('change', function () {
+      var files = Array.prototype.slice.call(runInput.files);
+      var w = runWf;
+      runInput.value = '';
+      if (files.length && w) m.closeThen(function () { actions.quickRun(w, files); });
+    });
     function build() {
       U.empty(list);
       var q = search.value.trim().toLowerCase();
@@ -190,6 +199,10 @@
           ]),
           U.el('div', { class: 'btn-group btn-group-sm' }, [
             U.el('button', { type: 'button', class: 'btn btn-primary', title: DL.t('dialog.useWorkflow'), onclick: function () { m.closeThen(function () { actions.apply(w); }); } }, [U.el('i', { class: 'bi bi-play-fill' }), ' ' + DL.t('common.use')]),
+            U.el('button', { type: 'button', class: 'btn btn-success', title: DL.t('dialog.runFileTitle'), onclick: function () {
+              runWf = w;
+              runInput.click();
+            } }, [U.el('i', { class: 'bi bi-lightning-charge' }), ' ' + DL.t('wf.runFile')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('common.rename'), onclick: function () {
               // One dialog at a time: the list opens again after the prompt.
               m.closeThen(function () {
@@ -217,7 +230,7 @@
       size: 'lg',
       scrollable: true,
       body: [
-        U.el('div', { class: 'd-flex gap-2' }, [search, U.el('button', { type: 'button', class: 'btn btn-outline-secondary text-nowrap', onclick: function () { importInput.click(); } }, [U.el('i', { class: 'bi bi-upload' }), ' ' + DL.t('wf.importFile')]), importInput]),
+        U.el('div', { class: 'd-flex gap-2' }, [search, U.el('button', { type: 'button', class: 'btn btn-outline-secondary text-nowrap', onclick: function () { importInput.click(); } }, [U.el('i', { class: 'bi bi-upload' }), ' ' + DL.t('wf.importFile')]), importInput, runInput]),
         U.el('div', { class: 'form-text', text: DL.t('wf.kept') }),
         list
       ]
@@ -252,7 +265,7 @@
     ]);
     var right = U.el('div', { class: 'col-lg-6' }, [
       U.el('h6', { class: 'mt-3 mt-lg-0', text: DL.t('help.tips') }),
-      list('ul', [DL.t('help.tip1'), DL.t('help.tip2'), DL.t('help.tip3'), DL.t('help.tip4'), DL.t('help.tip5'), DL.t('help.tip6'), DL.t('help.tip7'), DL.t('help.tip8'), DL.t('help.tip9')])
+      list('ul', [DL.t('help.tip1'), DL.t('help.tip2'), DL.t('help.tip3'), DL.t('help.tip4'), DL.t('help.tip5'), DL.t('help.tip6'), DL.t('help.tip7'), DL.t('help.tip8'), DL.t('help.tip9'), DL.t('help.tip10')])
     ]);
     var body = U.el('div', {}, [
       U.el('div', { class: 'row g-4' }, [left, right]),

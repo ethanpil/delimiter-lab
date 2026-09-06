@@ -100,6 +100,8 @@
     'msg.newSureYes': 'Yes, remove the steps',
     'msg.newDone': 'The steps are gone. You can build a new workflow.',
     'msg.newEmpty': 'There are no steps to remove.',
+    'msg.quickRunNote': 'Each file goes through "{name}" ({steps}). The steps on the screen do not change.',
+    'msg.quickRunNoSteps': 'This workflow has no steps.',
     'msg.applyTitle': 'Use this workflow?',
     'msg.codeWarning': 'This workflow has a Custom JavaScript step. Its code runs on your data in this browser. Use it only when you trust the source of the workflow.',
     'msg.stepsDropped': 'Your saved steps had {n} of an operation this version does not have. Those steps were removed.',
@@ -153,6 +155,7 @@
     'dialog.savedWorkflows': 'Saved workflows',
     'dialog.useWorkflow': 'Use this workflow',
     'dialog.renameWorkflow': 'Rename workflow',
+    'dialog.runFileTitle': 'Run this workflow on a file and download the result',
     'dialog.exportWorkflow': 'Save this workflow as a .workflow.json file',
     'dialog.deleteWorkflow': 'Delete workflow',
     'dialog.deleteConfirm': 'Delete "{name}"? This cannot be undone.',
@@ -174,6 +177,7 @@
     'wf.lastUsed': 'Last used {when}',
     'wf.neverUsed': 'Never used',
     'wf.importFile': 'Import a workflow file',
+    'wf.runFile': 'Run a file',
     'wf.exportFile': 'Export',
     'wf.kept': 'Workflows are stored locally in your browser. You may Import/Export workflows for sharing or use on another computer.',
     // Help dialog (js/ui/dialogs.js)
@@ -201,6 +205,7 @@
     'help.tip7': 'Click a rule in the result of a Verify step to see the rows that failed it.',
     'help.tip8': 'Drop many files at once to apply the steps to all of them and download a zip file.',
     'help.tip9': 'Cancel stops a slow run before its next step. The speedometer button shows the time of each step.',
+    'help.tip10': 'To use a workflow that is ready, open Workflows and click "Run a file". The file goes through the steps and the result downloads.',
     'help.local': 'Delimiter Lab runs fully in your browser. No data is sent anywhere.',
     // Steps list (js/ui/chain.js)
     'chain.addStep': 'Add a step to start changing the data.',

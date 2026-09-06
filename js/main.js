@@ -510,6 +510,30 @@
     });
   }
 
+  // Runs a saved workflow on files that the user gives, and downloads the result. The workflow on the
+  // screen and the file that is open do not change.
+  function quickRunWorkflow(wf, files) {
+    if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
+    var steps = (wf.steps || []).map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
+    if (!steps.length) { U.toast(DL.t('msg.quickRunNoSteps'), 'info'); return; }
+    var accepted = DL.acceptedExtensions();
+    var skipped = files.filter(function (f) { return accepted.indexOf('.' + DL.fileExtension(f.name)) < 0 || f.size > MAX_FILE_BYTES; });
+    files = files.filter(function (f) { return skipped.indexOf(f) < 0; });
+    if (!files.length) { U.toast(DL.t('msg.noDataFiles', { types: accepted.join(', ') }), 'warning'); return; }
+    var sourceOptions = DL.cleanSourceOptions(wf.sourceOptions || store.state.source.options);
+    sourceOptions.sheet = ''; // the first sheet of each file
+    var many = files.length > 1;
+    var wfName = U.safeFileName((wf.name || '').trim() || 'workflow');
+    var baseName = many ? wfName : U.baseName(files[0].name) + '-' + wfName;
+    var note = DL.t('msg.quickRunNote', { name: wf.name, steps: DL.pluralize(steps.length, 'step') });
+    DL.dialogs.download({ files: many ? files : null, baseName: baseName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, outName, allOptions) {
+      lastFormat = options.format;
+      lastFormatOptions = allOptions;
+      if (wf.id) DL.workflows.touch(wf.id);
+      runBatch(files, steps, options, outName, skipped.map(function (f) { return { name: f.name, error: DL.t(f.size > MAX_FILE_BYTES ? 'msg.fileTooBig' : 'msg.notDataFile') }; }), sourceOptions);
+    });
+  }
+
   function applyWorkflow(wf, then) {
     // Write a waiting autosave first: it decides whether the steps count as saved. autosaveNow() opens
     // no dialog, so it cannot put the save dialog under the dialogs below.
@@ -582,6 +606,7 @@
   function openWorkflows() {
     DL.dialogs.workflows({ currentColumns: store.sourceColumns(), currentId: store.state.workflow.id }, {
       apply: applyWorkflow,
+      quickRun: quickRunWorkflow,
       importFile: importWorkflowFile,
       renamed: function (id, name) { if (store.state.workflow.id === id) store.setWorkflowMeta({ name: name }, !store.state.dirty); },
       removed: function (id) { if (store.state.workflow.id === id) store.setWorkflowMeta({ id: null }); }
@@ -668,13 +693,14 @@
     DL.dialogs.download({ files: files, baseName: wfName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, zipName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
-      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: DL.t(f.size > MAX_FILE_BYTES ? 'msg.fileTooBig' : 'msg.notDataFile') }; }));
+      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: DL.t(f.size > MAX_FILE_BYTES ? 'msg.fileTooBig' : 'msg.notDataFile') }; }), JSON.parse(JSON.stringify(store.state.source.options)));
     });
   }
 
-  function runBatch(files, steps, output, zipName, items) {
+  // outName is the name of the zip file, or the name of the output when there is one file.
+  function runBatch(files, steps, output, outName, items, sourceOptions) {
     var format = DL.outputFormatById(output.format);
-    var sourceOptions = JSON.parse(JSON.stringify(store.state.source.options));
+    var single = files.length === 1;
     var usedNames = {};
     var token = ++batchToken;
     var i = 0;
@@ -712,12 +738,20 @@
     function finish() {
       var done = items.filter(function (it) { return it.blob; });
       if (!done.length) { end(); DL.dialogs.batchReport(items); return; }
+      var oneAttention = items.some(function (it) { return it.error || (it.notes && it.notes.length); });
+      if (single) {
+        end();
+        U.downloadBlob(done[0].blob, outName);
+        if (oneAttention) DL.dialogs.batchReport(items);
+        else U.toast(DL.t('msg.downloaded', { name: outName, rows: DL.pluralize(done[0].rowCount, 'row') }), 'success');
+        return;
+      }
       batchLabel = DL.t('progress.zip');
       cancelable = false;
       showProgress('', 95);
       engine.zip(done.map(function (it) { return { name: it.name, blob: it.blob }; })).then(function (msg) {
         end();
-        U.downloadBlob(msg.blob, zipName);
+        U.downloadBlob(msg.blob, outName);
         var attention = items.some(function (it) { return it.error || (it.notes && it.notes.length); });
         if (attention) DL.dialogs.batchReport(items);
         else U.toast(DL.t('msg.downloadedZip', { name: zipName, files: DL.pluralize(done.length, 'file') }), 'success');
