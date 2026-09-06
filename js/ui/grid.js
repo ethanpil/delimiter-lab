@@ -80,6 +80,7 @@
     this.current = null;   // [row, col]
     this.scale = 1;
     this.diffSummary = null; // per-column change counts, when the "Changes" view is on
+    this.profiles = {};      // column index -> statistics already received for this table
     this.closeProfile();
   };
 
@@ -297,7 +298,7 @@
     }
     if (missing.length) this.requestPages(missing);
     var range = this.visibleColumns();
-    if (!this.headerRange || range[0] !== this.headerRange[0] || range[1] !== this.headerRange[1]) this.renderHeader();
+    if (!this.headerRange || range[0] !== this.headerRange[0] || range[1] !== this.headerRange[1]) this.renderHeader(true);
     // Nothing changed since the last render: keep the DOM.
     var key = first + ':' + last + ':' + range.join('-') + ':' + loaded + ':' + this.hitsVersion + ':' + (this.current ? this.current.join('/') : '') + ':' + (this.scale < 1 ? this.scroll.scrollTop : 0);
     if (key === this.renderKey) return;
@@ -424,8 +425,11 @@
     pop.col = col;
     pop.show();
     this.popover = pop;
+    if (this.profiles[col]) { pop.setContent({ '.popover-body': profileHtml(this.profiles[col]) }); return; }
     this.engine.columnStats(stepId, col).then(function (r) {
-      if (self.popover !== pop || !r.stats) return;
+      if (self.popover !== pop) return;
+      if (!r.stats) { pop.setContent({ '.popover-body': '<div class="text-secondary small">' + U.esc(DL.t('grid.noData')) + '</div>' }); return; }
+      self.profiles[col] = r.stats;
       pop.setContent({ '.popover-body': profileHtml(r.stats) });
     }).catch(function (err) {
       if (self.popover === pop) pop.setContent({ '.popover-body': '<div class="text-danger small">' + U.esc(err.message || String(err)) + '</div>' });

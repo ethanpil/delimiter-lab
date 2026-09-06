@@ -649,14 +649,24 @@ function sampleOf(get, n, size) {
 }
 
 // Full statistics for one column, for the column profile.
+var statsMemo = new WeakMap(); // column data -> statistics; steps that share a column share the result
+
 function columnStats(msg) {
   var table = tableFor(msg.stepId);
   if (!table || msg.col < 0 || msg.col >= table.columns.length) return null;
+  var known = statsMemo.get(table.cols[msg.col]);
+  if (known && known.name === table.columns[msg.col]) return known;
+  var st = computeColumnStats(table, msg.col);
+  statsMemo.set(table.cols[msg.col], st);
+  return st;
+}
+
+function computeColumnStats(table, colIndex) {
   var n = table.length;
-  var get = DL.cellGetter(table, msg.col);
+  var get = DL.cellGetter(table, colIndex);
   var g = DL.groupRows([get], n);
   var type = DL.detectType(sampleOf(get, n, 500), 500);
-  var st = { name: table.columns[msg.col], type: type, rows: n, empty: 0, distinct: 0, numbers: 0, sum: 0, min: Infinity, max: -Infinity,
+  var st = { name: table.columns[colIndex], type: type, rows: n, empty: 0, distinct: 0, numbers: 0, sum: 0, min: Infinity, max: -Infinity,
     minLen: Infinity, maxLen: 0, dates: 0, earliest: Infinity, latest: -Infinity, top: [] };
   // The loop looks at each different value once and uses its count as the weight.
   for (var i = 0; i < n; i++) {

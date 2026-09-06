@@ -3,7 +3,6 @@
   'use strict';
   var U = DL.util;
   var $ = function (id) { return document.getElementById(id); };
-  DL.setLocale(DL.detectLocale()); // before any view makes text
 
   var store = new DL.Store();
   var progressEl = $('progress');
@@ -37,6 +36,7 @@
   var batchLabel = ''; // "File 2 of 5: x.csv" while a batch runs; worker messages go after it
   var runInFlight = false; // true while the worker runs the chain: the bar stays until the run ends
   var cancelable = false;  // true while a click on Cancel can stop the work
+  var exporting = false;   // true while the worker makes a download
   function showProgress(label, percent) {
     progressEl.hidden = false;
     progressEl.querySelector('.progress-bar').style.width = Math.max(2, percent || 0) + '%';
@@ -75,6 +75,7 @@
   // One file opens as the source. Many files go through the workflow one by one (batch).
   function openFiles(files) {
     if (!files || !files.length) return;
+    if (files.length === 1 && DL.fileExtension(files[0].name) === 'json') { importWorkflowFile(files[0]); return; }
     if (files.length === 1) { openFile(files[0]); return; }
     if (!store.state.workflow.steps.length) {
       U.toast(DL.t('msg.addStepsFirst'), 'info');
@@ -144,33 +145,35 @@
     return ids;
   }
 
+  // The run ended: the progress bar and the Cancel button go, unless a batch, a download or a
+  // file load still uses them.
+  function runEnded() {
+    runInFlight = false;
+    if (batchRunning) return; // the batch owns the bar, the Cancel button and the Stop timer
+    cancelable = false;
+    disarmStop();
+    if (!exporting && store.state.source.status !== 'loading') hideProgress();
+  }
+
   function runChain() {
-    if (store.state.source.status !== 'ready') { runInFlight = false; return; }
+    if (store.state.source.status !== 'ready') { runEnded(); return; }
     var token = ++runToken;
     var steps = store.state.workflow.steps.map(function (s) {
       return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false };
     });
-    var started = Date.now();
     var slowTimer = setTimeout(function () { showProgress(DL.t('progress.runningSteps'), 50); }, 400);
-    armStop();
+    if (!batchRunning) { armStop(); cancelable = true; }
     runInFlight = true;
-    cancelable = true;
     engine.run(steps, protectedSteps()).then(function (msg) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
-      runInFlight = false;
-      cancelable = false;
-      disarmStop();
-      if (!batchLabel) hideProgress();
+      runEnded();
       store.setResults(msg.results);
       if (msg.cancelled) U.toast(DL.t('msg.runCancelled'), 'info');
     }).catch(function (err) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
-      runInFlight = false;
-      cancelable = false;
-      disarmStop();
-      hideProgress();
+      runEnded();
       U.toast(DL.t('msg.runFailed', { error: err.message }), 'danger');
     });
   }
@@ -220,15 +223,16 @@
     $('previewTitle').textContent = title;
     $('previewStats').textContent = stats;
     previewStats = stats;
-    $('btnDiff').disabled = !shown.stepId || shown.stepId === 'source';
-    grid.diff = !!(diffOn() && shown.stepId && shown.stepId !== 'source');
+    var canDiff = !!(shown.stepId && shown.stepId !== 'source');
+    $('btnDiff').disabled = !canDiff;
+    grid.diff = diffOn() && canDiff;
     var message = shown.stepId ? '' : (st.source.status === 'loading' ? DL.t('preview.readingFile') : DL.t('preview.openFile'));
     var key = (shown.stepId || 'none') + '|' + resultKey(shown.stepId || 'source') + '|' + message + '|' + (grid.diff ? 'diff' : '');
     if (key !== previewKey) {
       previewKey = key;
       grid.show(shown.stepId, message).then(function () {
         if (searchQuery) runSearch();
-        else if (searchMatches.length) showMatches([], ''); // rows from a note belong to the old preview
+        else if (noteRowsShown) showMatches([], ''); // rows from a note belong to the old preview
         else if (shown.result && shown.stepId === sel) scrollToNewColumns(shown);
       });
     } else if (grid.diff && grid.diffSummary) {
@@ -322,8 +326,11 @@
     showMatches(matches, info);
   }
 
+  var noteRowsShown = false; // true while the preview marks the rows of a result note
+
   // Marks rows in the preview and lets the user step through them with the search buttons.
   function showMatches(matches, info) {
+    noteRowsShown = false;
     searchMatches = matches;
     searchIndex = matches.length ? 0 : -1;
     grid.setHits(matches);
@@ -341,9 +348,10 @@
     engine.findRows(stepId, note.rows, 2000).then(function (msg) {
       if (token !== searchToken) return;
       var r = msg.result;
-      if (r.removed) { showMatches([], DL.t('preview.notInOutput')); return; }
+      if (r.removed) { showMatches([], DL.t('preview.notInOutput')); noteRowsShown = true; return; }
       if (grid.stepId !== stepId) { showMatches([], ''); return; }
       showMatches(r.matches, note.text + (r.total > r.matches.length ? DL.t('preview.firstShown', { shown: r.matches.length }) : ''));
+      noteRowsShown = true;
     }).catch(function (err) { U.toast(err.message, 'danger'); });
   };
 
@@ -470,11 +478,13 @@
       lastFormat = options.format;
       lastFormatOptions = allOptions;
       showProgress(DL.t('progress.preparingDownload'), 20);
+      exporting = true;
       engine.exportStep(shown.stepId, options).then(function (msg) {
+        exporting = false;
         hideProgress();
         U.downloadBlob(msg.blob, fileName);
         U.toast(DL.t('msg.downloaded', { name: fileName, rows: DL.pluralize(msg.rowCount, 'row') }), 'success');
-      }).catch(function (err) { hideProgress(); U.toast(err.message, 'danger'); });
+      }).catch(function (err) { exporting = false; hideProgress(); U.toast(err.message, 'danger'); });
     });
   }
 
@@ -491,6 +501,9 @@
     batchToken++;
     batchRunning = false;
     batchLabel = '';
+    cancelable = false;
+    disarmStop();
+    hideProgress();
     engine.restart();
     grid.show(null, DL.t('preview.readingFile'));
     previewKey = null;
@@ -693,9 +706,7 @@
   document.addEventListener('drop', function (e) {
     if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
     e.preventDefault();
-    var files = Array.from(e.dataTransfer.files);
-    if (files.length === 1 && DL.fileExtension(files[0].name) === 'json') importWorkflowFile(files[0]);
-    else openFiles(files);
+    openFiles(Array.from(e.dataTransfer.files));
   });
 
   /* ---------- Start ---------- */

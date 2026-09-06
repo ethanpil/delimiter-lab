@@ -7,9 +7,11 @@
   DL.locale = 'en';
   DL.strings = {};
 
-  // A locale file calls this with its texts. The English table holds every key.
+  // A locale file calls this with its texts. The English table holds every key. The page loads
+  // only the file of the language of the user, so that file makes its locale active.
   DL.registerLocale = function (code, strings) {
     locales[code] = strings;
+    if (code !== 'en') DL.setLocale(code);
   };
 
   // Makes a locale active. Keys that the locale does not have fall back to English.
@@ -39,12 +41,5 @@
         el.setAttribute(attrs[a], DL.t(el.getAttribute(a)));
       });
     });
-  };
-
-  // The language of the page: ?lang=xx, else the language of the browser.
-  DL.detectLocale = function () {
-    var m = /[?&]lang=([a-zA-Z-]+)/.exec(root.location ? root.location.search : '');
-    var lang = m ? m[1] : (root.navigator && (root.navigator.language || '')) || 'en';
-    return lang.toLowerCase().split('-')[0];
   };
 })(typeof self !== 'undefined' ? self : this);

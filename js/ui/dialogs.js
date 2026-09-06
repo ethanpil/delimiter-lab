@@ -21,7 +21,8 @@
         if (q && hay.indexOf(q) < 0) return;
         (groups[op.category] = groups[op.category] || []).push(op);
       });
-      var cats = Object.keys(groups).sort(function (a, b) { return CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b); });
+      var rank = function (c) { var i = CATEGORY_ORDER.indexOf(c); return i < 0 ? CATEGORY_ORDER.length : i; }; // unknown groups go last
+      var cats = Object.keys(groups).sort(function (a, b) { return rank(a) - rank(b) || a.localeCompare(b); });
       if (!cats.length) list.appendChild(U.el('div', { class: 'text-secondary p-3 text-center', text: DL.t('picker.noMatch', { q: q }) }));
       cats.forEach(function (cat) {
         list.appendChild(U.el('div', { class: 'op-category', text: cat }));

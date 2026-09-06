@@ -264,8 +264,8 @@ body {
 .grid-row:nth-child(even) .grid-cell.rownum { background: var(--dl-row-alt); }
 .grid-cell.is-empty::before { content: '–'; color: var(--dl-empty); }
 .grid-cell.is-num { text-align: right; }
-.grid-cell.is-hit { background: var(--dl-hit-strong); }
 .grid-cell.is-changed { background: var(--dl-changed); box-shadow: inset 2px 0 0 #198754; }
+.grid-cell.is-hit { background: var(--dl-hit-strong); }
 .grid-hcell.is-changed, .grid-hcell.is-new { background: var(--dl-changed-head); }
 .grid-hcell .hbadge { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--dl-badge-fg); background: var(--dl-badge-bg); border-radius: 8px; padding: 0 6px; flex: 0 0 auto; }
 .grid-hcell[data-col] { cursor: pointer; }
