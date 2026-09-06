@@ -435,7 +435,9 @@
 
   function showAutosave() {
     var b = $('btnAutosave');
-    b.classList.toggle('active', autosaveOn);
+    // Green shows that autosave is on. The blue of an active Bootstrap button looks like the other buttons.
+    b.classList.toggle('btn-success', autosaveOn);
+    b.classList.toggle('btn-outline-primary', !autosaveOn);
     b.setAttribute('aria-pressed', autosaveOn ? 'true' : 'false');
     b.setAttribute('title', DL.t(autosaveOn ? 'header.autosaveOnTitle' : 'header.autosaveTitle'));
   }
