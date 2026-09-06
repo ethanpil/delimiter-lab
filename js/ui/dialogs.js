@@ -228,13 +228,13 @@
     function shortcut(keys, what) {
       return U.el('tr', {}, [U.el('td', {}, [U.el('kbd', { text: keys })]), U.el('td', { text: what })]);
     }
-    function list(tag, keys) {
-      return U.el(tag, { class: 'mb-0 ps-3' }, keys.map(function (k) { return U.el('li', { text: DL.t(k) }); }));
+    function list(tag, texts) {
+      return U.el(tag, { class: 'mb-0 ps-3' }, texts.map(function (t) { return U.el('li', { text: t }); }));
     }
     // Two columns on a wide screen, so the help needs little scrolling.
     var left = U.el('div', { class: 'col-lg-6' }, [
       U.el('h6', { text: DL.t('help.howItWorks') }),
-      list('ol', ['help.step1', 'help.step2', 'help.step3', 'help.step4']),
+      list('ol', [DL.t('help.step1'), DL.t('help.step2'), DL.t('help.step3'), DL.t('help.step4')]),
       U.el('h6', { class: 'mt-3', text: DL.t('help.shortcuts') }),
       U.el('table', { class: 'table table-sm mb-0' }, [
         U.el('tbody', {}, [
@@ -251,7 +251,7 @@
     ]);
     var right = U.el('div', { class: 'col-lg-6' }, [
       U.el('h6', { class: 'mt-3 mt-lg-0', text: DL.t('help.tips') }),
-      list('ul', ['help.tip1', 'help.tip2', 'help.tip3', 'help.tip4', 'help.tip5', 'help.tip6', 'help.tip7', 'help.tip8', 'help.tip9'])
+      list('ul', [DL.t('help.tip1'), DL.t('help.tip2'), DL.t('help.tip3'), DL.t('help.tip4'), DL.t('help.tip5'), DL.t('help.tip6'), DL.t('help.tip7'), DL.t('help.tip8'), DL.t('help.tip9')])
     ]);
     var body = U.el('div', {}, [
       U.el('div', { class: 'row g-4' }, [left, right]),
