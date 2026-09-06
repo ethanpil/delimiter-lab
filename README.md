@@ -13,7 +13,7 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 - Shows the rows that failed a Verify rule when you click the rule in the result.
 - Saves workflows in the browser and as files, so you can apply them again to new files.
 - Applies the steps to many files at once. Drop the files and choose the output format. The result is a zip file.
-- Undo and redo.
+- Undo and redo of every change to the steps.
 - Shows a light or a dark theme. The theme follows the system setting until you change it.
 - A timing panel shows the time of each step and the memory that the results hold.
 - You can translate the user interface (see "Add a language").
@@ -90,21 +90,21 @@ test/               Tests, benchmark and test data
 2. Call `DL.registerOp` with an `id`, `name`, `category`, `icon`, `description`, `params` and `apply`.
 3. Add a new file to the `ops` list in `js/manifest.js`.
 
-The `params` list makes the form. Field types: `text`, `number`, `code`, `boolean`, `select`, `checkboxes`, `column`, `columns`, `columnOrder`, `renameMap`, `mapping`, `conditions`, `rules`, `sortKeys`. Each type knows how to check and repair its value. Add a type with `DL.registerParamType` in `core.js` and a renderer in `js/ui/fields.js`.
+The `params` list makes the form. The field types are `text`, `number`, `code`, `boolean`, `select`, `checkboxes`, `column`, `columns`, `columnOrder`, `renameMap`, `mapping`, `conditions`, `rules` and `sortKeys`. Each type checks and repairs its value. To add a type, register it with `DL.registerParamType` in `core.js`. Then add a renderer for it in `js/ui/fields.js`.
 
 `apply(table, params)` gets a table `{ columns, cols, length }` and returns `{ table, notes }`. Use the helpers in `core.js`: `DL.col`, `DL.mapColumns`, `DL.addColumn`, `DL.selectRows`, `DL.pickColumns`, `DL.dropColumns`, `DL.groupRows`. Never change the input table.
 
-Add `outputColumns(columns, params)` when the operation changes the columns. Return `null` when the columns are only known after the step runs. The user interface uses this to show the correct column names in the steps that follow.
+Add `outputColumns(columns, params)` when the operation changes the columns. Return `null` when the step must run before the columns are known. The user interface uses this to show the correct column names in the steps that follow.
 
 Set `category` to one of Text, Dates, Rows, Columns, Quality, Advanced or Other. The operation picker lists the groups in this order (`CATEGORY_ORDER` in `js/ui/dialogs.js`). A group that is not in the list goes last.
 
-An operation that makes a large result must compare the cell count with `DL.maxCells` and throw an error with a clear message when the result is too large. An operation that uses the date of today must give `hashExtra(params)` with the date, so the cached result changes with the day.
+An operation that makes a large result must compare the cell count with `DL.maxCells`. When the result is too large, throw an error with a clear message. An operation that uses the date of today must give `hashExtra(params)` with the date. The cached result then changes with the day.
 
 A result note can be an object `{ text, rows }` instead of a text. The user can then click the note to see the rows it is about. Add `findRows(inputTable, params, rows, limit)` to the operation. It gives `{ matches: [[row, column], ...], total }` for the output table, or `{ removed: true }` when the rows are not in the output.
 
 ## Add an input or output format
 
-Input formats are listed in `DL.inputFormats` (`core.js`) with their file extensions and options. The worker has a reader for each format id in `readers` (`worker.js`). Output formats are listed in `DL.outputFormats` with their options. The worker has a writer for each format id in `writers`.
+`DL.inputFormats` (`core.js`) lists the input formats with their file extensions and options. The worker has a reader for each format id in `readers` (`worker.js`). `DL.outputFormats` lists the output formats with their options. The worker has a writer for each format id in `writers`.
 
 ## Add a language
 
@@ -127,7 +127,7 @@ These texts stay in English, because they come from the engine and the data laye
 
 ## Release
 
-Change `DL.VERSION` in `js/manifest.js`, and the two `?v=` values in `index.html` (the stylesheet link and the manifest tag). Browsers then load the new files.
+Change `DL.VERSION` in `js/manifest.js`. Then change the two `?v=` values in `index.html` (the stylesheet link and the manifest tag). Browsers then load the new files.
 
 ## Workflow files
 

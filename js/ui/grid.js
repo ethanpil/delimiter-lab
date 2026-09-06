@@ -6,7 +6,7 @@
 
   var ROW_H = 28;
   var HEADER_H = 34;
-  var MAX_VIRTUAL_H = 8000000; // browsers limit element height; above this the scrollbar is scaled
+  var MAX_VIRTUAL_H = 8000000; // Browsers limit the element height. Above this, the grid scales the scrollbar.
   var BUFFER = 8;
   var COL_BUFFER = 2;
   var PAGE_CELLS = 20000;      // cells per page request; the row count per page follows from the columns
@@ -399,7 +399,7 @@
       statRow(DL.t('profile.rows'), st.rows.toLocaleString()) +
       statRow(DL.t('profile.empty'), st.empty.toLocaleString() + pct(st.empty)) +
       statRow(DL.t('profile.distinct'), st.distinct.toLocaleString() + (st.distinct === filled && filled ? ' (' + DL.t('profile.allUnique') + ')' : ''));
-    if (st.numbers) {
+    if (st.numbers && st.numbers * 2 >= filled) { // most values are numbers
       rows += statRow(DL.t('profile.numbers'), st.numbers.toLocaleString() + pct(st.numbers)) +
         statRow(DL.t('profile.smallest'), number(st.min)) + statRow(DL.t('profile.largest'), number(st.max)) +
         statRow(DL.t('profile.sum'), number(st.sum)) + statRow(DL.t('profile.average'), number(st.avg));

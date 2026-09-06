@@ -4,7 +4,7 @@
   var DL = root.DL;
 
   // Makes one key function(rowIndex) -> text per column, with the requested normalization.
-  // Each column is normalized once, so the hash and the comparisons read plain arrays.
+  // The function normalizes each column once, so the hash and the comparisons read plain arrays.
   function keyGetters(table, idxs, opts) {
     var trim = !!opts.trim, ignoreCase = !!opts.ignoreCase;
     return idxs.map(function (i) {
@@ -103,7 +103,7 @@
       case 'notEquals': cmp = cmp.trim(); return function (v) { return norm(v.trim()) !== cmp; };
       case 'startsWith': return function (v) { return norm(v).indexOf(cmp) === 0; };
       case 'endsWith': return function (v) { var s = norm(v); return s.length >= cmp.length && s.lastIndexOf(cmp) === s.length - cmp.length; };
-      case 'empty': return function (v) { return v.trim() === ''; };
+      case 'empty': return function (v) { return DL.isBlank(v); };
       case 'notEmpty': return function (v) { return v.trim() !== ''; };
       case 'regex':
         var re = new RegExp(val, matchCase ? 'u' : 'iu');

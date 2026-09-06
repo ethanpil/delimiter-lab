@@ -187,7 +187,7 @@
       var idxs = DL.colIndexes(table, p.columns);
       var n = table.length;
       var blankIsEmpty = !!p.blankIsEmpty;
-      var isEmpty = function (v) { return v === '' || (blankIsEmpty && v.trim() === ''); };
+      var isEmpty = function (v) { return v === '' || (blankIsEmpty && DL.isBlank(v)); };
       var cols = table.cols.slice();
       var filled = 0;
       idxs.forEach(function (c) {
@@ -323,7 +323,7 @@
         if (v === '') return v;
         var n = DL.toNumber(v);
         if (n !== n) {
-          if (v.trim() === '') return v;
+          if (DL.isBlank(v)) return v;
           ctx.tag();
           return blankOnError ? '' : v;
         }

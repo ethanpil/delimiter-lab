@@ -47,7 +47,7 @@
       var dayFirst = !!p.dayFirst;
       var stats = {};
       var out = DL.mapColumns(table, idxs, function (v, ctx) {
-        if (v.trim() === '') return v;
+        if (DL.isBlank(v)) return v;
         var t = DL.toDate(v, dayFirst);
         if (t !== t) { ctx.tag(); return blankOnError ? '' : v; }
         return DL.formatDate(t, pattern);

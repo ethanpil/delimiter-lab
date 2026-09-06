@@ -14,7 +14,7 @@
     if (code !== 'en') DL.setLocale(code);
   };
 
-  // Makes a locale active. Keys that the locale does not have fall back to English.
+  // Makes a locale active. Keys that the locale does not have show the English text.
   DL.setLocale = function (code) {
     DL.locale = locales[code] ? code : 'en';
     DL.strings = locales[DL.locale] || {};

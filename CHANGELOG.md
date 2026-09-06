@@ -1,8 +1,23 @@
 # Changelog
 
+## 1.4.0
+
+- Fix: number parsing refuses infinite values, malformed digit groups and "(-5)"; number formatting stays sane for huge values (c0e1d74).
+- Fix: date parsing refuses versions, identifiers, year-less month text and "13:04 PM"; years 0 to 999 keep four digits (c0e1d74).
+- Fix: Split Name keeps a multi-word last name before a comma; title case keeps contractions (c0e1d74).
+- Fix: an evicted step is computed again on demand; the diff summary no longer holds freed tables (8207c5a).
+- Fix: mixed line endings, blank lines, big-endian UTF-16 and time-only spreadsheet cells are read correctly (8207c5a).
+- Fix: Excel exports refuse cells, columns and sheet names that Excel cannot hold (8207c5a).
+- Fix: a session restores its selection and saved state; a workflow import asks before it replaces steps or runs custom code (b0a492e).
+- Fix: dialogs own the keyboard; Compare shows the input of the shown step; a batch runs with a copy of the settings (b0a492e).
+- Fix: source options keep the focus while the file reloads; one dialog at a time; download names keep their extension (ac95bda).
+- Change: CSV and JSON writers are three times faster and keep every column name (8207c5a).
+- Change: text sort, the Verify date rule and date filters are several times faster (ab830cf).
+- Add: test/worker.test.js runs the worker in Node (8207c5a).
+
 ## 1.3.1
 
-- Change: the Export and Import buttons of the saved workflows dialog show a text label.
+- Change: the Export and Import buttons of the saved workflows dialog show a text label (a0529df).
 
 ## 1.3.0
 
@@ -16,7 +31,7 @@
 - Add: dark theme with a switch in the header (0cf8166).
 - Add: timing panel with the time and the memory of each step (c2564ac).
 - Add: texts of the user interface in a table, so you can add other languages (b2711c7).
-- Fix: dates in the years 0 to 99 and YYYYMMDD values are read correctly; date math refuses results outside the years 0 to 9999 (7007cb7).
+- Fix: the parser reads dates in the years 0 to 99 and YYYYMMDD values; date math refuses results outside the years 0 to 9999 (7007cb7).
 - Fix: Pivot keeps its total column for an empty input, has a cell limit and stable names for blank keys (7007cb7).
 - Fix: Clean Text keeps letters of other scripts and decodes entities safely (7007cb7).
 - Fix: a cancelled run keeps the results in the cache; the Changes view follows moved rows and renamed columns (600f28f).

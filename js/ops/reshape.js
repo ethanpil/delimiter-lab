@@ -31,7 +31,7 @@
 
   // Adds one value to a cell. Gives false when a numeric aggregate cannot use the value.
   function addValue(cell, v, agg) {
-    if (v.trim() === '') return true;
+    if (DL.isBlank(v)) return true;
     if (isNumeric(agg)) {
       var x = DL.toNumber(v);
       if (x !== x) return false;
@@ -195,7 +195,7 @@
       var keep = skipEmpty ? new Uint8Array(n * m) : null;
       for (i = 0; i < n; i++) {
         for (j = 0; j < m; j++) {
-          if (skipEmpty && valueGetters[j](i).trim() === '') continue;
+          if (skipEmpty && DL.isBlank(valueGetters[j](i))) continue;
           if (keep) keep[i * m + j] = 1;
           count++;
         }

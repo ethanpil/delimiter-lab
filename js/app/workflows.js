@@ -78,7 +78,7 @@
   };
 
   // How well a workflow fits the columns of the current file: 'full', 'partial', 'none' or 'unknown'.
-  // Walks the steps with the real columns, so that columns made by earlier steps count as present.
+  // The check goes through the steps with the real columns, so that columns from earlier steps count as present.
   W.matchLevel = function (wf, columns) {
     if (!columns) return 'unknown';
     var cols = columns.slice();

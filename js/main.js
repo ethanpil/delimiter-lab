@@ -86,9 +86,11 @@
     batchApply(files);
   }
 
+  var MAX_FILE_BYTES = 1.5 * 1024 * 1024 * 1024; // browsers cannot read a larger file into memory
+
   function openFile(file) {
     if (!file) return;
-    if (file.size > 1.5 * 1024 * 1024 * 1024) {
+    if (file.size > MAX_FILE_BYTES) {
       U.toast(DL.t('msg.fileTooBig'), 'danger');
       return;
     }
@@ -156,12 +158,15 @@
     if (!exporting && store.state.source.status !== 'loading') hideProgress();
   }
 
+  // The steps in the shape that the worker reads.
+  function workerSteps() {
+    return store.state.workflow.steps.map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
+  }
+
   function runChain() {
     if (store.state.source.status !== 'ready') { runEnded(); return; }
     var token = ++runToken;
-    var steps = store.state.workflow.steps.map(function (s) {
-      return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false };
-    });
+    var steps = workerSteps();
     var slowTimer = setTimeout(function () { showProgress(DL.t('progress.runningSteps'), 50); }, 400);
     if (!batchRunning) { armStop(); cancelable = true; }
     runInFlight = true;
@@ -281,7 +286,8 @@
     if (!shown || shown === 'source') return null; // the preview shows the source: there is no input to compare
     var steps = store.state.workflow.steps;
     for (var i = store.stepIndex(shown) - 1; i >= 0; i--) {
-      if (DL.resultHasTable(store.state.results[steps[i].id])) return steps[i].id;
+      var r = store.state.results[steps[i].id];
+      if (r && r.hasTable) return steps[i].id;
     }
     return 'source';
   }
@@ -382,6 +388,7 @@
 
   /* ---------- Steps ---------- */
   function addStep() {
+    grid.closeProfile();
     if (store.state.source.status !== 'ready' && !store.state.workflow.steps.length) {
       U.toast(DL.t('msg.openFileTip'), 'info');
     }
@@ -406,7 +413,7 @@
     };
     if (st.workflow.id && st.workflow.name) doSave(st.workflow.name);
     else {
-      var suggested = st.workflow.name || (st.source.file ? U.baseName(st.source.file.name) + ' workflow' : 'My workflow');
+      var suggested = st.workflow.name || (st.source.file ? DL.t('msg.suggestedName', { file: U.baseName(st.source.file.name) }) : DL.t('msg.defaultName'));
       U.prompt({ title: DL.t('msg.saveTitle'), message: DL.t('msg.saveMessage'), value: suggested, yes: DL.t('common.save') }, doSave);
     }
   }
@@ -472,6 +479,7 @@
 
   /* ---------- Download ---------- */
   function download() {
+    grid.closeProfile();
     var st = store.state;
     if (st.source.status !== 'ready') { U.toast(DL.t('msg.openFileFirst'), 'info'); return; }
     var sel = st.selectedId;
@@ -530,17 +538,17 @@
   function batchApply(files) {
     if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
     var accepted = DL.acceptedExtensions();
-    var skipped = files.filter(function (f) { return accepted.indexOf('.' + DL.fileExtension(f.name)) < 0; });
+    var skipped = files.filter(function (f) { return accepted.indexOf('.' + DL.fileExtension(f.name)) < 0 || f.size > MAX_FILE_BYTES; });
     files = files.filter(function (f) { return skipped.indexOf(f) < 0; });
     if (!files.length) { U.toast(DL.t('msg.noDataFiles', { types: accepted.join(', ') }), 'warning'); return; }
     var st = store.state;
-    var steps = JSON.parse(JSON.stringify(st.workflow.steps.map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; }))); // a copy: edits during the batch do not change it
+    var steps = JSON.parse(JSON.stringify(workerSteps())); // a copy: edits during the batch do not change it
     var wfName = U.safeFileName((st.workflow.name || '').trim() || 'workflow');
     var note = DL.t('msg.batchNote', { steps: DL.pluralize(steps.length, 'step') });
     DL.dialogs.download({ files: files, baseName: wfName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, zipName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
-      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: DL.t('msg.notDataFile') }; }));
+      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: DL.t(f.size > MAX_FILE_BYTES ? 'msg.fileTooBig' : 'msg.notDataFile') }; }));
     });
   }
 

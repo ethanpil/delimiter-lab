@@ -160,7 +160,7 @@ TextStream.prototype.on = function (event, fn) { this.handlers[event] = fn; };
 TextStream.prototype.removeListener = function (event) { delete this.handlers[event]; };
 TextStream.prototype.emit = function (event, arg) { if (this.handlers[event]) this.handlers[event](arg); };
 
-// Finds the column separator from the first lines of the text. Skipped and blank lines are not counted.
+// Finds the column separator from the first lines of the text. The count does not include skipped and blank lines.
 function guessDelimiter(text, quoteChar, skipLines) {
   var sample = text.slice(0, 65536).replace(/\r\n?/g, '\n'); // one line ending for the sample
   var cut = sample.lastIndexOf('\n');
@@ -411,7 +411,7 @@ function enforceBudget(keep) {
   state.cache.forEach(function (entry, id) { if (entry.table && protect.indexOf(id) < 0) entries.push({ id: id, entry: entry }); });
   entries.sort(function (a, b) { return a.entry.lastUsed - b.entry.lastUsed; });
   for (var i = 0; i < entries.length; i++) {
-    entries[i].entry.table = null; // recomputed on demand by tableFor
+    entries[i].entry.table = null; // tableFor computes the table again when a request needs it
     if (cacheCells() <= state.cacheBudgetCells) break;
   }
 }
@@ -473,7 +473,7 @@ function runChain(msg, done) {
       if (!entry.table) blocked = 'Waiting for step ' + (i + 1) + (entry.status === 'error' ? ' to be fixed.' : ' to be completed.');
       results.push(resultOf(step, entry));
       if (entry.table) { upstream = entry.table; upstreamHash = h; }
-      enforceBudget([step.id]); // keep memory in check while the chain runs
+      enforceBudget([step.id]); // the cache stays within its budget while the chain runs
       i++;
       if (Date.now() - progressAt > 150) {
         progressAt = Date.now();
@@ -493,7 +493,7 @@ function tableFor(stepId) {
   if (stepId === 'source' || !stepId) return state.source;
   var idx = stepIndex(stepId);
   if (idx < 0) return null;
-  if (state.cancelledFrom >= 0 && idx >= state.cancelledFrom) return null; // cancelled: not computed on demand
+  if (state.cancelledFrom >= 0 && idx >= state.cancelledFrom) return null; // The run cancelled this step: no request computes it
   state.recent = [stepId].concat(state.recent.filter(function (id) { return id !== stepId; })).slice(0, 2);
   var entry = state.cache.get(stepId);
   if (entry && entry.table) { touch(entry); return entry.table; }
@@ -691,7 +691,7 @@ function computeColumnStats(table, colIndex) {
     st.distinct++;
     if (v.length < st.minLen) st.minLen = v.length;
     if (v.length > st.maxLen) st.maxLen = v.length;
-    var x = type === 'number' ? DL.toNumber(v) : NaN;
+    var x = DL.toNumber(v);
     if (x === x) {
       st.numbers += count;
       st.sum += x * count;

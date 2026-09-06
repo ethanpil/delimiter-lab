@@ -318,7 +318,7 @@
         }, stats);
       } else {
         var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
-        var quick = !p.regex && !p.wholeWord && p.matchCase ? find : null; // fast check with indexOf
+        var quick = !p.regex && !p.wholeWord && p.matchCase ? find : null; // indexOf is a quick first check
         out = DL.mapColumns(table, idxs, function (v, ctx) {
           if (!v) return v;
           if (quick !== null && v.indexOf(quick) < 0) return v;

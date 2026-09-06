@@ -72,6 +72,8 @@
     'msg.addStepBeforeSave': 'Add at least one step before saving.',
     'msg.workflowSaved': 'Workflow "{name}" saved.',
     'msg.saveTitle': 'Save workflow',
+    'msg.suggestedName': '{file} workflow',
+    'msg.defaultName': 'My workflow',
     'msg.saveMessage': 'Give this workflow a name so you can find it again.',
     'msg.columnsMissing': 'Some steps refer to columns that are not in this file. Check the steps marked "Needs setup".',
     'msg.replaceTitle': 'Replace current steps?',

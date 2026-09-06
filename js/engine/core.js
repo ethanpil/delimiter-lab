@@ -26,7 +26,7 @@
     var n = idx.length;
     var out = new Array(n);
     for (var i = 0; i < n; i++) out[i] = src[idx[i]];
-    table.cols[c] = out; // same content, faster next time
+    table.cols[c] = out; // the same content; the next read is quick
     return out;
   };
 
@@ -147,7 +147,7 @@
       if (ctx.tagged) tagged++;
       if (cache !== null) {
         cache.set(v, { out: r, tag: ctx.tagged });
-        if (cache.size > MEMO_LIMIT) cache = null; // too many different values
+        if (cache.size > MEMO_LIMIT) cache = null; // The cache stops when there are too many different values.
       }
     }
     if (stats) stats.tagged = tagged;

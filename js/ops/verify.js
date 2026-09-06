@@ -47,7 +47,7 @@
     var test;
     switch (rule.op) {
       case 'notEmpty': test = function (v) { return v.trim() !== ''; }; break;
-      case 'isEmpty': test = function (v) { return v.trim() === ''; }; break;
+      case 'isEmpty': test = function (v) { return DL.isBlank(v); }; break;
       case 'isNumber': test = function (v) { return !isNaN(num(v)); }; break;
       case 'isInteger': test = function (v) { var x = num(v); return !isNaN(x) && Math.floor(x) === x; }; break;
       case 'noNumbers': test = function (v) { return !/\d/.test(v); }; break;
@@ -82,7 +82,7 @@
         var uniqueRow = function (i) { return groups.count[groups.first[i]] === 1; };
         return {
           label: label,
-          test: rule.allowEmpty ? function (i) { return col[i].trim() === '' || uniqueRow(i); } : uniqueRow
+          test: rule.allowEmpty ? function (i) { return DL.isBlank(col[i]) || uniqueRow(i); } : uniqueRow
         };
       default: throw new Error('Unknown rule "' + rule.op + '".');
     }
@@ -91,7 +91,7 @@
       label: label,
       test: function (i) {
         var v = col[i];
-        if (skipEmpty && v.trim() === '') return true;
+        if (skipEmpty && DL.isBlank(v)) return true;
         return test(v);
       }
     };

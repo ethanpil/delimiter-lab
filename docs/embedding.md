@@ -4,7 +4,7 @@ This document describes how other applications can use Delimiter Lab workflows t
 
 ## Goal
 
-An application lets a user upload a source file. The application applies a Delimiter Lab workflow file to it and uses the result. The workflow is made once in the visual editor and applied many times, in the browser, on a server, or from a command line.
+An application lets a user upload a source file. The application applies a Delimiter Lab workflow file to it and uses the result. A user makes the workflow once in the visual editor and applies it many times: in the browser, on a server, or from a command line.
 
 ## What exists today
 
@@ -32,7 +32,7 @@ delimiterlab (CLI)     run, validate, describe; packaged as a single binary     
 - Build the engine files into one ESM module and one UMD file with esbuild. The web app keeps loading the source files.
 - Add `DL.runWorkflow(table, workflow, options)` to the core. It validates each step against the real input columns, runs the steps in order, and gives `{ table, results }`. The worker uses the same function without its cache.
 - Publish a JSON Schema for the workflow file. Keep the format version in the file. Add a migration hook per operation for future setting changes.
-- Make behaviour deterministic across environments: a fixed collator locale in the workflow (default `en`), an explicit day-first option for dates, and no dependence on the machine locale in text case changes.
+- Make the results the same in each environment. Put a fixed collator locale in the workflow (default `en`). Make the day-first option for dates explicit. Do not let text case changes depend on the machine locale.
 
 ### 2. IO package
 
@@ -49,19 +49,19 @@ delimiterlab validate workflow.json --columns "Full Name,Email,Amount"
 delimiterlab describe workflow.json
 ```
 
-- Exit code 0 on success, 1 when a step cannot run, 2 for a bad file. Notes and problems go to a JSON report (`--report report.json`) so the calling application can show them.
+- The exit code is 0 on success, 1 when a step cannot run, and 2 for a bad file. Notes and problems go to a JSON report (`--report report.json`), so the calling application can show them.
 - Package with the Node single-executable feature (`--experimental-sea-config`) or Bun (`bun build --compile`). This gives one file for Windows, macOS and Linux. Applications in any language call it as a subprocess.
 - Custom JavaScript steps run in an isolated context with a time limit. A `--no-js` flag refuses workflows that contain them.
 
 ### 4. Embeddable interface
 
 - `DelimiterLab.mount(element, { file, workflow, onResult })` shows the editor inside another page.
-- `DelimiterLab.apply(element, { workflows, onResult })` shows only "choose a file, choose a workflow, apply" and hands the result table or Blob to the application instead of a download.
+- `DelimiterLab.apply(element, { workflows, onResult })` shows only "choose a file, choose a workflow, apply" and gives the result table or Blob to the application instead of a download.
 - Both use the same engine and worker as the app.
 
 ### 5. Server use
 
-- The engine runs in Node behind an HTTP endpoint. Tables live in memory, so enforce a size limit per request.
+- The engine runs in Node behind an HTTP endpoint. Tables stay in memory, so enforce a size limit per request.
 - Row-local operations (case, replace, calculate, verify) can stream in blocks. Sort, dedupe, unique and outliers need the full table. A "streaming mode" can run the row-local prefix of a workflow in blocks and only hold the rest in memory.
 
 ## Other languages
@@ -69,11 +69,11 @@ delimiterlab describe workflow.json
 Two ways exist for applications that do not run JavaScript:
 
 1. Call the binary as a subprocess (available after step 3, no extra work).
-2. Port the engine to Rust with a C ABI and bindings for Python, Go and .NET, with the same workflow JSON and the same golden tests. This doubles the maintenance work, so do it only when in-process use without a JavaScript runtime is required.
+2. Port the engine to Rust with a C ABI and bindings for Python, Go and .NET. Use the same workflow JSON and the same golden tests. This doubles the maintenance work. Do it only when an application needs the engine in its process without a JavaScript runtime.
 
 ## Tests
 
-Golden tests: sample input files and workflows with expected outputs. The same tests run in the browser (through the worker) and in the CLI, so both give the same output for the same workflow.
+Golden tests hold sample input files, workflows and the expected outputs. The same tests run in the browser (through the worker) and in the CLI, so both give the same output for the same workflow.
 
 ## Order of work
 
