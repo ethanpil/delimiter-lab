@@ -36,6 +36,9 @@
   ChainView.prototype.render = function (scroll) {
     var st = this.store.state;
     var steps = st.workflow.steps;
+    // The keyboard focus survives the rebuild: the card with the same step id gets it back.
+    var focused = document.activeElement && this.el.contains(document.activeElement) ? document.activeElement.closest('[data-step]') : null;
+    var focusId = focused ? focused.getAttribute('data-step') : null;
     var el = U.empty(this.el);
     el.appendChild(this.sourceCard());
     if (!steps.length) {
@@ -51,6 +54,8 @@
       el.appendChild(self.stepCard(step, i));
     });
     if (scroll) this.scrollSelectedIntoView();
+    if (focusId) { var again = el.querySelector('[data-step="' + focusId + '"]'); if (again) again.focus(); }
+    U.hideOrphanTooltips();
   };
 
   ChainView.prototype.scrollSelectedIntoView = function () {

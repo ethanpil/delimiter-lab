@@ -23,8 +23,17 @@
   SourceView.prototype.render = function () {
     var st = this.store.state;
     var src = st.source;
-    var el = U.empty(this.el);
     var self = this;
+    // While the user types in an option, the reload must not rebuild the form under the cursor.
+    var active = document.activeElement;
+    if (active && this.el.contains(active) && active.tagName.toLowerCase() === 'input' && src.file) {
+      this.pendingRender = true;
+      var onBlur = function () { active.removeEventListener('blur', onBlur); if (self.pendingRender) { self.pendingRender = false; self.render(); } };
+      active.addEventListener('blur', onBlur);
+      return;
+    }
+    this.pendingRender = false;
+    var el = U.empty(this.el);
 
     el.appendChild(U.el('div', { class: 'config-head' }, [
       U.el('div', {}, [

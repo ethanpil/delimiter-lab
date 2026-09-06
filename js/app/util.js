@@ -141,7 +141,13 @@
     ]);
     host.appendChild(el);
     var modal = new bootstrap.Modal(el);
-    el.addEventListener('hidden.bs.modal', function () { modal.dispose(); el.remove(); });
+    var afterHidden = [];
+    el.addEventListener('hidden.bs.modal', function () {
+      modal.dispose();
+      el.remove();
+      if (opts.onHidden) opts.onHidden();
+      afterHidden.forEach(function (fn) { fn(); });
+    });
     el.addEventListener('shown.bs.modal', function () {
       var f = el.querySelector('[autofocus], input:not([type=hidden]), button.btn-primary');
       if (f) f.focus();
@@ -156,34 +162,45 @@
       if (btn) { e.preventDefault(); btn.click(); }
     });
     modal.show();
-    return { modal: modal, el: el, close: function () { modal.hide(); } };
+    return {
+      modal: modal,
+      el: el,
+      close: function () { modal.hide(); },
+      // Closes the dialog and runs fn when it is gone, so the next dialog does not open over it.
+      closeThen: function (fn) { afterHidden.push(fn); modal.hide(); }
+    };
   };
 
-  // Simple confirm dialog. Calls onYes when confirmed.
-  U.confirm = function (opts, onYes) {
+  // Simple confirm dialog. Calls onYes when confirmed, onCancel when the dialog closes in another way.
+  U.confirm = function (opts, onYes, onCancel) {
     var m;
+    var chosen = false;
     m = U.modal({
+      onHidden: function () { if (!chosen && onCancel) onCancel(); },
       enterSubmits: true,
       title: opts.title || DL.t('common.sure'),
       body: U.el('p', { class: 'mb-0', text: opts.message || '' }),
       footer: [
         U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: DL.t('common.cancel') }),
-        U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () { m.close(); onYes(); } })
+        U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () { chosen = true; m.close(); onYes(); } })
       ]
     });
   };
 
-  // Text prompt dialog. Calls onValue(text) when submitted with a non-empty value.
-  U.prompt = function (opts, onValue) {
+  // Text prompt dialog. Calls onValue(text) when the user submits a value, onCancel when the dialog closes without one.
+  U.prompt = function (opts, onValue, onCancel) {
     var input = U.el('input', { type: 'text', class: 'form-control', value: opts.value || '', placeholder: opts.placeholder || '', maxlength: '80', autofocus: true });
     var m;
+    var chosen = false;
     var submit = function () {
       var v = input.value.trim();
       if (!v) { input.classList.add('is-invalid'); return; }
+      chosen = true;
       m.close();
       onValue(v);
     };
     m = U.modal({
+      onHidden: function () { if (!chosen && onCancel) onCancel(); },
       enterSubmits: true,
       title: opts.title || '',
       body: [opts.message ? U.el('p', { text: opts.message }) : null, input],
@@ -199,7 +216,15 @@
   // Bootstrap moves "title" to "data-bs-original-title" when it shows a tooltip, so both are matched.
   U.tooltips = function (container) {
     if (bootstrap.Tooltip.getInstance(container)) return;
-    new bootstrap.Tooltip(container, { selector: '[title]:not(.no-tip), [data-bs-original-title]:not(.no-tip)', delay: { show: 500, hide: 0 }, trigger: 'hover' });
+    new bootstrap.Tooltip(container, { selector: '[title]:not(.no-tip), [data-bs-original-title]:not(.no-tip)', delay: { show: 500, hide: 0 }, trigger: 'hover focus' });
+  };
+
+  // Removes the tooltips whose element is no longer in the page. Views call this after they rebuild their content.
+  U.hideOrphanTooltips = function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.tooltip.show'), function (tip) {
+      var owner = document.querySelector('[aria-describedby="' + tip.id + '"]');
+      if (!owner || !owner.isConnected) tip.remove();
+    });
   };
 
   U.downloadBlob = function (blob, filename) {
@@ -214,8 +239,15 @@
     return String(fileName || 'data').replace(/\.[^.]+$/, '');
   };
 
+  // Makes a file name that every file system accepts. A long name is cut before its extension.
   U.safeFileName = function (s) {
-    return String(s).replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 100) || 'output';
+    var clean = String(s).replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
+    if (clean.length > 100) {
+      var m = /\.[a-z0-9]{1,8}$/i.exec(clean);
+      var ext = m ? m[0] : '';
+      clean = clean.slice(0, 100 - ext.length).trim() + ext;
+    }
+    return clean || 'output';
   };
 
   // Estimates the number of cells that this browser can hold without a slow user interface.

@@ -42,6 +42,16 @@
       if (e.key === 'Enter') { var first = list.querySelector('.op-card'); if (first) first.click(); }
       if (e.key === 'ArrowDown') { var f = list.querySelector('.op-card'); if (f) { e.preventDefault(); f.focus(); } }
     });
+    // The arrow keys move between the cards; ArrowUp on the first card goes back to the search box.
+    list.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      var cards = Array.prototype.slice.call(list.querySelectorAll('.op-card'));
+      var at = cards.indexOf(document.activeElement);
+      if (at < 0) return;
+      e.preventDefault();
+      var next = at + (e.key === 'ArrowDown' ? 1 : -1);
+      if (next < 0) search.focus(); else if (next < cards.length) cards[next].focus();
+    });
     m = U.modal({
       title: opts && opts.title ? opts.title : DL.t('dialog.pickOperation'),
       size: 'lg',
@@ -95,7 +105,10 @@
           current.options.forEach(function (p) { problems = problems.concat(DL.paramTypes[p.type].validate(values[current.id][p.key], p, null)); });
           if (problems.length) { U.toast(problems[0], 'warning'); return; }
           m.close();
-          onDownload(Object.assign({ format: current.id }, values[current.id]), U.safeFileName(name.value), values);
+          var fileName = U.safeFileName(name.value);
+          if (!many && !/\.[a-z0-9]{1,8}$/i.test(fileName)) fileName += current.extension;
+          if (many && !/\.zip$/i.test(fileName)) fileName += '.zip';
+          onDownload(Object.assign({ format: current.id }, values[current.id]), fileName, values);
         } }, [U.el('i', { class: 'bi bi-download' }), ' ' + DL.t(many ? 'dialog.applyDownload' : 'dialog.download')])
       ]
     });
@@ -138,7 +151,9 @@
       var q = search.value.trim().toLowerCase();
       var all = DL.workflows.list();
       var items = all.filter(function (w) { return !q || (w.name + ' ' + w.steps.map(function (s) { var op = DL.getOp(s.opId); return op ? op.name : ''; }).join(' ')).toLowerCase().indexOf(q) >= 0; });
-      var level = function (w) { return DL.workflows.matchLevel(w, opts.currentColumns); };
+      var levels = {};
+      items.forEach(function (w) { levels[w.id] = DL.workflows.matchLevel(w, opts.currentColumns); });
+      var level = function (w) { return levels[w.id]; };
       var rank = { full: 0, partial: 1, unknown: 2, none: 3 };
       items.sort(function (a, b) {
         var d = rank[level(a)] - rank[level(b)];
@@ -167,13 +182,18 @@
           U.el('div', { class: 'btn-group btn-group-sm' }, [
             U.el('button', { type: 'button', class: 'btn btn-primary', title: DL.t('dialog.useWorkflow'), onclick: function () { m.close(); actions.apply(w); } }, [U.el('i', { class: 'bi bi-play-fill' }), ' ' + DL.t('common.use')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('common.rename'), onclick: function () {
-              U.prompt({ title: DL.t('dialog.renameWorkflow'), value: w.name }, function (v) { DL.workflows.rename(w.id, v); build(); if (actions.renamed) actions.renamed(w.id, v); });
+              // One dialog at a time: the list opens again after the prompt.
+              m.closeThen(function () {
+                U.prompt({ title: DL.t('dialog.renameWorkflow'), value: w.name }, function (v) { DL.workflows.rename(w.id, v); if (actions.renamed) actions.renamed(w.id, v); D.workflows(opts, actions); }, function () { D.workflows(opts, actions); });
+              });
             } }, [U.el('i', { class: 'bi bi-pencil' })]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('dialog.exportWorkflow'), onclick: function () {
               U.downloadBlob(new Blob([DL.workflows.toJSON(w)], { type: 'application/json' }), U.safeFileName(w.name) + '.workflow.json');
             } }, [U.el('i', { class: 'bi bi-download' }), ' ' + DL.t('wf.exportFile')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-danger', title: DL.t('common.delete'), onclick: function () {
-              U.confirm({ title: DL.t('dialog.deleteWorkflow'), message: DL.t('dialog.deleteConfirm', { name: w.name }), yes: DL.t('common.delete'), danger: true }, function () { DL.workflows.remove(w.id); build(); if (actions.removed) actions.removed(w.id); });
+              m.closeThen(function () {
+                U.confirm({ title: DL.t('dialog.deleteWorkflow'), message: DL.t('dialog.deleteConfirm', { name: w.name }), yes: DL.t('common.delete'), danger: true }, function () { DL.workflows.remove(w.id); if (actions.removed) actions.removed(w.id); D.workflows(opts, actions); }, function () { D.workflows(opts, actions); });
+              });
             } }, [U.el('i', { class: 'bi bi-trash' })])
           ])
         ]);

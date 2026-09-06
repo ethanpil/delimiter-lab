@@ -133,6 +133,8 @@
       }
     }).catch(function (err) {
       if (self.showVersion !== version) return;
+      U.empty(self.rowsEl);
+      self.rowsEl.style.height = '0px';
       self.showMessage(err.message || String(err));
     });
   };
@@ -335,6 +337,7 @@
       html += '</div>';
     }
     this.rowsEl.innerHTML = html;
+    U.hideOrphanTooltips();
   };
 
   GridView.prototype.scrollToRow = function (row) {
@@ -427,9 +430,9 @@
     this.popover = pop;
     if (this.profiles[col]) { pop.setContent({ '.popover-body': profileHtml(this.profiles[col]) }); return; }
     this.engine.columnStats(stepId, col).then(function (r) {
+      if (r.stats && self.stepId === stepId) self.profiles[col] = r.stats; // kept even when the popover moved
       if (self.popover !== pop) return;
       if (!r.stats) { pop.setContent({ '.popover-body': '<div class="text-secondary small">' + U.esc(DL.t('grid.noData')) + '</div>' }); return; }
-      self.profiles[col] = r.stats;
       pop.setContent({ '.popover-body': profileHtml(r.stats) });
     }).catch(function (err) {
       if (self.popover === pop) pop.setContent({ '.popover-body': '<div class="text-danger small">' + U.esc(err.message || String(err)) + '</div>' });

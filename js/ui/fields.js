@@ -162,12 +162,13 @@
     var ta = U.el('textarea', { class: 'form-control form-control-sm code-editor', rows: '7', spellcheck: 'false' });
     ta.value = value == null ? '' : value;
     ta.addEventListener('input', function () { ctx.onChange(ta.value, { merge: true }); });
+    // Tab writes two spaces. Shift+Tab and Escape leave the editor, so the keyboard is not trapped.
     ta.addEventListener('keydown', function (e) {
-      if (e.key === 'Tab') {
+      if (e.key === 'Escape') { ta.blur(); return; }
+      if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault();
         var s = ta.selectionStart, en = ta.selectionEnd;
-        ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(en);
-        ta.selectionStart = ta.selectionEnd = s + 2;
+        ta.setRangeText('  ', s, en, 'end'); // keeps the undo history of the browser
         ctx.onChange(ta.value, { merge: true });
       }
     });
@@ -259,8 +260,12 @@
       box.appendChild(check.el);
     });
     chosen.filter(function (c) { return columns.indexOf(c) < 0; }).forEach(function (c) {
-      var check = U.check(known ? DL.t('fields.missing', { name: c }) : c, true, function () { setChosen(chosen.filter(function (x) { return x !== c; })); });
+      var check = U.check(known ? DL.t('fields.missing', { name: c }) : c, true, function (on) {
+        setChosen(on ? chosen.concat(chosen.indexOf(c) < 0 ? [c] : []) : chosen.filter(function (x) { return x !== c; }));
+      });
       if (known) check.el.classList.add('text-danger');
+      check.el.dataset.name = c.toLowerCase();
+      checks.set(c, check.input);
       box.appendChild(check.el);
     });
     filter.addEventListener('input', function () {
@@ -296,6 +301,9 @@
     var map = Object.assign(Object.create(null), value || {});
     var columns = ctx.columns || [];
     if (!columns.length) return wrap(param, U.el('div', { class: 'text-secondary small', text: noColumnsMessage(ctx.columns) }), true);
+    // A name of a column that is no longer in the input has no box; the map drops it.
+    var stale = Object.keys(map).filter(function (c) { return columns.indexOf(c) < 0; });
+    if (stale.length) { stale.forEach(function (c) { delete map[c]; }); ctx.onChange(Object.assign(Object.create(null), map), { merge: true }); }
     var tbody = U.el('tbody');
     var inputs = new Map();
     columns.forEach(function (c) {
@@ -348,8 +356,8 @@
           e.preventDefault();
           var parsed = lines.map(function (l) {
             var parts = l.split('\t');
-            if (parts.length < 2) parts = l.split(',');
-            return { from: (parts[0] || '').trim(), to: parts.slice(1).join(',').trim() };
+            if (parts.length < 2 && l.split(',').length === 2) parts = l.split(',');
+            return { from: (parts[0] || '').trim(), to: (parts[1] || '').trim() };
           });
           var oneColumn = parsed.every(function (p) { return p.to === ''; });
           api.edit(function (rows, i) {

@@ -988,7 +988,8 @@
           Object.keys(b).forEach(function (k) {
             if (typeof b[k] === 'boolean') b[k] = typeof r[k] === 'boolean' ? r[k] : b[k];
             else if (isText(r[k])) b[k] = String(r[k]);
-            if (enums && enums[k] && !DL.findOption(enums[k], b[k])) b[k] = blank()[k];
+            var allowed = enums && enums[k] && (typeof enums[k] === 'function' ? enums[k]() : enums[k]);
+            if (allowed && !DL.findOption(allowed, b[k])) b[k] = blank()[k];
           });
           if ('value2' in b && r.value2 !== undefined) b.value2 = textOf(r.value2);
           return b;
@@ -999,8 +1000,9 @@
       columnsUsed: function (v) { return v.map(function (r) { return r.column; }).filter(Boolean); }
     };
   }
-  DL.registerParamType('conditions', ruleListType('rule', 'FILTER_OPERATORS', function () { return { column: '', op: 'contains', value: '', value2: '' }; }));
-  DL.registerParamType('rules', ruleListType('rule', 'VERIFY_RULES', function () { return { column: '', op: 'notEmpty', value: '', allowEmpty: true }; }));
+  // The operator lists live in the operation files; the check reads them when a value arrives.
+  DL.registerParamType('conditions', ruleListType('rule', 'FILTER_OPERATORS', function () { return { column: '', op: 'contains', value: '', value2: '' }; }, { op: function () { return DL.FILTER_OPERATORS; } }));
+  DL.registerParamType('rules', ruleListType('rule', 'VERIFY_RULES', function () { return { column: '', op: 'notEmpty', value: '', allowEmpty: true }; }, { op: function () { return DL.VERIFY_RULES; } }));
   DL.registerParamType('sortKeys', ruleListType('sort key', null, function () { return { column: '', type: 'auto', dir: 'asc' }; }, { type: DL.SORT_TYPES, dir: DL.SORT_DIRS }));
 
   /* ---------- Operation registry ---------- */

@@ -4,7 +4,7 @@
 (function (root) {
   'use strict';
   var DL = root.DL || (root.DL = {});
-  DL.VERSION = '1.4.0-dev1';
+  DL.VERSION = '1.4.0-dev3';
   // Languages with a file in js/i18n/. English is always loaded; the page adds the language of the user.
   DL.LOCALES = ['en'];
   DL.FILES = {

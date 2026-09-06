@@ -148,7 +148,7 @@ body {
 .step-summary { color: var(--dl-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .step-meta { font-size: 12px; margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .step-actions { flex: 0 0 auto; opacity: 0; transition: opacity .1s; }
-.step-card:hover .step-actions, .step-card.is-selected .step-actions { opacity: 1; }
+.step-card:hover .step-actions, .step-card.is-selected .step-actions, .step-card:focus-within .step-actions { opacity: 1; }
 .step-actions .btn { padding: 0 4px; line-height: 1; }
 .chain-connector {
   height: 14px; margin-left: 21px;
@@ -174,7 +174,7 @@ body {
 }
 .field-wide { grid-column: 1 / -1; }
 .field-label { font-weight: 500; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.help-icon { color: var(--dl-faint); cursor: help; font-size: 13px; }
+.help-icon { color: var(--dl-muted); cursor: help; font-size: 13px; }
 .help-icon:hover { color: var(--dl-accent); }
 
 .column-list {
@@ -242,6 +242,7 @@ body {
 }
 .grid-hcell .type-icon { color: var(--dl-faint); font-size: 12px; flex: 0 0 auto; }
 .grid-hcell .hname { overflow: hidden; text-overflow: ellipsis; }
+.grid-rows { overflow: hidden; }
 .grid-hcell.rownum { justify-content: flex-end; color: var(--dl-muted); font-weight: 500; position: sticky; left: 0; z-index: 4; background: var(--dl-surface-2); }
 .grid-rows { position: relative; min-width: max-content; }
 .grid-row {
@@ -260,7 +261,7 @@ body {
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   box-sizing: border-box;
 }
-.grid-cell.rownum { text-align: right; color: var(--dl-faint); position: sticky; left: 0; z-index: 2; background: var(--dl-surface); font-size: 12px; }
+.grid-cell.rownum { text-align: right; color: var(--dl-muted); position: sticky; left: 0; z-index: 2; background: var(--dl-surface); font-size: 12px; }
 .grid-row:nth-child(even) .grid-cell.rownum { background: var(--dl-row-alt); }
 .grid-cell.is-empty::before { content: '–'; color: var(--dl-empty); }
 .grid-cell.is-num { text-align: right; }

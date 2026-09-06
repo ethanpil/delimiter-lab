@@ -74,7 +74,9 @@
     var step = this.store.getStep(id);
     if (!step || this.renderedFor !== id) { this.render(); return; }
     var columns = this.store.inputColumnsFor(id);
-    var typing = document.activeElement && this.el.contains(document.activeElement);
+    var active = document.activeElement;
+    var tag = active ? active.tagName.toLowerCase() : '';
+    var typing = active && this.el.contains(active) && (tag === 'input' && active.type !== 'checkbox' || tag === 'textarea');
     if (columnsKey(columns) !== this.renderedColumnsKey && !typing) {
       this.render();
       return;
