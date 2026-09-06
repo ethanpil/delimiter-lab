@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- Change: the Export and Import buttons of the saved workflows dialog show a text label.
+
 ## 1.3.0
 
 - Add: Format Dates, Date Math, Extract Text, Clean Text and Fill Empty Values operations (5a32941).

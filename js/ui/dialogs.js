@@ -158,7 +158,7 @@
           : lv === 'partial' ? U.el('span', { class: 'badge text-bg-warning', text: DL.t('wf.someMissing') })
           : lv === 'none' ? U.el('span', { class: 'badge text-bg-light text-secondary', text: DL.t('wf.differentColumns') }) : null;
         var opsText = w.steps.map(function (s) { var op = DL.getOp(s.opId); return op ? op.name : s.opId; }).join(' → ');
-        var item = U.el('div', { class: 'wf-item' + (lv === 'full' ? ' is-match' : '') }, [
+        var item = U.el('div', { class: 'wf-item flex-wrap' + (lv === 'full' ? ' is-match' : '') }, [
           U.el('div', { class: 'flex-grow-1', style: 'min-width:0' }, [
             U.el('div', { class: 'd-flex align-items-center gap-2' }, [U.el('span', { class: 'wf-name', text: w.name }), badge, w.id === opts.currentId ? U.el('span', { class: 'badge text-bg-primary', text: DL.t('wf.openNow') }) : null]),
             U.el('div', { class: 'wf-meta text-truncate', title: opsText, text: DL.t('wf.stepsMeta', { steps: DL.pluralize(w.steps.length, 'step'), ops: opsText }) }),
@@ -171,7 +171,7 @@
             } }, [U.el('i', { class: 'bi bi-pencil' })]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('dialog.exportWorkflow'), onclick: function () {
               U.downloadBlob(new Blob([DL.workflows.toJSON(w)], { type: 'application/json' }), U.safeFileName(w.name) + '.workflow.json');
-            } }, [U.el('i', { class: 'bi bi-box-arrow-up' })]),
+            } }, [U.el('i', { class: 'bi bi-download' }), ' ' + DL.t('wf.exportFile')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-danger', title: DL.t('common.delete'), onclick: function () {
               U.confirm({ title: DL.t('dialog.deleteWorkflow'), message: DL.t('dialog.deleteConfirm', { name: w.name }), yes: DL.t('common.delete'), danger: true }, function () { DL.workflows.remove(w.id); build(); if (actions.removed) actions.removed(w.id); });
             } }, [U.el('i', { class: 'bi bi-trash' })])
@@ -188,7 +188,7 @@
       size: 'lg',
       scrollable: true,
       body: [
-        U.el('div', { class: 'd-flex gap-2' }, [search, U.el('button', { type: 'button', class: 'btn btn-outline-secondary text-nowrap', onclick: function () { importInput.click(); } }, [U.el('i', { class: 'bi bi-box-arrow-in-down' }), ' ' + DL.t('wf.importFile')]), importInput]),
+        U.el('div', { class: 'd-flex gap-2' }, [search, U.el('button', { type: 'button', class: 'btn btn-outline-secondary text-nowrap', onclick: function () { importInput.click(); } }, [U.el('i', { class: 'bi bi-upload' }), ' ' + DL.t('wf.importFile')]), importInput]),
         U.el('div', { class: 'form-text', text: DL.t('wf.kept') }),
         list
       ]
