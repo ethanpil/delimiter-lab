@@ -33,14 +33,14 @@
       ])
     ]));
 
-    var fileInput = U.el('input', { type: 'file', accept: DL.acceptedExtensions().join(','), hidden: true });
-    fileInput.addEventListener('change', function () { if (fileInput.files[0]) self.actions.openFile(fileInput.files[0]); fileInput.value = ''; });
+    var fileInput = U.el('input', { type: 'file', accept: DL.acceptedExtensions().join(','), multiple: true, hidden: true });
+    fileInput.addEventListener('change', function () { self.actions.openFiles(Array.from(fileInput.files)); fileInput.value = ''; });
     el.appendChild(fileInput);
 
     var drop = U.el('div', { class: 'dropzone', tabindex: '0', role: 'button' }, [
       U.el('i', { class: 'bi bi-cloud-arrow-up' }),
       src.file ? U.el('div', {}, [U.el('strong', { text: src.file.name }), ' · ' + U.fmtBytes(src.file.size), U.el('div', { class: 'small', text: 'Drop another file here or click to change it' })])
-        : U.el('div', {}, [U.el('strong', { text: 'Drop a file here' }), ' or click to choose one', U.el('div', { class: 'small mt-1', text: DL.acceptedExtensions().map(function (e) { return e.slice(1).toUpperCase(); }).join(', ') })])
+        : U.el('div', {}, [U.el('strong', { text: 'Drop a file here' }), ' or click to choose one', U.el('div', { class: 'small mt-1', text: DL.acceptedExtensions().map(function (e) { return e.slice(1).toUpperCase(); }).join(', ') + '. Drop many files to apply the steps to all of them.' })])
     ]);
     drop.addEventListener('click', function () { fileInput.click(); });
     drop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
@@ -50,7 +50,7 @@
       e.preventDefault();
       e.stopPropagation(); // the page-level drop handler must not open the file a second time
       drop.classList.remove('is-over');
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) self.actions.openFile(e.dataTransfer.files[0]);
+      if (e.dataTransfer.files) self.actions.openFiles(Array.from(e.dataTransfer.files));
     });
     el.appendChild(drop);
 

@@ -16,6 +16,7 @@
   });
   var sourceView = new DL.SourceView($('config'), store, {
     openFile: openFile,
+    openFiles: openFiles,
     reload: loadSource,
     loadSample: function () { openFile(DL.SourceView.sampleFile()); }
   });
@@ -64,6 +65,18 @@
 
   /* ---------- Source loading ---------- */
   var loadToken = 0;
+
+  // One file opens as the source. Many files go through the workflow one by one (batch).
+  function openFiles(files) {
+    if (!files || !files.length) return;
+    if (files.length === 1) { openFile(files[0]); return; }
+    if (!store.state.workflow.steps.length) {
+      U.toast('Add steps first. Then drop many files to apply the steps to all of them. The first file is open now.', 'info');
+      openFile(files[0]);
+      return;
+    }
+    batchApply(files);
+  }
 
   function openFile(file) {
     if (!file) return;
@@ -445,6 +458,58 @@
     });
   }
 
+  /* ---------- Batch: apply the workflow to many files ---------- */
+  var batchRunning = false;
+
+  function batchApply(files) {
+    if (batchRunning) { U.toast('A batch is still running.', 'info'); return; }
+    var st = store.state;
+    var steps = st.workflow.steps.map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
+    var wfName = U.safeFileName((st.workflow.name || '').trim() || 'workflow');
+    var note = 'Each file is read with the current source options, goes through all ' + DL.pluralize(steps.length, 'step') + ' and is written to a zip file. The open file stays as it is.';
+    DL.dialogs.download({ files: files, baseName: wfName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, zipName, allOptions) {
+      lastFormat = options.format;
+      lastFormatOptions = allOptions;
+      runBatch(files, steps, options, zipName);
+    });
+  }
+
+  function runBatch(files, steps, output, zipName) {
+    var format = DL.outputFormatById(output.format);
+    var sourceOptions = store.state.source.options;
+    var items = [];
+    var i = 0;
+    batchRunning = true;
+    function next() {
+      if (i >= files.length) { finish(); return; }
+      var file = files[i++];
+      showProgress('File ' + i + ' of ' + files.length + ': ' + file.name, Math.round(100 * (i - 1) / files.length));
+      engine.batch(file, sourceOptions, steps, output).then(function (msg) {
+        var r = msg.result;
+        var name = U.baseName(file.name) + format.extension;
+        if (r.error) items.push({ name: file.name, error: r.error, step: r.step });
+        else items.push({ name: name, blob: r.blob, rowCount: r.rowCount });
+        next();
+      }).catch(function (err) {
+        items.push({ name: file.name, error: err.message || String(err) });
+        next();
+      });
+    }
+    function finish() {
+      var done = items.filter(function (it) { return it.blob; });
+      if (!done.length) { batchRunning = false; hideProgress(); DL.dialogs.batchReport(items); return; }
+      showProgress('Making the zip file', 95);
+      engine.zip(done.map(function (it) { return { name: it.name, blob: it.blob }; })).then(function (msg) {
+        batchRunning = false;
+        hideProgress();
+        U.downloadBlob(msg.blob, zipName);
+        if (items.some(function (it) { return it.error; })) DL.dialogs.batchReport(items);
+        else U.toast('Downloaded ' + zipName + ' with ' + DL.pluralize(done.length, 'file') + '.', 'success');
+      }).catch(function (err) { batchRunning = false; hideProgress(); U.toast(err.message, 'danger'); });
+    }
+    next();
+  }
+
   /* ---------- Rendering ---------- */
   function renderConfig() {
     if (store.state.selectedId === 'source') { configView.renderedFor = null; sourceView.render(); }
@@ -554,9 +619,9 @@
   document.addEventListener('drop', function (e) {
     if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
     e.preventDefault();
-    var f = e.dataTransfer.files[0];
-    if (DL.fileExtension(f.name) === 'json') importWorkflowFile(f);
-    else openFile(f);
+    var files = Array.from(e.dataTransfer.files);
+    if (files.length === 1 && DL.fileExtension(files[0].name) === 'json') importWorkflowFile(files[0]);
+    else openFiles(files);
   });
 
   /* ---------- Start ---------- */
@@ -571,5 +636,5 @@
     U.toast('Your steps were restored. Open "' + store.restoredSourceName + '" again to continue.', 'info');
   }
   // A handle for tests: open the page with ?debug to use it from the browser console.
-  if (/[?&]debug\b/.test(location.search)) window.DLApp = { store: store, engine: engine, grid: grid, openFile: openFile };
+  if (/[?&]debug\b/.test(location.search)) window.DLApp = { store: store, engine: engine, grid: grid, openFile: openFile, openFiles: openFiles };
 })();

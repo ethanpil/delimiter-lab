@@ -41,6 +41,8 @@ self.onmessage = function (e) {
       case 'run': reply({ type: 'ran', results: runChain(msg) }); break;
       case 'slice': reply({ type: 'slice', stepId: msg.stepId, data: getSlice(msg) }); break;
       case 'export': exportStep(msg, reply); break;
+      case 'batch': reply({ type: 'batch', result: batchFile(msg) }); break;
+      case 'zip': reply({ type: 'zip', blob: makeZip(msg.entries) }); break;
       case 'columnInfo': reply({ type: 'columnInfo', stepId: msg.stepId, info: columnInfo(msg) }); break;
       case 'columnStats': reply({ type: 'columnStats', stepId: msg.stepId, col: msg.col, stats: columnStats(msg) }); break;
       case 'diffSummary': reply({ type: 'diffSummary', stepId: msg.stepId, summary: diffSummary(msg) }); break;
@@ -619,6 +621,115 @@ function findRows(msg) {
   for (var i = 0; i < state.steps.length; i++) if (state.steps[i].id === msg.stepId) step = state.steps[i];
   if (!input || !step) return { matches: [], total: 0 };
   return DL.findRows(step.opId, step.params, input, msg.lookup, msg.limit);
+}
+
+/* ---------- Batch: one file through the whole workflow ---------- */
+
+// Reads a file, runs every step and writes the result. The interactive source and cache stay as they are.
+// Gives { blob, rowCount } or { error, step } where step is the 1-based number of the step that failed.
+function batchFile(msg) {
+  var file = msg.file;
+  var format = DL.inputFormatFor(file.name);
+  var table = readers[format.id](file, msg.options || {}).table;
+  var steps = msg.steps || [];
+  for (var i = 0; i < steps.length; i++) {
+    var step = steps[i];
+    if (step.skip) continue;
+    var problems = DL.validateParams(step.opId, step.params, table.columns);
+    if (problems.length) return { error: problems[0], step: i + 1 };
+    try {
+      table = DL.runOp(step.opId, step.params, table).table;
+    } catch (err) {
+      return { error: err && err.message ? err.message : String(err), step: i + 1 };
+    }
+  }
+  var o = msg.output || {};
+  var out = DL.outputFormatById(o.format) || DL.outputFormats[0];
+  return { blob: writers[out.id](table, o, out), rowCount: table.length };
+}
+
+/* ---------- Zip (store only, no compression) ---------- */
+
+var CRC_TABLE = (function () {
+  var t = new Int32Array(256);
+  for (var n = 0; n < 256; n++) {
+    var c = n;
+    for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  var c = -1;
+  for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+// Makes a zip file from [{ name, blob }]. The files are stored without compression, because the
+// browser cannot read a deflate stream faster than it can read the plain bytes, and the zip stays simple.
+function makeZip(entries) {
+  var now = new Date();
+  var dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  var dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  var encoder = new TextEncoder();
+  var parts = [];
+  var central = [];
+  var offset = 0;
+  entries.forEach(function (e) {
+    var data = new Uint8Array(readBuffer(e.blob));
+    var name = encoder.encode(e.name);
+    var crc = crc32(data);
+    var local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);       // version needed
+    local.setUint16(6, 0x0800, true);   // flags: UTF-8 names
+    local.setUint16(8, 0, true);        // method: store
+    local.setUint16(10, dosTime, true);
+    local.setUint16(12, dosDate, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, data.length, true);
+    local.setUint32(22, data.length, true);
+    local.setUint16(26, name.length, true);
+    local.setUint16(28, 0, true);
+    parts.push(local.buffer, name, data);
+    central.push({ name: name, crc: crc, size: data.length, offset: offset });
+    offset += 30 + name.length + data.length;
+  });
+  var centralStart = offset;
+  central.forEach(function (c) {
+    var h = new DataView(new ArrayBuffer(46));
+    h.setUint32(0, 0x02014b50, true);
+    h.setUint16(4, 20, true);           // version made by
+    h.setUint16(6, 20, true);           // version needed
+    h.setUint16(8, 0x0800, true);
+    h.setUint16(10, 0, true);
+    h.setUint16(12, dosTime, true);
+    h.setUint16(14, dosDate, true);
+    h.setUint32(16, c.crc, true);
+    h.setUint32(20, c.size, true);
+    h.setUint32(24, c.size, true);
+    h.setUint16(28, c.name.length, true);
+    h.setUint16(30, 0, true);           // extra length
+    h.setUint16(32, 0, true);           // comment length
+    h.setUint16(34, 0, true);           // disk number
+    h.setUint16(36, 0, true);           // internal attributes
+    h.setUint32(38, 0, true);           // external attributes
+    h.setUint32(42, c.offset, true);
+    parts.push(h.buffer, c.name);
+    offset += 46 + c.name.length;
+  });
+  var end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(4, 0, true);
+  end.setUint16(6, 0, true);
+  end.setUint16(8, central.length, true);
+  end.setUint16(10, central.length, true);
+  end.setUint32(12, offset - centralStart, true);
+  end.setUint32(16, centralStart, true);
+  end.setUint16(20, 0, true);
+  parts.push(end.buffer);
+  return new Blob(parts, { type: 'application/zip' });
 }
 
 /* ---------- Export ---------- */

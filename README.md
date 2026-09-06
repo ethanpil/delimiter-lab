@@ -12,6 +12,7 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 - Marks the cells that a step changed (the "Changes" button).
 - Shows the rows that failed a Verify rule when you click the rule in the result.
 - Saves workflows in the browser and as files, so you can apply them again to new files.
+- Applies the steps to many files at once: drop the files, choose the output format and download a zip file.
 - Undo and redo.
 - Works with large files. The file size limit depends on the memory of the computer.
 

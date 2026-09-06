@@ -55,12 +55,13 @@
     var current = DL.outputFormatById(opts.lastFormat) || formats[0];
     var values = {};
     formats.forEach(function (f) { values[f.id] = Object.assign(DL.defaultFormatOptions(f), opts.lastOptions && opts.lastOptions[f.id] || {}); });
-    var name = U.el('input', { type: 'text', class: 'form-control', value: opts.baseName + current.extension });
+    var many = !!opts.files; // apply the workflow to many files: the name is the name of the zip file
+    var name = U.el('input', { type: 'text', class: 'form-control', value: opts.baseName + (many ? '.zip' : current.extension) });
     var optionsBox = U.el('div');
     var fmt = U.select(formats.map(function (f) { return { value: f.id, label: f.label }; }), current.id, function (v) {
       var prev = current;
       current = DL.outputFormatById(v);
-      name.value = name.value.replace(new RegExp(DL.escapeRegExp(prev.extension) + '$', 'i'), '') + current.extension;
+      if (!many) name.value = name.value.replace(new RegExp(DL.escapeRegExp(prev.extension) + '$', 'i'), '') + current.extension;
       renderOptions();
     }, { class: 'form-select' });
     function renderOptions() {
@@ -72,14 +73,18 @@
       optionsBox.appendChild(rendered.grid);
     }
     renderOptions();
+    var fileList = many ? U.el('ul', { class: 'file-list' }, opts.files.map(function (f) {
+      return U.el('li', {}, [U.el('span', { text: f.name }), U.el('span', { class: 'text-secondary', text: U.fmtBytes(f.size) })]);
+    })) : null;
     var body = U.el('div', { class: 'd-flex flex-column gap-3' }, [
       opts.note ? U.el('div', { class: 'alert alert-info py-2 mb-0', text: opts.note }) : null,
+      fileList,
       U.el('div', {}, [U.el('label', { class: 'form-label mb-1', text: 'Format' }), fmt]),
       U.el('div', {}, [U.el('label', { class: 'form-label mb-1', text: 'File name' }), name]),
       optionsBox
     ]);
     var m = U.modal({
-      title: 'Download',
+      title: many ? 'Apply the workflow to ' + DL.pluralize(opts.files.length, 'file') : 'Download',
       enterSubmits: true,
       body: body,
       footer: [
@@ -90,8 +95,25 @@
           if (problems.length) { U.toast(problems[0], 'warning'); return; }
           m.close();
           onDownload(Object.assign({ format: current.id }, values[current.id]), U.safeFileName(name.value), values);
-        } }, [U.el('i', { class: 'bi bi-download' }), ' Download'])
+        } }, [U.el('i', { class: 'bi bi-download' }), many ? ' Apply and download' : ' Download'])
       ]
+    });
+  };
+
+  // Shows what happened to each file of a batch.
+  D.batchReport = function (items) {
+    var failed = items.filter(function (it) { return it.error; });
+    U.modal({
+      title: failed.length ? DL.pluralize(failed.length, 'file') + ' of ' + items.length + ' failed' : 'All ' + DL.pluralize(items.length, 'file') + ' done',
+      scrollable: true,
+      body: U.el('ul', { class: 'file-list' }, items.map(function (it) {
+        return U.el('li', { class: it.error ? 'text-danger' : '' }, [
+          U.el('i', { class: 'bi ' + (it.error ? 'bi-x-circle' : 'bi-check-circle text-success') + ' me-2' }),
+          U.el('span', { text: it.name }),
+          U.el('span', { class: 'text-secondary', text: it.error ? (it.step ? 'Step ' + it.step + ': ' : '') + it.error : DL.pluralize(it.rowCount, 'row') })
+        ]);
+      })),
+      footer: [U.el('button', { type: 'button', class: 'btn btn-primary', 'data-bs-dismiss': 'modal', text: 'Close' })]
     });
   };
 

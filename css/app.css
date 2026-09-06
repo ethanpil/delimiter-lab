@@ -232,6 +232,10 @@ body {
 .grid-hcell .hbadge { margin-left: 6px; font-size: 11px; font-weight: 500; color: #146c43; background: #b8e6c8; border-radius: 8px; padding: 0 6px; flex: 0 0 auto; }
 .grid-hcell[data-col] { cursor: pointer; }
 .grid-hcell[data-col]:hover { background: #e9ecef; }
+.file-list { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow: auto; font-size: 14px; }
+.file-list li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--dl-border); }
+.file-list li span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-list li span:last-child { flex: 0 0 auto; }
 .note-link { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
 .note-link:hover { color: #0a58ca; }
 .profile-popover { max-width: 340px; }

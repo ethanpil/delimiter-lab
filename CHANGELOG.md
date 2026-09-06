@@ -7,6 +7,7 @@
 - Add: column profile on a click on a column name (61287f4).
 - Add: "Changes" view that marks the cells a step changed (61287f4).
 - Add: a click on a Verify result shows the rows that failed the rule (dcc533d).
+- Add: apply the steps to many files at once and download a zip file.
 
 ## 1.2.0
 
