@@ -108,6 +108,9 @@
   // The largest number of different values for which the result is kept per column.
   var MEMO_LIMIT = 50000;
 
+  // The largest number of cells that one table can have. The worker sets it from the memory of the computer.
+  DL.maxCells = 8e6;
+
   // New table with the columns at idxs replaced by fn(value, ctx).
   // fn must use the value only. The result for each different value is kept and used again.
   // fn can call ctx.tag() to count a cell. The total goes to stats.tagged when stats is given.

@@ -18,7 +18,7 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 | --- | --- |
 | Text | Change Case, Combine Columns, Split Column, Split Name, Find & Replace, Substitute Values, Pad / Trim, Extract Text, Clean Text |
 | Dates | Format Dates, Date Math |
-| Rows | Remove Duplicates, Filter Rows, Sort Rows, Find Outliers, Unique Values |
+| Rows | Remove Duplicates, Filter Rows, Sort Rows, Find Outliers, Unique Values, Pivot, Unpivot |
 | Columns | Rename Columns, Reorder Columns, Remove Columns, Add Column, Fill Empty Values, Calculate, Format Numbers |
 | Quality | Verify Values |
 | Advanced | Custom JavaScript |

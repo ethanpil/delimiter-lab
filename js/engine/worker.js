@@ -34,7 +34,7 @@ self.onmessage = function (e) {
   };
   try {
     switch (msg.type) {
-      case 'config': state.maxCells = msg.maxCells; state.cacheBudgetCells = msg.maxCells * 3; reply({ type: 'ok' }); break;
+      case 'config': state.maxCells = DL.maxCells = msg.maxCells; state.cacheBudgetCells = msg.maxCells * 3; reply({ type: 'ok' }); break;
       case 'sheets': reply({ type: 'sheets', sheets: sheetNames(msg.file) }); break;
       case 'load': loadFile(msg, reply); break;
       case 'run': reply({ type: 'ran', results: runChain(msg) }); break;

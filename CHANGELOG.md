@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add: Format Dates, Date Math, Extract Text, Clean Text and Fill Empty Values operations (5a32941).
+- Add: Pivot and Unpivot operations.
 
 ## 1.2.0
 

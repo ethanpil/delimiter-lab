@@ -432,7 +432,7 @@ test('every op has metadata and defaults', () => {
     assert.ok(typeof op.summary === 'function', op.id + ' summary');
     op.params.forEach((p) => assert.ok(p.key && p.label && p.type, op.id + ' param'));
   });
-  assert.strictEqual(DL.ops.length, 25);
+  assert.strictEqual(DL.ops.length, 27);
   // Every operation that changes the columns must predict them correctly (or say null).
   const fixture = T(['Full Name', 'Email', 'Amount'], [['John Smith', 'j@x.com', '1'], ['Ann Lee', 'a@y.com', '2']]);
   const cases = {
@@ -449,7 +449,8 @@ test('every op has metadata and defaults', () => {
     verify: { rules: [{ column: 'Email', op: 'isEmail' }], action: 'flag' },
     split: { column: 'Full Name', separator: ' ', maxParts: 2 },
     extract: { column: 'Email', pattern: '@(.+)$', group: 1, output: 'Domain' },
-    dateMath: { column: 'Amount', mode: 'part', part: 'year', output: 'Y' }
+    dateMath: { column: 'Amount', mode: 'part', part: 'year', output: 'Y' },
+    unpivot: { columns: ['Email', 'Amount'], nameColumn: 'Full Name', valueColumn: 'V' }
   };
   Object.keys(cases).forEach((id) => {
     const params = Object.assign(DL.defaultParams(id), cases[id]);
@@ -531,6 +532,33 @@ test('textClean removes html, accents, control characters and odd spaces', () =>
   assert.ok(r.notes[0].indexOf('3 cells') > 0);
   const keep = run('textClean', { steps: ['html', 'control'] }, T(['A'], [['a < b and c > d'], ['\ud83d\udc68\u200d\ud83d\udc69']]));
   assert.deepStrictEqual(rowsOf(keep.table).map((r) => r[0]), ['a < b and c > d', '\ud83d\udc68\u200d\ud83d\udc69']);
+});
+
+test('pivot groups, spreads a key column and aggregates', () => {
+  const t = T(['Region', 'Q', 'Sales'], [['N', 'Q1', '10'], ['N', 'Q2', '5.5'], ['S', 'Q1', 'x'], ['N', 'Q1', '2'], ['S', '', '4']]);
+  const sum = run('pivot', { rows: ['Region'], columnKey: 'Q', value: 'Sales', aggregate: 'sum', decimals: 1 }, t);
+  assert.deepStrictEqual(sum.table.columns, ['Region', 'Q1', 'Q2', '(empty)']);
+  assert.deepStrictEqual(rowsOf(sum.table), [['N', '12.0', '5.5', ''], ['S', '', '', '4.0']]);
+  const count = run('pivot', { rows: ['Region'], columnKey: '', value: '', aggregate: 'count' }, t);
+  assert.deepStrictEqual(count.table.columns, ['Region', 'Count']);
+  assert.deepStrictEqual(rowsOf(count.table), [['N', '3'], ['S', '2']]);
+  const list = run('pivot', { rows: ['Region', 'Q'], columnKey: '', value: 'Sales', aggregate: 'list' }, t);
+  assert.deepStrictEqual(rowsOf(list.table), [['N', 'Q1', '10, 2'], ['N', 'Q2', '5.5'], ['S', 'Q1', 'x'], ['S', '', '4']]);
+  const avg = run('pivot', { rows: [], columnKey: 'Q', value: 'Sales', aggregate: 'avg', decimals: 0 }, t);
+  assert.deepStrictEqual(rowsOf(avg.table), [['6', '6', '4']]);
+  assert.ok(DL.validateParams('pivot', Object.assign(DL.defaultParams('pivot'), { rows: ['Region'], columnKey: 'Region' }), ['Region']).length);
+  assert.strictEqual(DL.predictColumns('pivot', DL.defaultParams('pivot'), ['Region']), null);
+});
+
+test('unpivot turns columns into rows', () => {
+  const t = T(['Id', 'Jan', 'Feb'], [['a', '1', ''], ['b', '', '']]);
+  const r = run('unpivot', { columns: ['Jan', 'Feb'], nameColumn: 'Month', valueColumn: 'Amount' }, t);
+  assert.deepStrictEqual(r.table.columns, ['Id', 'Month', 'Amount']);
+  assert.deepStrictEqual(rowsOf(r.table), [['a', 'Jan', '1']]);
+  const all = run('unpivot', { columns: ['Jan', 'Feb'], nameColumn: 'Id', valueColumn: 'Id', skipEmpty: false }, t);
+  assert.deepStrictEqual(all.table.columns, ['Id', 'Id 2', 'Id 3']);
+  assert.strictEqual(rowsOf(all.table).length, 4);
+  assert.deepStrictEqual(rowsOf(all.table)[3], ['b', 'Feb', '']);
 });
 
 /* ---- performance smoke ---- */
