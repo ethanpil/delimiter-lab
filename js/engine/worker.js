@@ -41,6 +41,8 @@ self.onmessage = function (e) {
       case 'slice': reply({ type: 'slice', stepId: msg.stepId, data: getSlice(msg) }); break;
       case 'export': exportStep(msg, reply); break;
       case 'columnInfo': reply({ type: 'columnInfo', stepId: msg.stepId, info: columnInfo(msg) }); break;
+      case 'columnStats': reply({ type: 'columnStats', stepId: msg.stepId, col: msg.col, stats: columnStats(msg) }); break;
+      case 'diffSummary': reply({ type: 'diffSummary', stepId: msg.stepId, summary: diffSummary(msg) }); break;
       case 'search': reply({ type: 'search', stepId: msg.stepId, result: search(msg) }); break;
       default: reply({ type: 'error', message: 'Unknown request "' + msg.type + '".' });
     }
@@ -425,6 +427,15 @@ function tableFor(stepId) {
   return upstream;
 }
 
+// Gives the table that feeds a step: the output of the step before it, or the source.
+function inputFor(stepId) {
+  if (!state.source || stepId === 'source' || !stepId) return null;
+  for (var i = 0; i < state.steps.length; i++) {
+    if (state.steps[i].id === stepId) return i === 0 ? state.source : tableFor(state.steps[i - 1].id);
+  }
+  return null;
+}
+
 /* ---------- Preview slices ---------- */
 
 function getSlice(msg) {
@@ -432,7 +443,58 @@ function getSlice(msg) {
   if (!table) return { columns: [], rows: [], total: 0, start: 0 };
   var start = Math.max(0, msg.start | 0);
   var end = Math.min(table.length, start + Math.max(0, msg.count | 0));
-  return { columns: table.columns, rows: DL.rowsSlice(table, start, end), total: table.length, start: start };
+  var data = { columns: table.columns, rows: DL.rowsSlice(table, start, end), total: table.length, start: start };
+  if (msg.diff) data.changes = sliceChanges(table, inputFor(msg.stepId), start, end);
+  return data;
+}
+
+// For each row in the slice, the indexes of the cells that differ from the input table.
+// A new column counts as changed in every row. Null when the row count differs.
+function sliceChanges(table, input, start, end) {
+  if (!input || input.length !== table.length) return null;
+  var w = table.columns.length;
+  var map = table.columns.map(function (name) { return input.columns.indexOf(name); });
+  var getA = [], getB = [];
+  for (var c = 0; c < w; c++) {
+    getA.push(DL.cellGetter(table, c));
+    getB.push(map[c] >= 0 ? DL.cellGetter(input, map[c]) : null);
+  }
+  var out = [];
+  for (var i = start; i < end; i++) {
+    var changed = [];
+    for (c = 0; c < w; c++) {
+      if (getB[c] === null || getA[c](i) !== getB[c](i)) changed.push(c);
+    }
+    out.push(changed);
+  }
+  return out;
+}
+
+// Counts the cells that a step changed, column by column.
+function diffSummary(msg) {
+  var table = tableFor(msg.stepId);
+  var input = inputFor(msg.stepId);
+  if (!table || !input) return null;
+  var sameRows = table.length === input.length;
+  var n = table.length;
+  var columns = table.columns.map(function (name, c) {
+    var u = input.columns.indexOf(name);
+    if (u < 0) return { name: name, isNew: true, changed: sameRows ? n : 0 };
+    if (!sameRows || sameColumn(table.cols[c], input.cols[u])) return { name: name, isNew: false, changed: 0 };
+    var a = DL.cellGetter(table, c), b = DL.cellGetter(input, u);
+    var changed = 0;
+    for (var i = 0; i < n; i++) if (a(i) !== b(i)) changed++;
+    return { name: name, isNew: false, changed: changed };
+  });
+  var removed = input.columns.filter(function (name) { return table.columns.indexOf(name) < 0; });
+  return { sameRows: sameRows, rowsBefore: input.length, rowsAfter: n, columns: columns, removed: removed };
+}
+
+// True when two columns share the same data, so no cell can differ.
+function sameColumn(a, b) {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) return false;
+  return a.src === b.src && a.idx === b.idx;
 }
 
 function columnInfo(msg) {
@@ -456,6 +518,54 @@ function columnInfo(msg) {
     out.push({ name: table.columns[c], type: DL.detectType(sample, 300), emptyPct: sampled ? Math.round(100 * empty / sampled) : 0, maxLen: maxLen });
   }
   return out;
+}
+
+var TOP_VALUES = 5;
+
+// Full statistics for one column, for the column profile.
+function columnStats(msg) {
+  var table = tableFor(msg.stepId);
+  if (!table || msg.col < 0 || msg.col >= table.columns.length) return null;
+  var n = table.length;
+  var get = DL.cellGetter(table, msg.col);
+  var g = DL.groupRows([get], n);
+  var type = DL.detectType(DL.col(table, msg.col), 500);
+  var st = { name: table.columns[msg.col], type: type, rows: n, empty: 0, distinct: 0, numbers: 0, sum: 0, min: Infinity, max: -Infinity,
+    minLen: Infinity, maxLen: 0, dates: 0, earliest: Infinity, latest: -Infinity, top: [] };
+  // Each different value is looked at once, and its count is used as the weight.
+  for (var i = 0; i < n; i++) {
+    if (g.first[i] !== i) continue;
+    var v = get(i);
+    var count = g.count[i];
+    if (v === '') { st.empty = count; continue; }
+    st.distinct++;
+    if (v.length < st.minLen) st.minLen = v.length;
+    if (v.length > st.maxLen) st.maxLen = v.length;
+    var x = DL.toNumber(v);
+    if (x === x) {
+      st.numbers += count;
+      st.sum += x * count;
+      if (x < st.min) st.min = x;
+      if (x > st.max) st.max = x;
+    } else if (type === 'date') {
+      var t = DL.toDate(v);
+      if (t === t) {
+        st.dates += count;
+        if (t < st.earliest) st.earliest = t;
+        if (t > st.latest) st.latest = t;
+      }
+    }
+    // Keep the most common values, in order, without a sort of every value.
+    var top = st.top;
+    if (top.length < TOP_VALUES || count > top[top.length - 1].count) {
+      var pos = top.length;
+      while (pos > 0 && top[pos - 1].count < count) pos--;
+      top.splice(pos, 0, { value: v, count: count });
+      if (top.length > TOP_VALUES) top.pop();
+    }
+  }
+  if (st.numbers) st.avg = st.sum / st.numbers;
+  return st;
 }
 
 function search(msg) {

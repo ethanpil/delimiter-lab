@@ -64,8 +64,10 @@
   EngineClient.prototype.listSheets = function (file) { return this.send({ type: 'sheets', file: file }); };
   EngineClient.prototype.load = function (file, options) { return this.send({ type: 'load', file: file, options: options }); };
   EngineClient.prototype.run = function (steps, protect) { return this.send({ type: 'run', steps: steps, protect: protect }); };
-  EngineClient.prototype.slice = function (stepId, start, count) { return this.send({ type: 'slice', stepId: stepId, start: start, count: count }); };
+  EngineClient.prototype.slice = function (stepId, start, count, diff) { return this.send({ type: 'slice', stepId: stepId, start: start, count: count, diff: !!diff }); };
   EngineClient.prototype.columnInfo = function (stepId) { return this.send({ type: 'columnInfo', stepId: stepId }); };
+  EngineClient.prototype.columnStats = function (stepId, col) { return this.send({ type: 'columnStats', stepId: stepId, col: col }); };
+  EngineClient.prototype.diffSummary = function (stepId) { return this.send({ type: 'diffSummary', stepId: stepId }); };
   EngineClient.prototype.search = function (stepId, query, limit) { return this.send({ type: 'search', stepId: stepId, query: query, limit: limit }); };
   EngineClient.prototype.exportStep = function (stepId, options) { return this.send({ type: 'export', stepId: stepId, options: options }); };
 

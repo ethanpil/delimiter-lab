@@ -186,8 +186,11 @@
     if (shown.reason) stats += (stats ? ' · ' : '') + shown.reason;
     $('previewTitle').textContent = title;
     $('previewStats').textContent = stats;
+    previewStats = stats;
+    $('btnDiff').disabled = !shown.stepId || shown.stepId === 'source';
+    grid.diff = !!(diffOn() && shown.stepId && shown.stepId !== 'source');
     var message = shown.stepId ? '' : (st.source.status === 'loading' ? 'Reading the file…' : 'Open a file to see a preview.');
-    var key = (shown.stepId || 'none') + '|' + resultKey(shown.stepId || 'source') + '|' + message;
+    var key = (shown.stepId || 'none') + '|' + resultKey(shown.stepId || 'source') + '|' + message + '|' + (grid.diff ? 'diff' : '');
     if (key !== previewKey) {
       previewKey = key;
       grid.show(shown.stepId, message).then(function () {
@@ -197,6 +200,27 @@
     }
     refreshCompare();
   }
+
+  var previewStats = '';
+  function diffOn() { return $('btnDiff').classList.contains('active'); }
+
+  // Adds the change counts of the "Changes" view to the preview statistics.
+  grid.onDiffSummary = function (summary) {
+    if (!summary || !diffOn()) return;
+    var text;
+    if (!summary.sameRows) {
+      text = 'Rows went from ' + summary.rowsBefore.toLocaleString() + ' to ' + summary.rowsAfter.toLocaleString() + '. Cell changes are not marked when the rows change.';
+    } else {
+      var cells = 0, cols = 0, added = 0;
+      summary.columns.forEach(function (c) { if (c.isNew) added++; else if (c.changed) { cells += c.changed; cols++; } });
+      var parts = [];
+      if (cells) parts.push(DL.pluralize(cells, 'changed cell') + ' in ' + DL.pluralize(cols, 'column'));
+      if (added) parts.push(DL.pluralize(added, 'new column'));
+      if (summary.removed.length) parts.push(DL.pluralize(summary.removed.length, 'removed column') + ' (' + summary.removed.join(', ') + ')');
+      text = parts.length ? parts.join(' · ') : 'No cell changed.';
+    }
+    $('previewStats').textContent = previewStats + (previewStats ? ' · ' : '') + text;
+  };
 
   // Brings the first column that a step added into view.
   function scrollToNewColumns(shown) {
@@ -284,6 +308,7 @@
   $('previewSearchNext').addEventListener('click', function () { stepSearch(1); });
   $('previewSearchPrev').addEventListener('click', function () { stepSearch(-1); });
   $('btnCompare').addEventListener('click', function () { setTimeout(refreshCompare, 0); });
+  $('btnDiff').addEventListener('click', function () { setTimeout(refreshPreview, 0); });
 
   /* ---------- Steps ---------- */
   function addStep() {

@@ -4,7 +4,7 @@
 (function (root) {
   'use strict';
   var DL = root.DL || (root.DL = {});
-  DL.VERSION = '1.2.0';
+  DL.VERSION = '1.3.0-dev';
   DL.FILES = {
     engine: ['js/engine/core.js'],
     ops: ['js/ops/text.js', 'js/ops/rows.js', 'js/ops/columns.js', 'js/ops/dates.js', 'js/ops/reshape.js', 'js/ops/verify.js'],

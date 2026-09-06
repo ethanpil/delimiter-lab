@@ -4,6 +4,8 @@
 
 - Add: Format Dates, Date Math, Extract Text, Clean Text and Fill Empty Values operations (5a32941).
 - Add: Pivot and Unpivot operations (b4d0f1b).
+- Add: column profile on a click on a column name.
+- Add: "Changes" view that marks the cells a step changed.
 
 ## 1.2.0
 

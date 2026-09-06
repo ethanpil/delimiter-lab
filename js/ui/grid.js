@@ -17,6 +17,7 @@
     this.opts = opts || {};
     this.el = container;
     this.showVersion = 0;
+    this.diff = false; // true: the pages carry the cells that the step changed
     this.title = U.el('div', { class: 'grid-side-title' });
     this.title.hidden = !this.opts.title;
     if (this.opts.title) this.title.textContent = this.opts.title;
@@ -49,6 +50,15 @@
       var cell = e.target.closest('.grid-cell');
       if (cell && !cell.title && cell.scrollWidth > cell.clientWidth) cell.title = cell.textContent;
     });
+    // A click on a column name opens the column profile.
+    this.header.addEventListener('click', function (e) {
+      var cell = e.target.closest('.grid-hcell[data-col]');
+      if (cell) self.showProfile(cell, Number(cell.getAttribute('data-col')));
+    });
+    this.popover = null;
+    document.addEventListener('click', this.onDocClick = function (e) {
+      if (self.popover && !self.popover.tip.contains(e.target) && !self.header.contains(e.target)) self.closeProfile();
+    });
   }
 
   GridView.prototype.reset = function () {
@@ -69,6 +79,8 @@
     this.hits = null;      // Map rowIndex -> Set(colIndex)
     this.current = null;   // [row, col]
     this.scale = 1;
+    this.diffSummary = null; // per-column change counts, when the "Changes" view is on
+    this.closeProfile();
   };
 
   GridView.prototype.setTitle = function (t) { this.title.textContent = t || ''; this.title.hidden = !t; };
@@ -110,6 +122,14 @@
         self.renderKey = '';
         self.renderRows();
       }).catch(function () { /* the header keeps plain names */ });
+      if (self.diff) {
+        self.engine.diffSummary(stepId).then(function (r) {
+          if (self.showVersion !== version) return;
+          self.diffSummary = r.summary;
+          self.renderHeader();
+          if (self.onDiffSummary) self.onDiffSummary(r.summary);
+        }).catch(function () { /* the header keeps plain names */ });
+      }
     }).catch(function (err) {
       if (self.showVersion !== version) return;
       self.showMessage(err.message || String(err));
@@ -127,7 +147,7 @@
     if (this.inflight.has(pageIndex)) return this.inflight.get(pageIndex);
     var stepId = this.stepId;
     var page = this.page;
-    var p = this.engine.slice(stepId, pageIndex * page, page).then(function (msg) {
+    var p = this.engine.slice(stepId, pageIndex * page, page, this.diff).then(function (msg) {
       if (self.inflight.get(pageIndex) === p) self.inflight.delete(pageIndex);
       if (self.stepId !== stepId) return msg.data;
       self.pages.set(pageIndex, msg.data);
@@ -196,17 +216,27 @@
     var html = '<div class="grid-hcell rownum" style="width:' + this.rowNumW + 'px">#</div>';
     if (range[0] > 0) html += '<div class="grid-hcell" style="width:' + (this.lefts[range[0]] - this.rowNumW) + 'px"></div>';
     var info = this.info;
+    var diff = this.diffSummary;
     for (var c = range[0]; c < range[1]; c++) {
       var name = this.columns[c];
       var icon = '';
       var title = name;
+      var badge = '';
+      var cls = 'grid-hcell';
       if (info && info[c]) {
         var t = info[c].type;
         icon = '<i class="type-icon bi ' + (t === 'number' ? 'bi-123' : t === 'date' ? 'bi-calendar3' : 'bi-fonts') + '"></i>';
         title = name + ' · ' + (t === 'number' ? 'numbers' : t === 'date' ? 'dates' : 'text') + (info[c].emptyPct ? ' · ' + info[c].emptyPct + '% empty' : '');
       }
-      html += '<div class="grid-hcell" style="width:' + this.widths[c] + 'px" title="' + U.esc(title) + '">' + icon + '<span class="hname">' + U.esc(name) + '</span></div>';
+      if (diff && diff.columns[c]) {
+        var d = diff.columns[c];
+        if (d.isNew) { cls += ' is-new'; badge = '<span class="hbadge">new</span>'; title += ' · new column'; }
+        else if (d.changed) { cls += ' is-changed'; badge = '<span class="hbadge">' + d.changed.toLocaleString() + '</span>'; title += ' · ' + DL.pluralize(d.changed, 'changed cell'); }
+      }
+      title += ' · Click for the column profile';
+      html += '<div class="' + cls + '" data-col="' + c + '" style="width:' + this.widths[c] + 'px" title="' + U.esc(title) + '">' + icon + '<span class="hname">' + U.esc(name) + '</span>' + badge + '</div>';
     }
+    this.closeProfile();
     h.innerHTML = html;
     h.style.width = this.totalW + 'px';
     this.rowsEl.style.width = this.totalW + 'px';
@@ -279,6 +309,7 @@
       var row = page ? page.rows[i - page.start] : null;
       var top = this.scale < 1 ? baseTop + (i - firstVisible) * ROW_H : i * ROW_H;
       var hitCols = this.hits ? this.hits.get(i) : null;
+      var changed = page && page.changes ? page.changes[i - page.start] : null;
       html += '<div class="grid-row' + (hitCols ? ' is-hit' : '') + '" style="top:' + top + 'px;width:' + this.totalW + 'px">';
       html += '<div class="grid-cell rownum" style="width:' + this.rowNumW + 'px">' + (i + 1) + '</div>' + spacer;
       if (row) {
@@ -287,6 +318,7 @@
           var cls = 'grid-cell';
           if (v === '') cls += ' is-empty';
           else if (info && info[c] && info[c].type === 'number') cls += ' is-num';
+          if (changed && changed.indexOf(c) >= 0) cls += ' is-changed';
           if (hitCols && hitCols.has(c)) cls += ' is-hit';
           if (this.current && this.current[0] === i && this.current[1] === c) cls += ' is-current';
           html += '<div class="' + cls + '" style="width:' + widths[c] + 'px">' + esc(v) + '</div>';
@@ -339,9 +371,73 @@
     this.renderRows();
   };
 
+  /* ---------- Column profile ---------- */
+
+  function statRow(label, value) {
+    return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
+  }
+
+  function number(v) {
+    return DL.numberText(Math.round(v * 1e6) / 1e6);
+  }
+
+  // The HTML of the column profile.
+  function profileHtml(st) {
+    var kind = st.type === 'number' ? 'Numbers' : st.type === 'date' ? 'Dates' : 'Text';
+    var filled = st.rows - st.empty;
+    var pct = function (n) { return st.rows ? ' (' + Math.round(100 * n / st.rows) + '%)' : ''; };
+    var rows = statRow('Type', kind) +
+      statRow('Rows', st.rows.toLocaleString()) +
+      statRow('Empty', st.empty.toLocaleString() + pct(st.empty)) +
+      statRow('Different values', st.distinct.toLocaleString() + (st.distinct === filled && filled ? ' (all unique)' : ''));
+    if (st.numbers) {
+      rows += statRow('Numbers', st.numbers.toLocaleString() + pct(st.numbers)) +
+        statRow('Smallest', number(st.min)) + statRow('Largest', number(st.max)) +
+        statRow('Sum', number(st.sum)) + statRow('Average', number(st.avg));
+    }
+    if (st.dates) {
+      rows += statRow('Dates', st.dates.toLocaleString() + pct(st.dates)) +
+        statRow('Earliest', DL.formatDateISO(st.earliest)) + statRow('Latest', DL.formatDateISO(st.latest));
+    }
+    if (filled) rows += statRow('Length', st.minLen === st.maxLen ? st.maxLen + ' characters' : st.minLen + ' to ' + st.maxLen + ' characters');
+    var top = st.top.map(function (t) {
+      return '<tr><td class="pv">' + U.esc(t.value.length > 40 ? t.value.slice(0, 40) + '…' : t.value) + '</td><td class="pc">' + t.count.toLocaleString() + '</td></tr>';
+    }).join('');
+    return '<table class="profile-table">' + rows + '</table>' +
+      (top ? '<div class="profile-sub">Most common values</div><table class="profile-table profile-top">' + top + '</table>' : '');
+  }
+
+  GridView.prototype.showProfile = function (cell, col) {
+    var self = this;
+    var stepId = this.stepId;
+    if (this.popover && this.popover.col === col) { this.closeProfile(); return; }
+    this.closeProfile();
+    var pop = new bootstrap.Popover(cell, {
+      html: true, sanitize: false, trigger: 'manual', placement: 'bottom', container: 'body',
+      customClass: 'profile-popover', title: U.esc(this.columns[col]), content: '<div class="text-secondary small">Calculating…</div>'
+    });
+    pop.col = col;
+    pop.show();
+    this.popover = pop;
+    this.engine.columnStats(stepId, col).then(function (r) {
+      if (self.popover !== pop || !r.stats) return;
+      pop.setContent({ '.popover-body': profileHtml(r.stats) });
+    }).catch(function (err) {
+      if (self.popover === pop) pop.setContent({ '.popover-body': '<div class="text-danger small">' + U.esc(err.message || String(err)) + '</div>' });
+    });
+  };
+
+  GridView.prototype.closeProfile = function () {
+    if (!this.popover) return;
+    this.popover.dispose();
+    this.popover = null;
+  };
+
   GridView.prototype.destroy = function () {
     this.resizeObs.disconnect();
     clearTimeout(this.fetchTimer);
+    this.closeProfile();
+    document.removeEventListener('click', this.onDocClick);
   };
 
   DL.GridView = GridView;

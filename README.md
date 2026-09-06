@@ -8,6 +8,8 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 - Detects the encoding and the column separator automatically. You can change both.
 - Builds a chain of steps. Each step reads the output of the step before it.
 - Shows a preview of each step. You can download the result of any step.
+- Shows a profile of a column (type, empty cells, different values, smallest and largest, most common values) when you click its name.
+- Marks the cells that a step changed (the "Changes" button).
 - Saves workflows in the browser and as files, so you can apply them again to new files.
 - Undo and redo.
 - Works with large files. The file size limit depends on the memory of the computer.
