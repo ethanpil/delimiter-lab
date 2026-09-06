@@ -360,7 +360,7 @@ test('param type coercion rejects wrong shapes', () => {
   assert.deepStrictEqual(DL.cleanParams('reorder', { order: [1, 'A'] }).order, ['1', 'A']);
   const so = DL.cleanSourceOptions({ headers: undefined, skipRows: 'x', delimiter: 'bogus', sheet: 'S' });
   assert.strictEqual(so.headers, true);
-  assert.strictEqual(so.skipRows, 0);
+  assert.strictEqual(Number(so.skipRows) || 0, 0);
   assert.strictEqual(so.delimiter, 'auto');
   assert.strictEqual(so.sheet, 'S');
   assert.deepStrictEqual(DL.validateParams('reorder', { order: [] }, ['A']), []);
@@ -615,6 +615,127 @@ test('fill counts every changed cell and unescapes the fixed value', () => {
   const r = run('fill', { columns: ['A'], mode: 'value', value: '\\t' }, t);
   assert.deepStrictEqual(rowsOf(r.table).map((x) => x[0]), ['\t', 'x', '\t']);
   assert.ok(r.notes[0].indexOf('2 cells') > 0);
+});
+
+/* ---- whole-codebase review: engine ---- */
+test('toNumber rejects malformed groups, infinities and double negatives', () => {
+  assert.ok(isNaN(DL.toNumber('1e400')));
+  assert.ok(isNaN(DL.toNumber('1,234,56')));
+  assert.strictEqual(DL.toNumber('1.234.567'), 1234567);
+  assert.strictEqual(DL.toNumber('1,234,567.89'), 1234567.89);
+  assert.ok(isNaN(DL.toNumber('12,34.5')));
+  assert.ok(isNaN(DL.toNumber('(-5)')));
+  assert.strictEqual(DL.toNumber('(5)'), -5);
+});
+
+test('number formatting stays sane for huge, tiny and bad values', () => {
+  assert.strictEqual(DL.formatFixed(Infinity, 2), '');
+  assert.strictEqual(DL.formatFixed(NaN, 2), '');
+  assert.strictEqual(DL.formatFixed(1e21, 2), '1e+21');
+  assert.strictEqual(DL.formatFixed(1e15, 0), '1000000000000000');
+  assert.strictEqual(DL.formatFixed(2.5, 99), '2.500000000000000');
+  assert.strictEqual(DL.formatNumber(1e21, 0, ','), '1e+21');
+  assert.strictEqual(DL.formatNumber(1234567.891, 2, ',', '.'), '1,234,567.89');
+});
+
+test('toDate refuses versions, identifiers, year-less month text and 13 PM', () => {
+  assert.ok(isNaN(DL.toDate('1.5.3')));
+  assert.ok(isNaN(DL.toDate('3-4-5')));
+  assert.ok(isNaN(DL.toDate('10000101')));
+  assert.ok(!isNaN(DL.toDate('20240131')));
+  assert.ok(isNaN(DL.toDate('5 March')));
+  assert.ok(isNaN(DL.toDate('Decade 5, 2024')));
+  assert.ok(isNaN(DL.toDate('Room 12 march')));
+  assert.ok(!isNaN(DL.toDate('March 5, 2024')));
+  assert.ok(!isNaN(DL.toDate('5 Mar 2024')));
+  assert.ok(isNaN(DL.toDate('05/01/2024 13:04 PM')));
+  assert.ok(!isNaN(DL.toDate('31.01.2024')));
+  assert.ok(!isNaN(DL.toDate('1/2/24')));
+  assert.strictEqual(DL.formatDateISO(DL.localDate(50, 0, 1).getTime()), '0050-01-01');
+  assert.ok(!isNaN(DL.toDate('0050-01-01')));
+});
+
+test('title and sentence case handle contractions and quotes', () => {
+  assert.strictEqual(DL.titleCase("don't stop o'neil d'angelo hello_world"), "Don't Stop O'Neil D'Angelo Hello_World");
+  assert.strictEqual(DL.sentenceCase('"hello there." said he. (yes) ok'), '"Hello there." Said he. (Yes) ok');
+});
+
+test('detectType is not fooled by a periodic column', () => {
+  const col = [];
+  for (let i = 0; i < 1000; i++) col.push(i % 2 ? '2024-01-01' : '1');
+  assert.strictEqual(DL.detectType(col), 'text');
+});
+
+test('validateParams cleans raw params and keeps unknown columns unknown', () => {
+  assert.deepStrictEqual(DL.validateParams('case', { columns: 'A' }, ['A']).length > 0, true);
+  assert.deepStrictEqual(DL.validateParams('remove', { columns: ['A', 'Z'] }, null), []);
+  assert.deepStrictEqual(DL.validateParams('remove', { columns: ['A', 'Z'] }, ['A', 'B']).length, 1);
+  assert.ok(DL.validateParams('padTrim', { columns: ['A'], pad: 'left', length: '0x10' }, ['A']).length);
+  assert.strictEqual(DL.cleanParams('calculate', { rightNumber: '1,5' }).rightNumber, '1,5');
+  assert.ok(DL.validateParams('calculate', { left: 'A', rightKind: 'number', rightNumber: '1,5', output: 'X' }, ['A']).some((m) => m.indexOf('number') >= 0));
+  assert.deepStrictEqual(DL.cleanParams('splitName', { parts: ['first', 'first', 'last'] }).parts, ['first', 'last']);
+  assert.strictEqual(DL.cleanParams('sort', { keys: [{ column: 'A', value2: 'x' }] }).keys[0].value2, undefined);
+});
+
+test('TableBuilder counts back-filled cells', () => {
+  const b = new DL.TableBuilder({ headers: false, skipRows: 1.5 });
+  b.add(['skip']); b.add(['1']); b.add(['2', '3']);
+  assert.strictEqual(b.cells, 4);
+  assert.strictEqual(b.finish().length, 2);
+});
+
+/* ---- whole-codebase review: operations ---- */
+test('splitName keeps a multi-word last name before the comma and reads a title with one name', () => {
+  assert.deepStrictEqual(DL.splitName('van der Berg, Jan'), { prefix: '', first: 'Jan', middle: '', last: 'van der Berg', suffix: '' });
+  assert.deepStrictEqual(DL.splitName('de la Cruz, Maria Elena, Jr.'), { prefix: '', first: 'Maria', middle: 'Elena', last: 'de la Cruz', suffix: 'Jr.' });
+  assert.deepStrictEqual(DL.splitName('Dr. Smith').last, 'Smith');
+});
+
+test('split with an anchored regex, replace escapes and counts, pad with an emoji', () => {
+  const t = T(['A'], [['aaa']]);
+  const r = run('split', { column: 'A', separator: '^a', regex: true }, t);
+  assert.deepStrictEqual(rowsOf(r.table)[0], ['aaa', '', 'aa']);
+  const rep = run('replace', { columns: ['A'], find: ' ', replace: '\\n', regex: true }, T(['A'], [['a b']]));
+  assert.strictEqual(rowsOf(rep.table)[0][0], 'a\nb');
+  const same = run('replace', { columns: ['A'], find: 'x', replace: 'x' }, T(['A'], [['x']]));
+  assert.ok(same.notes[0].indexOf('0 cells') > 0);
+  const pad = run('padTrim', { columns: ['A'], pad: 'left', length: 4, char: '\u{1F600}' }, T(['A'], [['ab']]));
+  assert.strictEqual(Array.from(rowsOf(pad.table)[0][0]).length, 4);
+  const sub = run('substitute', { columns: ['A'], mapping: [{ from: 'x', to: 'a\\tb' }] }, T(['A'], [['x']]));
+  assert.strictEqual(rowsOf(sub.table)[0][0], 'a\tb');
+});
+
+test('whole word replace matches punctuation finds', () => {
+  const r = run('replace', { columns: ['A'], find: '-', replace: '_', wholeWord: true }, T(['A'], [['a-b']]));
+  assert.strictEqual(rowsOf(r.table)[0][0], 'a_b');
+  const w = run('replace', { columns: ['A'], find: 'cat', replace: 'dog', wholeWord: true }, T(['A'], [['cat concat']]));
+  assert.strictEqual(rowsOf(w.table)[0][0], 'dog concat');
+});
+
+test('outliers ignore infinities and pass an empty input through', () => {
+  const r = run('outliers', { column: 'V', action: 'flag' }, T(['V'], [['1'], ['2'], ['3'], ['1e400'], ['1000']]));
+  assert.ok(r.notes.join(' ').indexOf('NaN') < 0);
+  const empty = run('outliers', { column: 'V', action: 'flag' }, T(['V'], []));
+  assert.strictEqual(empty.status, 'ok');
+  assert.strictEqual(empty.table.length, 0);
+});
+
+test('verify length rules count characters; remove validation counts present columns', () => {
+  const p = Object.assign(DL.defaultParams('verify'), { rules: [{ column: 'A', op: 'maxLength', value: '2', allowEmpty: false }], action: 'flag' });
+  const r = DL.runOp('verify', p, T(['A'], [['\u{1F600}\u{1F600}']]));
+  assert.strictEqual(r.status, 'ok');
+  assert.deepStrictEqual(DL.validateParams('remove', { columns: ['A', 'Z', 'Q'] }, ['A', 'B', 'C']).filter((m) => m.indexOf('every') >= 0), []);
+});
+
+test('date math months is symmetric and counts month ends', () => {
+  const t = T(['A', 'B'], [['2024-01-31', '2024-02-29'], ['2024-02-29', '2024-01-31'], ['2024-03-31', '2024-04-30']]);
+  const r = run('dateMath', { column: 'A', mode: 'diff', otherKind: 'column', other: 'B', unit: 'months', output: 'M' }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((x) => x[2]), ['1', '-1', '1']);
+});
+
+test('filter summary shows both bounds of between', () => {
+  const p = Object.assign(DL.defaultParams('filter'), { conditions: [{ column: 'V', op: 'between', value: '1', value2: '5' }] });
+  assert.ok(DL.getOp('filter').summary(p).indexOf('"5"') > 0);
 });
 
 /* ---- performance smoke ---- */

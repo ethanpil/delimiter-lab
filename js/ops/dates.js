@@ -90,11 +90,7 @@
     return y >= 0 && y <= 9999;
   }
 
-  function startOfDay(ts) {
-    var d = new Date(ts);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  }
+  var startOfDay = DL.startOfDay;
 
   // Gives b minus a in whole units. For days and weeks, the function ignores the time of day and daylight saving changes.
   function diffUnits(a, b, unit) {
@@ -102,10 +98,13 @@
       var days = Math.round((startOfDay(b) - startOfDay(a)) / 86400000);
       return unit === 'days' ? days : Math.trunc(days / 7);
     }
+    if (b < a) return -diffUnits(b, a, unit); // the same distance in both directions
     var da = new Date(a), db = new Date(b);
     var months = (db.getFullYear() - da.getFullYear()) * 12 + (db.getMonth() - da.getMonth());
-    if (db.getDate() < da.getDate() && months > 0) months--;
-    if (db.getDate() > da.getDate() && months < 0) months++;
+    // 31 January to 28 February is a full month: the end of a month counts as the last day.
+    var lastA = da.getDate() === DL.localDate(da.getFullYear(), da.getMonth() + 1, 0).getDate();
+    var lastB = db.getDate() === DL.localDate(db.getFullYear(), db.getMonth() + 1, 0).getDate();
+    if (db.getDate() < da.getDate() && !(lastA && lastB) && months > 0) months--;
     return unit === 'months' ? months : Math.trunc(months / 12);
   }
 

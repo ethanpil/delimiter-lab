@@ -63,9 +63,9 @@
       case 'lt': test = function (v) { return num(v) < n; }; break;
       case 'lte': test = function (v) { return num(v) <= n; }; break;
       case 'eq': test = function (v) { return num(v) === n; }; break;
-      case 'minLength': test = function (v) { return v.length >= n; }; break;
-      case 'maxLength': test = function (v) { return v.length <= n; }; break;
-      case 'exactLength': test = function (v) { return v.length === n; }; break;
+      case 'minLength': test = function (v) { return DL.charCount(v) >= n; }; break;
+      case 'maxLength': test = function (v) { return DL.charCount(v) <= n; }; break;
+      case 'exactLength': test = function (v) { return DL.charCount(v) === n; }; break;
       case 'inList':
         var set = new Set(val.split(',').map(function (s) { return s.trim().toLowerCase(); }));
         test = function (v) { return set.has(v.trim().toLowerCase()); };

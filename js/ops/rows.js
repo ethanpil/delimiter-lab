@@ -135,7 +135,7 @@
     summary: function (p) {
       return (p.action === 'remove' ? 'Remove' : 'Keep') + ' rows where ' + p.conditions.map(function (x) {
         var def = DL.findOption(DL.FILTER_OPERATORS, x.op);
-        return x.column + ' ' + (def ? def.label : x.op) + (x.value ? ' "' + x.value + '"' : '');
+        return x.column + ' ' + (def ? def.label : x.op) + (x.value ? ' "' + x.value + '"' : '') + (def && def.needs === 'range' && x.value2 ? ' and "' + x.value2 + '"' : '');
       }).join(p.logic === 'any' ? ' or ' : ' and ');
     },
     apply: function (table, p) {
@@ -245,8 +245,9 @@
         if (type === 'text') ranked = textRanks(col, n, dir, emptyLast);
         else {
           var parse = type === 'number' ? DL.toNumber : DL.toDate;
+          var parsed = DL.mapValues(col, n, function (v) { return v === '' ? NaN : parse(v); }); // each different value once
           var vals = new Float64Array(n);
-          for (var i = 0; i < n; i++) vals[i] = col[i] === '' ? NaN : parse(col[i]);
+          for (var i = 0; i < n; i++) vals[i] = parsed[i];
           ranked = numberRanks(vals, n, dir, emptyLast);
         }
         return { column: k.column, type: type, ranks: ranked.ranks, groups: ranked.groups };
@@ -301,7 +302,10 @@
         nums[i] = x;
         if (x === x) validCount++;
       }
-      if (!validCount) throw new Error('Column "' + p.column + '" has no numbers.');
+      if (!validCount) {
+        var none = p.action === 'flag' ? DL.addColumn(table, DL.newColumnName(table.columns, p.flagColumn, OUTLIER), new Array(n).fill('')) : p.action === 'keep' ? DL.selectRows(table, []) : table;
+        return { table: none, notes: ['Column "' + p.column + '" has no numbers.'], status: n ? 'warning' : 'ok' };
+      }
       var sorted = new Float64Array(validCount);
       for (i = 0, validCount = 0; i < n; i++) if (nums[i] === nums[i]) sorted[validCount++] = nums[i];
       sorted.sort();

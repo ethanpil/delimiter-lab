@@ -81,25 +81,26 @@
 
   // Splits text at a separator (text or regular expression). Capture groups do not add parts.
   // max = 0 means: as many parts as needed. The last part keeps the rest of the text.
+  // Splits text on a separator (text or a global regular expression) into at most max parts.
   function splitText(s, sep, max) {
     var out = [];
-    var rest = s;
+    var at = 0;
     for (;;) {
       if (max && out.length === max - 1) break;
       var pos, len;
       if (sep instanceof RegExp) {
-        sep.lastIndex = 0;
-        var m = sep.exec(rest);
+        sep.lastIndex = at;
+        var m = sep.exec(s);
         if (!m || m[0].length === 0) break;
         pos = m.index; len = m[0].length;
       } else {
-        pos = rest.indexOf(sep); len = sep.length;
+        pos = s.indexOf(sep, at); len = sep.length;
         if (pos < 0) break;
       }
-      out.push(rest.slice(0, pos));
-      rest = rest.slice(pos + len);
+      out.push(s.slice(at, pos));
+      at = pos + len;
     }
-    out.push(rest);
+    out.push(s.slice(at));
     return out;
   }
 
@@ -172,44 +173,41 @@
     var res = { prefix: '', first: '', middle: '', last: '', suffix: '' };
     var s = (full || '').replace(/\s+/g, ' ').trim();
     if (!s) return res;
-    var lastFirst = false;
+    var norm = function (t) { return t.toLowerCase().replace(/\./g, ''); };
+    var lastName = null;
     if (s.indexOf(',') >= 0) {
       var parts = s.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
       if (!parts.length) return res;
-      // "Smith, John A." or "Smith, John, Jr."
+      // "Smith, John A." or "van der Berg, Jan, Jr.": the whole part before the comma is the last name.
       var tail = parts.slice(1);
       var suffixParts = [];
       var others = [];
       tail.forEach(function (t) {
-        if (SUFFIXES[t.toLowerCase().replace(/\./g, '')]) suffixParts.push(t); else others.push(t);
+        if (SUFFIXES[norm(t)]) suffixParts.push(t); else others.push(t);
       });
-      if (others.length) {
-        lastFirst = true;
-        s = others.join(' ') + ' ' + parts[0];
-      } else {
-        s = parts[0];
-      }
       if (suffixParts.length) res.suffix = suffixParts.join(' ');
+      if (others.length) { lastName = parts[0]; s = others.join(' '); } else { s = parts[0]; }
     }
     var tokens = s.split(' ');
-    var norm = function (t) { return t.toLowerCase().replace(/\./g, ''); };
+    var hadPrefix = false;
     while (tokens.length > 1 && PREFIXES[norm(tokens[0])]) {
       res.prefix = (res.prefix ? res.prefix + ' ' : '') + tokens.shift();
+      hadPrefix = true;
     }
     while (tokens.length > 1 && SUFFIXES[norm(tokens[tokens.length - 1])]) {
       var suf = tokens.pop();
       res.suffix = res.suffix ? suf + ' ' + res.suffix : suf;
     }
-    if (tokens.length === 1) {
-      if (lastFirst) res.last = tokens[0]; else res.first = tokens[0];
+    if (lastName !== null) {
+      // The tokens after the comma are "First Middle…".
+      res.last = lastName;
+      res.first = tokens.shift() || '';
+      res.middle = tokens.join(' ');
       return res;
     }
-    if (lastFirst) {
-      // The part before the comma is the last name. The rest is "First Middle…".
-      res.last = tokens[tokens.length - 1];
-      var firstMid = tokens.slice(0, tokens.length - 1);
-      res.first = firstMid[0] || '';
-      res.middle = firstMid.slice(1).join(' ');
+    if (tokens.length === 1) {
+      // "Dr. Smith" is a last name; a single word without a title is a first name.
+      if (hadPrefix) res.last = tokens[0]; else res.first = tokens[0];
       return res;
     }
     // The last token is the last name. Particles ("van", "de") go into the last name.
@@ -258,11 +256,9 @@
       var src = DL.col(table, idx);
       var n = table.length;
       var values = order.map(function () { return new Array(n); });
-      var cache = new Map(); // names repeat often: split each different value once
+      var split = DL.mapValues(src, n, DL.splitName); // names repeat often: each different value splits once
       for (var i = 0; i < n; i++) {
-        var v = src[i];
-        var parts = cache.get(v);
-        if (!parts) { parts = DL.splitName(v); if (cache.size < 50000) cache.set(v, parts); }
+        var parts = split[i];
         for (var k = 0; k < order.length; k++) values[k][i] = parts[order[k]];
       }
       var out = p.removeSource ? DL.dropColumns(table, [idx]) : table;
@@ -306,7 +302,7 @@
     apply: function (table, p) {
       var idxs = DL.colIndexesOrAll(table, p.columns);
       var find = p.regex ? p.find : unescapeText(p.find);
-      var replacement = p.regex ? p.replace : unescapeText(p.replace).replace(/\$/g, '$$$$');
+      var replacement = p.regex ? unescapeText(p.replace) : unescapeText(p.replace).replace(/\$/g, '$$$$');
       var stats = {};
       var out;
       if (p.wholeCell) {
@@ -316,8 +312,9 @@
         out = DL.mapColumns(table, idxs, function (v, ctx) {
           var hit = test ? test.test(v) : (p.matchCase ? v === target : v.toLowerCase() === target);
           if (!hit) return v;
-          ctx.tag();
-          return test ? v.replace(test, replacement) : plain;
+          var r = test ? v.replace(test, replacement) : plain;
+          if (r !== v) ctx.tag();
+          return r;
         }, stats);
       } else {
         var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
@@ -328,8 +325,9 @@
           re.lastIndex = 0;
           if (!re.test(v)) return v;
           re.lastIndex = 0;
-          ctx.tag();
-          return v.replace(re, replacement);
+          var r = v.replace(re, replacement);
+          if (r !== v) ctx.tag();
+          return r;
         }, stats);
       }
       return { table: out, notes: ['Changed ' + DL.pluralize(stats.tagged, 'cell') + '.'] };
@@ -365,7 +363,7 @@
         if (m.from === '') return;
         var k = p.trim ? m.from.trim() : m.from;
         if (!p.matchCase) k = k.toLowerCase();
-        map.set(k, m.to);
+        map.set(k, unescapeText(m.to));
       });
       var stats = {};
       var noMatch = p.noMatch;
@@ -418,7 +416,7 @@
     },
     apply: function (table, p) {
       var idxs = DL.colIndexes(table, p.columns);
-      var ch = String(p.char || ' ').charAt(0) || ' ';
+      var ch = Array.from(String(p.char || ' '))[0] || ' '; // a whole character, also an emoji
       var len = Number(p.length) || 0;
       var trim = p.trim, pad = p.pad, collapse = !!p.collapse;
       var out = DL.mapColumns(table, idxs, function (v) {
@@ -426,8 +424,9 @@
         else if (trim === 'left') v = v.replace(/^\s+/, '');
         else if (trim === 'right') v = v.replace(/\s+$/, '');
         if (collapse) v = v.replace(/\s{2,}/g, ' ');
-        if (pad === 'left') v = v.padStart(len, ch);
-        else if (pad === 'right') v = v.padEnd(len, ch);
+        // The length counts characters, so an emoji pad character or value counts as one.
+        var missing = pad === 'none' ? 0 : len - DL.charCount(v);
+        if (missing > 0) v = pad === 'left' ? ch.repeat(missing) + v : v + ch.repeat(missing);
         return v;
       });
       return { table: out };
@@ -507,7 +506,7 @@
   // The clean steps, in the order in which they run. The options of the operation come from this list.
   var CLEAN_STEPS = [
     { value: 'html', label: 'Remove HTML tags and decode &amp;, &lt;, …', fn: stripHtml },
-    { value: 'control', label: 'Remove hidden control characters', fn: function (s) { return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u200C\uFEFF]/g, ''); } },
+    { value: 'control', label: 'Remove hidden control characters', fn: function (s) { return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u200B\u200C\u2060-\u2064\uFEFF]/g, ''); } },
     { value: 'quotes', label: 'Make curly quotes and dashes plain', fn: function (s) { return s.replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...'); } },
     // Only Latin letters lose their marks. Other scripts, such as Cyrillic, keep their letters.
     { value: 'accents', label: 'Remove accents from Latin letters (é → e)', fn: function (s) { return s.normalize('NFD').replace(/([A-Za-z])[\u0300-\u036f]+/g, '$1').normalize('NFC'); } },

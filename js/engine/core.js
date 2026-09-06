@@ -72,10 +72,6 @@
     return out;
   };
 
-  DL.colIndex = function (table, name) {
-    return table.columns.indexOf(name);
-  };
-
   // Gives the index of a column. Stops with a clear message when the column does not exist.
   DL.requireCol = function (table, name) {
     var idx = table.columns.indexOf(name);
@@ -351,14 +347,16 @@
     if (v == null) return NaN;
     var s = typeof v === 'string' ? v : String(v);
     if (s === '') return NaN;
-    if (isPlainNumber(s)) return +s;
+    var n;
+    if (isPlainNumber(s)) { n = +s; return isFinite(n) ? n : NaN; }
     s = s.trim();
     if (s === '') return NaN;
-    if (isPlainNumber(s)) return +s;
+    if (isPlainNumber(s)) { n = +s; return isFinite(n) ? n : NaN; }
     var neg = false;
     if (s.charAt(0) === '(' && s.charAt(s.length - 1) === ')') {
       neg = true;
       s = s.slice(1, -1).trim();
+      if (s.charAt(0) === '-' || s.charAt(0) === '+') return NaN; // "(-5)" is not a number
     }
     // Remove currency symbols, spaces and percent signs.
     s = s.replace(/[\s '$€£¥₹%]/g, '');
@@ -366,27 +364,46 @@
     var lastComma = s.lastIndexOf(',');
     var lastDot = s.lastIndexOf('.');
     if (lastComma >= 0 && lastDot >= 0) {
-      if (lastComma > lastDot) s = s.replace(/\./g, '').replace(',', '.'); // 1.234,56
-      else s = s.replace(/,/g, '');
+      if (lastComma > lastDot) {
+        if (!groupsOf3(s.slice(0, lastComma), '.')) return NaN; // 1.234,56
+        s = s.replace(/\./g, '').replace(',', '.');
+      } else {
+        if (!groupsOf3(s.slice(0, lastDot), ',')) return NaN; // 1,234.56
+        s = s.replace(/,/g, '');
+      }
     } else if (lastComma >= 0) {
       var commas = s.split(',').length - 1;
       var after = s.length - lastComma - 1;
       // One comma with exactly 3 digits after it is a thousands separator ("1,234").
-      // Other single commas are decimal separators ("1,5"). Many commas are thousands separators.
+      // Other single commas are decimal separators ("1,5"). Many commas must all separate groups of 3.
       if (commas === 1 && after !== 3) s = s.replace(',', '.');
-      else s = s.replace(/,/g, '');
+      else if (groupsOf3(s, ',')) s = s.replace(/,/g, '');
+      else return NaN;
+    } else if (lastDot >= 0 && s.indexOf('.') !== lastDot) {
+      if (!groupsOf3(s, '.')) return NaN; // 1.234.567
+      s = s.replace(/\./g, '');
     }
-    var n = Number(s);
-    if (isNaN(n)) return NaN;
+    n = Number(s);
+    if (!isFinite(n)) return NaN;
     return neg ? -n : n;
   };
 
-  var isoRe = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\s*(Z|[+-]\d{2}:?\d{2})?)?$/;
-  var compactRe = /^(\d{4})(\d{2})(\d{2})$/; // 20240131
-  var slashRe = /^(\d{1,4})[\/.\-](\d{1,2})[\/.\-](\d{1,4})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?$/;
+  // True when every separator in the text sits before a group of exactly three digits ("1,234,567").
+  function groupsOf3(s, sep) {
+    var parts = s.replace(/^[+-]/, '').split(sep);
+    if (parts.length < 2 || parts[0].length === 0 || parts[0].length > 3) return false;
+    for (var i = 1; i < parts.length; i++) if (!/^\d{3}$/.test(parts[i])) return false;
+    return true;
+  }
 
+  var isoRe = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\s*(Z|[+-]\d{2}:?\d{2})?)?$/;
+  var compactRe = /^((?:19|20)\d{2})(\d{2})(\d{2})$/; // 20240131; other 8-digit values are identifiers
+  var slashRe = /^(\d{1,4})([\/.\-])(\d{1,2})\2(\d{1,4})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?$/;
+
+  var DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   function daysInMonth(y, m) {
-    return new Date(y, m, 0).getDate();
+    if (m === 2 && ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0)) return 29;
+    return DAYS[m - 1];
   }
 
   // Makes a local timestamp from date parts. Gives NaN when the parts are not a real date.
@@ -409,7 +426,8 @@
     return t;
   }
 
-  var MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i;
+  var MONTH_RE = /\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t|tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\b\.?/i;
+  var YEAR_RE = /\b\d{4}\b/;
 
   // Parses common date formats. Gives a timestamp (ms) or NaN.
   // dayFirst: read "01/02/2024" as 1 February (true) or 2 January (false).
@@ -426,27 +444,32 @@
     if (m) return makeDate(+m[1], +m[2], +m[3], 0, 0, 0);
     m = slashRe.exec(s);
     if (m) {
-      var a = +m[1], b = +m[2], c = +m[3];
+      var a = +m[1], b = +m[3], c = +m[4];
       var y, mo, d;
       if (m[1].length === 4) {
         y = a; mo = b; d = c;
       } else {
-        if (m[3].length <= 2) c = c + (c < 70 ? 2000 : 1900);
+        // A version such as "1.5.3" is not a date: with "." or "-" the year needs four digits.
+        if (m[4].length <= 2) {
+          if (m[2] !== '/') return NaN;
+          c = c + (c < 70 ? 2000 : 1900);
+        }
         y = c;
         if (dayFirst || a > 12) { d = a; mo = b; } else { mo = a; d = b; }
       }
-      var h = +(m[4] || 0);
-      var ampm = m[7];
+      var h = +(m[5] || 0);
+      var ampm = m[8];
       if (ampm) {
+        if (h > 12) return NaN;
         var pm = ampm.toLowerCase() === 'pm';
         if (pm && h < 12) h += 12;
         if (!pm && h === 12) h = 0;
       }
-      return makeDate(y, mo, d, h, +(m[5] || 0), +(m[6] || 0));
+      return makeDate(y, mo, d, h, +(m[6] || 0), +(m[7] || 0));
     }
-    // Let the browser parse "March 5, 2024" and similar. A month name is required, because the
-    // browser also accepts text such as "Room 12" as a date.
-    if (!MONTH_RE.test(s) || !/\d/.test(s)) return NaN;
+    // Let the browser parse "March 5, 2024" and similar. A month name and a four-digit year are
+    // required, because the browser also accepts text such as "Room 12" or "5 March" as a date.
+    if (!MONTH_RE.test(s) || !YEAR_RE.test(s)) return NaN;
     var t = Date.parse(s);
     if (isNaN(t)) return NaN;
     var year = new Date(t).getFullYear();
@@ -458,7 +481,7 @@
   DL.formatDateISO = function (ts) {
     var d = new Date(ts);
     var pad = pad2;
-    var out = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    var out = ('000' + d.getFullYear()).slice(-4) + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
     if (d.getHours() || d.getMinutes() || d.getSeconds()) {
       out += ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     }
@@ -510,14 +533,14 @@
     };
   };
 
-  var compiledFormats = {};
+  var compiledFormats = Object.create(null);
   var compiledCount = 0;
 
   // Writes a local timestamp with a pattern. The compiled patterns are kept, so repeated calls are quick.
   DL.formatDate = function (ts, pattern) {
     var f = compiledFormats[pattern];
     if (!f) {
-      if (compiledCount > 100) { compiledFormats = {}; compiledCount = 0; }
+      if (compiledCount > 100) { compiledFormats = Object.create(null); compiledCount = 0; }
       f = compiledFormats[pattern] = DL.compileDateFormat(pattern);
       compiledCount++;
     }
@@ -535,10 +558,16 @@
 
   var POW10 = [1, 10, 100, 1000, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15];
 
-  // Rounds half away from zero, so 2.5 -> 3 and -2.5 -> -3.
+  // Rounds half away from zero, so 2.5 -> 3 and -2.5 -> -3. Gives '' for NaN and infinite values.
+  // Values at or above 1e15 keep the digits that toFixed gives; values at or above 1e21 use the exponent form.
   DL.formatFixed = function (v, dec) {
+    if (!isFinite(v)) return '';
+    dec = Math.min(15, Math.max(0, Math.floor(Number(dec) || 0)));
+    var abs = Math.abs(v);
+    if (abs >= 1e21) return String(v);
+    if (abs >= 1e15) return (v < 0 ? '-' : '') + abs.toFixed(dec);
     var m = POW10[dec];
-    var abs = Math.round((Math.abs(v) + Number.EPSILON) * m) / m;
+    abs = Math.round((abs + Number.EPSILON) * m) / m;
     var s = abs.toFixed(dec);
     return v < 0 && abs !== 0 ? '-' + s : s;
   };
@@ -552,6 +581,7 @@
   };
 
   DL.formatNumber = function (n, dec, thousands, decimalSep, prefix, suffix, parens) {
+    if (!isFinite(n) || Math.abs(n) >= 1e21) return DL.formatFixed(n, dec); // no grouping for the exponent form
     var s = DL.formatFixed(Math.abs(n), dec);
     var neg = n < 0 && s !== DL.formatFixed(0, dec);
     var intLen = dec ? s.length - dec - 1 : s.length;
@@ -584,8 +614,13 @@
   DL.detectType = function (col, sampleSize) {
     var n = Math.min(col.length, sampleSize || 500);
     var nums = 0, dates = 0, filled = 0;
-    var step = Math.max(1, Math.floor(col.length / n));
-    for (var i = 0; i < col.length && filled < n; i += step) {
+    // The sample positions come from a fixed pseudo-random sequence, so a column whose type
+    // changes with a fixed period (for example each second row) is not misread.
+    var seed = 12345;
+    for (var k = 0; k < n * 2 && filled < n; k++) {
+      seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+      var i = col.length === n ? k : seed % col.length;
+      if (i >= col.length) break;
       var v = col[i];
       if (v == null || v === '') continue;
       filled++;
@@ -612,7 +647,12 @@
   DL.buildRegex = function (find, opts) {
     var flags = 'g' + (opts.matchCase ? '' : 'i');
     var src = opts.regex ? find : DL.escapeRegExp(find);
-    if (opts.wholeWord) src = '(?<![\\p{L}\\p{N}_])(?:' + src + ')(?![\\p{L}\\p{N}_])';
+    if (opts.wholeWord) {
+      // A boundary applies only at an end of the text that is a word character; "-" or "." can match anywhere.
+      var left = /^[\p{L}\p{N}_]/u.test(find) ? '(?<![\\p{L}\\p{N}_])' : '';
+      var right = /[\p{L}\p{N}_]$/u.test(find) ? '(?![\\p{L}\\p{N}_])' : '';
+      src = left + '(?:' + src + ')' + right;
+    }
     if (opts.wholeWord || opts.regex) flags += 'u';
     return new RegExp(src, flags);
   };
@@ -625,9 +665,16 @@
     var atStart = true;
     for (var i = 0; i < lower.length; i++) {
       var c = lower.charCodeAt(i);
-      // Word separators: whitespace - / ( [ " '
-      if (c === 32 || c === 9 || c === 10 || c === 13 || c === 45 || c === 47 || c === 40 || c === 91 || c === 34 || c === 39) {
+      // Word separators: whitespace - / ( [ " and an apostrophe after one letter (o'neil, d'angelo).
+      // An apostrophe inside a word (don't, it's) is not a separator.
+      if (c === 32 || c === 9 || c === 10 || c === 13 || c === 45 || c === 47 || c === 40 || c === 91 || c === 34 || c === 95) {
         atStart = true;
+        continue;
+      }
+      if (c === 39) {
+        var wordStart = i - 1;
+        while (wordStart >= 0 && /[\p{L}]/u.test(lower.charAt(wordStart))) wordStart--;
+        if (i - wordStart - 1 === 1) atStart = true;
         continue;
       }
       if (atStart) {
@@ -645,9 +692,37 @@
 
   DL.sentenceCase = function (s) {
     var lower = s.toLowerCase();
-    return lower.replace(/(^\s*\p{L}|[.!?]\s+\p{L})/gu, function (m) {
+    return lower.replace(/(^[\s"'(\[]*\p{L}|[.!?]["')\]]*\s+["'(\[]*\p{L})/gu, function (m) {
       return m.toUpperCase();
     });
+  };
+
+  // True when the text is empty or has only white space.
+  DL.isBlank = function (v) {
+    if (v === '') return true;
+    for (var i = 0; i < v.length; i++) {
+      var c = v.charCodeAt(i);
+      if (c > 32 && c !== 160 && !(c >= 0x2000 && c <= 0x200A) && c !== 0x202F && c !== 0x205F && c !== 0x3000 && c !== 0xFEFF) return false;
+    }
+    return true;
+  };
+
+  // Gives the number of characters (code points) in a text. Emoji and other astral characters count as one.
+  DL.charCount = function (s) {
+    var n = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) i++;
+      n++;
+    }
+    return n;
+  };
+
+  // Gives the timestamp of the local midnight of a day.
+  DL.startOfDay = function (ts) {
+    var d = new Date(ts);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
   };
 
   // Makes real characters from "\t" and "\n" typed by the user.
@@ -689,7 +764,7 @@
   // opts: { headers, skipRows, skipEmptyLines }
   DL.TableBuilder = function (opts) {
     this.headers = opts.headers !== false;
-    this.toSkip = Math.max(0, Number(opts.skipRows) || 0);
+    this.toSkip = Math.max(0, Math.floor(Number(opts.skipRows) || 0));
     this.dropEmpty = opts.skipEmptyLines !== false;
     this.columns = null;   // the header row, when there is one
     this.expected = -1;    // the number of values a row must have (from the header or the first row)
@@ -709,7 +784,7 @@
     }
     if (this.expected < 0) this.expected = row.length;
     else if (row.length !== this.expected) this.ragged++;
-    for (var c = this.cols.length; c < row.length; c++) this.cols.push(new Array(this.n).fill(''));
+    for (var c = this.cols.length; c < row.length; c++) { this.cols.push(new Array(this.n).fill('')); this.cells += this.n; }
     for (c = 0; c < this.cols.length; c++) this.cols[c][this.n] = c < row.length ? DL.cellText(row[c]) : '';
     this.n++;
     this.cells += this.cols.length;
@@ -794,13 +869,13 @@
     empty: function (p) { return p && p.default != null ? p.default : ''; },
     coerce: function (v, p) {
       if (v === '' || v == null) return p.required ? this.empty(p) : '';
-      if (!isText(v) || isNaN(Number(v))) return this.empty(p);
-      return v;
+      if (!isText(v)) return this.empty(p);
+      return String(v).trim(); // text that is not a number stays, so the validation reports it
     },
     validate: function (v, p) {
       if (v === '' || v == null) return p.required ? ['Enter a number for "' + p.label + '".'] : [];
-      var n = Number(v);
-      if (isNaN(n)) return ['Enter a number for "' + p.label + '".'];
+      var n = isText(v) ? Number(v) : NaN;
+      if (!isFinite(n) || !isPlainNumber(String(v).trim())) return ['Enter a number for "' + p.label + '".'];
       var out = [];
       if (p.integer && n % 1 !== 0) out.push('"' + p.label + '" must be a whole number.');
       if (p.min != null && n < p.min) out.push('"' + p.label + '" must be at least ' + p.min + '.');
@@ -825,7 +900,7 @@
     empty: function (p) { return p && Array.isArray(p.default) ? p.default.slice() : []; },
     coerce: function (v, p) {
       if (!Array.isArray(v)) return this.empty(p);
-      return v.filter(function (x) { return p.options && DL.findOption(p.options, x); });
+      return v.filter(function (x, i) { return p.options && DL.findOption(p.options, x) && v.indexOf(x) === i; });
     }
   });
 
@@ -908,7 +983,7 @@
             else if (isText(r[k])) b[k] = String(r[k]);
             if (enums && enums[k] && !DL.findOption(enums[k], b[k])) b[k] = blank()[k];
           });
-          if (r.value2 !== undefined) b.value2 = textOf(r.value2);
+          if ('value2' in b && r.value2 !== undefined) b.value2 = textOf(r.value2);
           return b;
         });
         return out.length ? out : this.empty();
@@ -998,6 +1073,7 @@
   DL.validateParams = function (opId, params, inputColumns) {
     var op = DL.getOp(opId);
     if (!op) return ['Unknown operation "' + opId + '".'];
+    params = DL.cleanParams(opId, params || {}); // the checks read the same shapes as apply()
     var problems = [];
     var cols = inputColumns || null;
     op.params.forEach(function (p) {
@@ -1007,7 +1083,7 @@
       if (found.length) problems = problems.concat(found);
     });
     if (op.validate) {
-      var extra = op.validate(params, cols || []);
+      var extra = op.validate(params, cols); // cols is null when the input columns are not known yet
       if (extra && extra.length) problems = problems.concat(extra);
     }
     return problems;

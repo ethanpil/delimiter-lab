@@ -23,6 +23,7 @@
       var m = p.map;
       var changed = Object.keys(m).filter(function (k) { return m[k].trim() !== '' && m[k] !== k; });
       if (!changed.length) return ['Enter at least one new name.'];
+      if (!cols) return [];
       return duplicateNames(renameColumns(cols, m).columns).map(function (c) { return 'Two columns would be named "' + c + '". Names must be unique.'; });
     },
     outputColumns: function (cols, p) { return renameColumns(cols, p.map).columns; },
@@ -94,7 +95,9 @@
     ],
     summary: function (p) { return (p.mode === 'keep' ? 'Keep only ' : 'Remove ') + p.columns.join(', '); },
     validate: function (p, cols) {
-      if (p.mode !== 'keep' && cols.length && p.columns.length >= cols.length) return ['You cannot remove every column.'];
+      if (!cols || p.mode === 'keep') return [];
+      var present = p.columns.filter(function (c) { return cols.indexOf(c) >= 0; });
+      if (cols.length && present.length >= cols.length) return ['You cannot remove every column.'];
       return [];
     },
     outputColumns: function (cols, p) {
@@ -140,7 +143,7 @@
       return p.position === 'start' ? [n].concat(cols) : cols.concat([n]);
     },
     // "Today" changes with the day, so the cached result must change too.
-    hashExtra: function (p) { return p.kind === 'today' ? DL.formatDateISO(new Date().setHours(0, 0, 0, 0)) : ''; },
+    hashExtra: function (p) { return p.kind === 'today' ? DL.formatDateISO(DL.startOfDay(Date.now())) : ''; },
     apply: function (table, p) {
       var name = DL.newColumnName(table.columns, p.name, NEW_COLUMN);
       var n = table.length;
@@ -150,7 +153,7 @@
         var start = Number(p.start) || 0;
         for (i = 0; i < n; i++) values[i] = String(start + i);
       } else {
-        var val = p.kind === 'value' ? p.value : p.kind === 'today' ? DL.formatDateISO(new Date().setHours(0, 0, 0, 0)) : '';
+        var val = p.kind === 'value' ? DL.unescapeText(p.value) : p.kind === 'today' ? DL.formatDateISO(DL.startOfDay(Date.now())) : '';
         for (i = 0; i < n; i++) values[i] = val;
       }
       return { table: DL.addColumn(table, name, values, p.position) };
