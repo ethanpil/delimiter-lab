@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 
 - Add: Format Dates, Date Math, Extract Text, Clean Text and Fill Empty Values operations (5a32941).
 - Add: Pivot and Unpivot operations (b4d0f1b).
@@ -12,6 +12,13 @@
 - Add: dark theme with a switch in the header (0cf8166).
 - Add: timing panel with the time and the memory of each step (c2564ac).
 - Add: texts of the user interface in a table, so you can add other languages (b2711c7).
+- Fix: dates in the years 0 to 99 and YYYYMMDD values are read correctly; date math refuses results outside the years 0 to 9999 (7007cb7).
+- Fix: Pivot keeps its total column for an empty input, has a cell limit and stable names for blank keys (7007cb7).
+- Fix: Clean Text keeps letters of other scripts and decodes entities safely (7007cb7).
+- Fix: a cancelled run keeps the results in the cache; the Changes view follows moved rows and renamed columns (600f28f).
+- Fix: the zip of a batch refers to the files instead of copies; a missing sheet gives a note (600f28f).
+- Fix: progress, Cancel and Stop stay correct when a run, a batch, a download or a file load overlap (7597800).
+- Fix: a workflow file dropped on the drop zone imports; search hits stay visible in the Changes view (7597800).
 
 ## 1.2.0
 
