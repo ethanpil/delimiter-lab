@@ -95,6 +95,7 @@
       return;
     }
     store.setSourceFile(file);
+    DL.fileStore.put(file); // the workspace comes back after a reload
     if (DL.inputFormatFor(file.name).hasSheets) {
       var token = ++loadToken;
       showProgress(DL.t('progress.readingWorkbook'), 5);
@@ -908,9 +909,15 @@
   updateSaveState();
   $('workflowName').value = store.state.workflow.name || '';
   if (store.droppedSteps) U.toast(DL.t('msg.stepsDropped', { n: DL.pluralize(store.droppedSteps, 'step') }), 'warning');
-  if (store.restoredSourceName && store.state.workflow.steps.length) {
-    U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
-  }
+  // The steps come from localStorage. The file comes from IndexedDB, which answers later.
+  DL.fileStore.get().then(function (file) {
+    if (file && !store.state.source.file) {
+      U.toast(DL.t('msg.workspaceBack', { name: file.name }), 'info');
+      openFile(file);
+    } else if (store.restoredSourceName && store.state.workflow.steps.length) {
+      U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
+    }
+  });
   // A handle for tests: open the page with ?debug to use it from the browser console.
   if (/[?&]debug\b/.test(location.search)) window.DLApp = { store: store, engine: engine, grid: grid, openFile: openFile, openFiles: openFiles };
 })();
