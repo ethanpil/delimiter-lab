@@ -11,14 +11,13 @@
   <script>
     // Sets the theme before the page paints, so the page does not flash. The browser keeps the choice.
     (function () {
-      try {
-        var t = localStorage.getItem('dl.theme');
-        if (t !== 'dark' && t !== 'light') t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        document.documentElement.setAttribute('data-bs-theme', t);
-      } catch (e) { /* no storage: the light theme stays */ }
+      var t = null;
+      try { t = localStorage.getItem('dl.theme'); } catch (e) { /* no storage: the system setting decides */ }
+      if (t !== 'dark' && t !== 'light') t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-bs-theme', t);
     })();
   </script>
-  <link rel="stylesheet" href="css/app.css?v=1.3.1">
+  <link rel="stylesheet" href="css/app.css?v=1.4.0-dev1">
 </head>
 <body>
   <noscript><div class="p-4">Delimiter Lab needs JavaScript to run.</div></noscript>
@@ -94,10 +93,10 @@
   </main>
 
   <div id="modals"></div>
-  <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+  <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3" aria-live="polite"></div>
 
   <script src="vendor/bootstrap.bundle.min.js"></script>
-  <script src="js/manifest.js?v=1.3.1"></script>
+  <script src="js/manifest.js?v=1.4.0-dev1"></script>
   <script>
     // Loads the application files listed in the manifest, in order. The texts of the language of the
     // user (?lang=xx or the browser language) load when js/i18n/ has a file for it.

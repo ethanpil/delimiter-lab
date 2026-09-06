@@ -30,6 +30,7 @@
   };
 
   U.fmtBytes = function (b) {
+    if (!(b >= 0)) return '';
     if (b < 1024) return b + ' B';
     if (b < 1024 * 1024) return (b / 1024).toFixed(0) + ' KB';
     if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
@@ -37,6 +38,7 @@
   };
 
   U.fmtTime = function (ts) {
+    if (!(ts > 0)) return '';
     var d = new Date(ts);
     var diff = Date.now() - ts;
     if (diff < 60000) return 'just now';
@@ -110,7 +112,7 @@
 
   U.toast = function (message, kind) {
     var wrap = document.getElementById('toasts');
-    var t = U.el('div', { class: 'toast align-items-center text-bg-' + (kind || 'dark') + ' border-0', role: 'status' }, [
+    var t = U.el('div', { class: 'toast align-items-center text-bg-' + (kind || 'dark') + ' border-0', role: kind === 'danger' ? 'alert' : 'status' }, [
       U.el('div', { class: 'd-flex' }, [
         U.el('div', { class: 'toast-body', text: message }),
         U.el('button', { type: 'button', class: 'btn-close btn-close-white me-2 m-auto', 'data-bs-dismiss': 'toast', 'aria-label': DL.t('common.close') })

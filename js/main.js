@@ -43,7 +43,7 @@
     progressEl.querySelector('.app-progress-label').textContent = batchLabel ? batchLabel + (label ? ' · ' + label : '') : (label || '');
     $('btnCancel').hidden = !cancelable;
     clearTimeout(progressTimer);
-    if (!batchLabel && !runInFlight) progressTimer = setTimeout(hideProgress, 4000);
+    if (!batchLabel && !runInFlight && store.state.source.status !== 'loading') progressTimer = setTimeout(hideProgress, 4000);
   }
   function hideProgress() { clearTimeout(progressTimer); progressEl.hidden = true; $('btnStop').hidden = true; $('btnCancel').hidden = true; }
 
@@ -58,6 +58,7 @@
   $('btnStop').addEventListener('click', function () {
     disarmStop();
     if (batchRunning) { stopBatch(); return; }
+    runToken++; // the stopped run does not report an error
     engine.restart();
     var sel = store.state.selectedId;
     if (sel !== 'source' && store.getStep(sel) && store.getStep(sel).enabled !== false) {
@@ -149,7 +150,7 @@
   // file load still uses them.
   function runEnded() {
     runInFlight = false;
-    if (batchRunning) return; // the batch owns the bar, the Cancel button and the Stop timer
+    if (batchRunning || store.state.source.status === 'loading') return; // the batch or the load owns the bar, Cancel and the Stop timer
     cancelable = false;
     disarmStop();
     if (!exporting && store.state.source.status !== 'loading') hideProgress();
@@ -276,8 +277,10 @@
   function beforeStepId() {
     var sel = store.state.selectedId;
     if (sel === 'source') return null;
+    var shown = store.displayResultFor(sel).stepId;
+    if (!shown || shown === 'source') return null; // the preview shows the source: there is no input to compare
     var steps = store.state.workflow.steps;
-    for (var i = store.stepIndex(sel) - 1; i >= 0; i--) {
+    for (var i = store.stepIndex(shown) - 1; i >= 0; i--) {
       if (DL.resultHasTable(store.state.results[steps[i].id])) return steps[i].id;
     }
     return 'source';
@@ -322,7 +325,7 @@
 
   function setSearchResult(matches, total) {
     var info = '';
-    if (searchQuery) info = !total ? DL.t('preview.noMatches') : DL.t(total > matches.length ? 'preview.rowsMatchFirst' : 'preview.rowsMatch', { n: U.fmtInt(total), shown: matches.length });
+    if (searchQuery) info = !total ? DL.t('preview.noMatches') : DL.t(total > matches.length ? 'preview.rowsMatchFirst' : 'preview.rowsMatch', { n: DL.pluralize(total, 'row'), shown: matches.length });
     showMatches(matches, info);
   }
 
@@ -359,13 +362,17 @@
     if (!searchMatches.length) return;
     searchIndex = (searchIndex + dir + searchMatches.length) % searchMatches.length;
     grid.setCurrent(searchMatches[searchIndex]);
-    $('previewSearchInfo').textContent = (searchIndex + 1) + ' of ' + searchMatches.length;
+    $('previewSearchInfo').textContent = DL.t('preview.matchOf', { n: searchIndex + 1, total: searchMatches.length });
   }
 
   var searchSoon = U.debounce(function () { searchQuery = $('previewSearch').value.trim(); runSearch(); }, 250);
   $('previewSearch').addEventListener('input', searchSoon);
   $('previewSearch').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); searchSoon.flush(); stepSearch(e.shiftKey ? -1 : 1); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if ($('previewSearch').value.trim() !== searchQuery) searchSoon.flush(); // a new query: the first match shows when it arrives
+      else stepSearch(e.shiftKey ? -1 : 1);
+    }
     if (e.key === 'Escape') { $('previewSearch').value = ''; searchQuery = ''; setSearchResult([], 0); }
   });
   $('previewSearchNext').addEventListener('click', function () { stepSearch(1); });
@@ -404,9 +411,10 @@
     }
   }
 
-  function applyWorkflow(wf) {
+  function applyWorkflow(wf, then) {
     var go = function () {
       store.replaceWorkflow(wf);
+      if (then) then();
       if (wf.id) DL.workflows.touch(wf.id);
       if (wf.sourceOptions && store.state.source.file) {
         var wanted = DL.cleanSourceOptions(wf.sourceOptions);
@@ -419,8 +427,11 @@
       var level = DL.workflows.matchLevel(wf, store.sourceColumns());
       if (level === 'partial' || level === 'none') U.toast(DL.t('msg.columnsMissing'), 'warning');
     };
-    if (store.state.workflow.steps.length && store.state.dirty) {
-      U.confirm({ title: DL.t('msg.replaceTitle'), message: DL.t('msg.replaceMessage'), yes: DL.t('msg.replace') }, go);
+    var hasCode = (wf.steps || []).some(function (s) { return s.opId === 'javascript'; });
+    if (store.state.workflow.steps.length || hasCode) {
+      var message = DL.t('msg.replaceMessage');
+      if (hasCode) message = DL.t('msg.codeWarning') + ' ' + (store.state.workflow.steps.length ? message : '');
+      U.confirm({ title: store.state.workflow.steps.length ? DL.t('msg.replaceTitle') : DL.t('msg.applyTitle'), message: message.trim(), yes: store.state.workflow.steps.length ? DL.t('msg.replace') : DL.t('common.use') }, go);
     } else go();
   }
 
@@ -429,9 +440,12 @@
     reader.onload = function () {
       try {
         var wf = DL.workflows.fromJSON(reader.result);
-        var rec = DL.workflows.save(wf);
-        applyWorkflow(rec || wf);
-        U.toast(DL.t('msg.workflowImported', { name: wf.name }), 'success');
+        var same = DL.workflows.list().filter(function (r) { return r.name === wf.name; })[0];
+        if (same) wf.id = same.id; // the same name replaces the saved record instead of a second copy
+        applyWorkflow(wf, function () {
+          var rec = DL.workflows.save(wf);
+          if (rec) { store.setWorkflowMeta({ id: rec.id, name: rec.name }, true); U.toast(DL.t('msg.workflowImported', { name: wf.name }), 'success'); }
+        });
       } catch (e) { U.toast(e.message, 'danger'); }
     };
     reader.onerror = function () { U.toast(DL.t('msg.fileNotRead'), 'danger'); };
@@ -473,7 +487,9 @@
     }
     var base = U.baseName(st.source.file.name);
     var wfName = (st.workflow.name || '').trim();
-    var suffix = sel === 'source' ? '' : (wfName ? '-' + U.safeFileName(wfName.replace(base, '').trim() || wfName) : '-step' + (store.stepIndex(sel) + 1));
+    var shortName = wfName.toLowerCase().indexOf(base.toLowerCase()) === 0 ? wfName.slice(base.length).trim() : wfName;
+    var shownStep = shown.stepId === 'source' ? -1 : store.stepIndex(shown.stepId);
+    var suffix = shownStep < 0 ? '' : (wfName ? '-' + U.safeFileName(shortName || wfName) : '-step' + (shownStep + 1));
     DL.dialogs.download({ baseName: base + suffix, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
@@ -518,7 +534,7 @@
     files = files.filter(function (f) { return skipped.indexOf(f) < 0; });
     if (!files.length) { U.toast(DL.t('msg.noDataFiles', { types: accepted.join(', ') }), 'warning'); return; }
     var st = store.state;
-    var steps = st.workflow.steps.map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
+    var steps = JSON.parse(JSON.stringify(st.workflow.steps.map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; }))); // a copy: edits during the batch do not change it
     var wfName = U.safeFileName((st.workflow.name || '').trim() || 'workflow');
     var note = DL.t('msg.batchNote', { steps: DL.pluralize(steps.length, 'step') });
     DL.dialogs.download({ files: files, baseName: wfName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, zipName, allOptions) {
@@ -530,7 +546,7 @@
 
   function runBatch(files, steps, output, zipName, items) {
     var format = DL.outputFormatById(output.format);
-    var sourceOptions = store.state.source.options;
+    var sourceOptions = JSON.parse(JSON.stringify(store.state.source.options));
     var usedNames = {};
     var token = ++batchToken;
     var i = 0;
@@ -672,6 +688,7 @@
     var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
     var mod = e.ctrlKey || e.metaKey;
     var key = e.key.toLowerCase();
+    if (document.querySelector('.modal.show')) return; // a dialog owns the keyboard
     if (mod && !e.shiftKey && key === 'z') { if (!typing || e.target.type === 'checkbox') { e.preventDefault(); store.undo(); } return; }
     if (mod && (key === 'y' || (e.shiftKey && key === 'z'))) { if (!typing || e.target.type === 'checkbox') { e.preventDefault(); store.redo(); } return; }
     if (mod && key === 's') { e.preventDefault(); saveWorkflow(); return; }
@@ -711,6 +728,10 @@
 
   /* ---------- Start ---------- */
   DL.applyI18n(document);
+  document.documentElement.lang = DL.locale;
+  Array.prototype.forEach.call(document.querySelectorAll('button[title]'), function (b) {
+    if (!b.textContent.trim() && !b.getAttribute('aria-label')) b.setAttribute('aria-label', b.title);
+  });
   U.tooltips(document.body);
   chain.render(true);
   renderConfig();
@@ -718,6 +739,7 @@
   updateUndoButtons();
   updateSaveState();
   $('workflowName').value = store.state.workflow.name || '';
+  if (store.droppedSteps) U.toast(DL.t('msg.stepsDropped', { n: DL.pluralize(store.droppedSteps, 'step') }), 'warning');
   if (store.restoredSourceName && store.state.workflow.steps.length) {
     U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
   }

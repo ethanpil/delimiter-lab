@@ -9,12 +9,21 @@
 
   var W = DL.workflows = {};
 
+  // True for a record with the shape that the application writes.
+  function validRecord(r) {
+    return !!r && typeof r === 'object' && typeof r.id === 'string' && typeof r.name === 'string' && Array.isArray(r.steps);
+  }
+
   W.list = function () {
     try {
       var raw = localStorage.getItem(KEY);
       var arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
+      return Array.isArray(arr) ? arr.filter(validRecord) : [];
     } catch (e) { return []; }
+  };
+
+  W.get = function (id) {
+    return W.list().filter(function (r) { return r.id === id; })[0] || null;
   };
 
   function write(arr) {
@@ -22,7 +31,7 @@
       localStorage.setItem(KEY, JSON.stringify(arr));
       return true;
     } catch (e) {
-      U.toast('The workflow could not be saved. The browser storage may be full.', 'danger');
+      U.toast(DL.t('wf.notSaved'), 'danger');
       return false;
     }
   }
@@ -74,14 +83,15 @@
     if (!columns) return 'unknown';
     var cols = columns.slice();
     var found = 0, missing = 0;
-    var steps = (wf.steps || []).filter(function (s) { return s.enabled !== false && DL.getOp(s.opId); });
+    var steps = (wf.steps || []).filter(function (s) { return s && s.enabled !== false; });
     for (var i = 0; i < steps.length; i++) {
+      if (!DL.getOp(steps[i].opId)) return 'none'; // an operation this version does not have
       var params = DL.cleanParams(steps[i].opId, steps[i].params);
       DL.columnsUsedByStep(steps[i].opId, params).forEach(function (c) {
         if (cols.indexOf(c) >= 0) found++; else missing++;
       });
       cols = DL.predictColumns(steps[i].opId, params, cols);
-      if (!cols) return missing ? 'partial' : 'unknown';
+      if (!cols) return missing ? 'partial' : found ? 'partial' : 'unknown';
     }
     if (!missing) return 'full';
     return found ? 'partial' : 'none';
@@ -104,10 +114,11 @@
     var data;
     try { data = JSON.parse(text); } catch (e) { throw new Error('This file is not a workflow file.'); }
     if (!data || data.format !== FORMAT || !Array.isArray(data.steps)) throw new Error('This file is not a Delimiter Lab workflow.');
+    if (Number(data.version) > VERSION) throw new Error('This workflow file comes from a newer version of Delimiter Lab. Update the application to open it.');
     var unknown = data.steps.filter(function (s) { return !s || !DL.getOp(s.opId); }).map(function (s) { return s ? s.opId : '?'; });
     if (unknown.length) throw new Error('The workflow uses operations this version does not know: ' + unknown.join(', '));
     return {
-      name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Imported workflow',
+      name: typeof data.name === 'string' && data.name.trim() ? data.name.trim().slice(0, 80) : 'Imported workflow',
       columns: Array.isArray(data.columns) ? data.columns.filter(function (c) { return typeof c === 'string'; }) : [],
       sourceOptions: data.sourceOptions && typeof data.sourceOptions === 'object' ? DL.cleanSourceOptions(data.sourceOptions) : null,
       steps: data.steps.map(function (s) { return DL.Store.normalizeStep(s, false); })

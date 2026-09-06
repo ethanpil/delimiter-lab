@@ -51,7 +51,7 @@
   /* ---------- Undo / redo ---------- */
 
   Store.prototype.snapshot = function () {
-    return JSON.stringify({ workflow: this.state.workflow, selectedId: this.state.selectedId });
+    return JSON.stringify({ workflow: this.state.workflow, selectedId: this.state.selectedId, sourceOptions: this.state.source.options });
   };
 
   Store.prototype.pushHistory = function () {
@@ -75,6 +75,11 @@
     this.state.dirty = this.workflowSnapshot() !== this.savedSnapshot;
     this.emit('steps');
     this.emit('workflow');
+    // An undo of an applied workflow also restores the source options, which reload the file.
+    if (data.sourceOptions && JSON.stringify(data.sourceOptions) !== JSON.stringify(this.state.source.options)) {
+      this.state.source.options = data.sourceOptions;
+      this.emit('sourceOptions');
+    }
   };
 
   Store.prototype.undo = function () {
@@ -299,10 +304,10 @@
     for (var i = idx; i >= 0; i--) {
       var r = st.results[steps[i].id];
       if (r && r.hasTable) {
-        return { stepId: steps[i].id, result: r, reason: i === idx ? '' : 'Showing the data going into step ' + (idx + 1) + ' until it can run.' };
+        return { stepId: steps[i].id, result: r, reason: i === idx ? '' : DL.t('preview.showingInput', { n: idx + 1 }) };
       }
     }
-    return { stepId: 'source', result: null, reason: 'Showing the source file until step ' + (idx + 1) + ' can run.' };
+    return { stepId: 'source', result: null, reason: DL.t('preview.showingSource', { n: idx + 1 }) };
   };
 
   /* ---------- Source ---------- */
@@ -358,12 +363,25 @@
       if (!raw) return;
       var data = JSON.parse(raw);
       if (data.workflow && Array.isArray(data.workflow.steps)) {
+        var known = data.workflow.steps.filter(function (s) { return s && DL.getOp(s.opId); });
+        this.droppedSteps = data.workflow.steps.length - known.length; // steps of an operation this version does not have
         this.state.workflow = {
           id: data.workflow.id || null,
           name: data.workflow.name || '',
-          steps: data.workflow.steps.filter(function (s) { return s && DL.getOp(s.opId); }).map(function (s) { return Store.normalizeStep(s, true); })
+          steps: known.map(function (s) { return Store.normalizeStep(s, true); })
         };
+        var ids = this.state.workflow.steps.map(function (s) { return s.id; });
+        if (data.selectedId && ids.indexOf(data.selectedId) >= 0) this.state.selectedId = data.selectedId;
         this.restoredSourceName = data.sourceName || null;
+        // A restored workflow with an id counts as saved when it is the same as the saved record.
+        var saved = this.state.workflow.id && DL.workflows ? DL.workflows.get(this.state.workflow.id) : null;
+        if (saved) {
+          this.savedSnapshot = JSON.stringify({ id: saved.id, name: saved.name, steps: saved.steps.map(function (st) { return Store.normalizeStep(st, true); }) });
+          this.state.dirty = this.workflowSnapshot() !== this.savedSnapshot;
+        } else if (this.state.workflow.steps.length) {
+          this.state.workflow.id = null; // the record is gone: the steps are not saved
+          this.state.dirty = true;
+        }
       }
       if (data.sourceOptions) this.state.source.options = Object.assign(DL.cleanSourceOptions(data.sourceOptions), { sheet: '' });
     } catch (e) { /* a broken session is ignored */ }
