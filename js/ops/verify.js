@@ -51,7 +51,10 @@
       case 'isNumber': test = function (v) { return !isNaN(num(v)); }; break;
       case 'isInteger': test = function (v) { var x = num(v); return !isNaN(x) && Math.floor(x) === x; }; break;
       case 'noNumbers': test = function (v) { return !/\d/.test(v); }; break;
-      case 'isDate': test = function (v) { return !isNaN(DL.toDate(v)); }; break;
+      case 'isDate':
+        var dates = new Map(); // each different value parses once
+        test = function (v) { var t = dates.get(v); if (t === undefined) { t = DL.toDate(v); if (dates.size < 50000) dates.set(v, t); } return t === t; };
+        break;
       case 'isEmail': test = function (v) { return EMAIL_RE.test(v.trim()); }; break;
       case 'isUrl': test = function (v) { return URL_RE.test(v.trim()); }; break;
       case 'isPhone': test = function (v) { return PHONE_RE.test(v.trim()) && v.replace(/\D/g, '').length >= 7; }; break;
@@ -75,7 +78,7 @@
         test = function (v) { return re.test(v); };
         break;
       case 'unique':
-        var groups = DL.groupRows([function (i) { return DL.normalizeKey(col[i], true, true); }], col.length);
+        var groups = DL.groupRows(DL.keyGetters(table, [DL.requireCol(table, rule.column)], { trim: true, ignoreCase: true }), col.length);
         var uniqueRow = function (i) { return groups.count[groups.first[i]] === 1; };
         return {
           label: label,

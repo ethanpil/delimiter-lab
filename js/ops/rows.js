@@ -15,6 +15,7 @@
       return function (r) { return col[r]; };
     });
   }
+  DL.keyGetters = keyGetters; // Verify uses the same normalized keys for its "unique" rule
 
   /* ---------- Dedupe ---------- */
   DL.registerOp({
@@ -77,6 +78,16 @@
   ];
 
   // Makes a function(value) -> boolean for one condition.
+  // A test on the parsed date of a value. Each different value is parsed once.
+  function memoDate(test) {
+    var cache = new Map();
+    return function (v) {
+      var t = cache.get(v);
+      if (t === undefined) { t = DL.toDate(v); if (cache.size < 50000) cache.set(v, t); }
+      return test(t);
+    };
+  }
+
   DL.buildCondition = function (c, opts) {
     var matchCase = !!(opts && opts.matchCase);
     var val = c.value == null ? '' : String(c.value);
@@ -106,8 +117,8 @@
         return function (v) { var x = toNumber(v); return x >= lo && x <= hi; };
       case 'isNumber': return function (v) { return !isNaN(toNumber(v)); };
       case 'notNumber': return function (v) { return v.trim() !== '' && isNaN(toNumber(v)); };
-      case 'dateBefore': return function (v) { return DL.toDate(v) < d; };
-      case 'dateAfter': return function (v) { return DL.toDate(v) > d; };
+      case 'dateBefore': return memoDate(function (t) { return t < d; });
+      case 'dateAfter': return memoDate(function (t) { return t > d; });
       case 'inList':
       case 'notInList':
         list = new Set(val.split(',').map(function (s) { return norm(s.trim()); }).filter(function (s) { return s !== ''; }));
@@ -170,11 +181,19 @@
     var g = DL.groupRows([function (i) { return col[i]; }], n);
     var reps = [];
     for (var i = 0; i < n; i++) if (g.first[i] === i) reps.push(i);
+    // Plain Latin text sorts by a key with "<", which is several times faster than the collator.
+    var keys = new Array(n);
+    var allKeys = true;
+    for (i = 0; i < reps.length && allKeys; i++) {
+      var k = DL.sortKey(col[reps[i]]);
+      if (k === null) allKeys = false; else keys[reps[i]] = k;
+    }
     var cmp = DL.compareText;
     var compare = function (a, b) {
       var va = col[a], vb = col[b];
       var ea = va === '', eb = vb === '';
       if (ea || eb) { if (ea && eb) return 0; return (ea ? 1 : -1) * emptyLast; }
+      if (allKeys) { var ka = keys[a], kb = keys[b]; return (ka < kb ? -1 : ka > kb ? 1 : 0) * dir; }
       return cmp(va, vb) * dir;
     };
     reps.sort(compare);

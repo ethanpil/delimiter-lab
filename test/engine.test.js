@@ -738,6 +738,19 @@ test('filter summary shows both bounds of between', () => {
   assert.ok(DL.getOp('filter').summary(p).indexOf('"5"') > 0);
 });
 
+test('sort keys give the collator order for plain Latin text', () => {
+  if (!DL.sortKey('a')) return; // another locale: the collator is used
+  const words = ['a', 'A', 'a 1', 'a1', 'a01', 'a10', 'a2', '1', '01', '10', '9', 'ab', 'a b', 'B', 'b', 'abc 100', 'abc 99', 'x0001', 'x1', 'x10', 'z', 'Z0', 'z00', '0a', '00a', 'a0', 'a00'];
+  for (const x of words) for (const y of words) {
+    const k = DL.sortKey(x) < DL.sortKey(y) ? -1 : DL.sortKey(x) > DL.sortKey(y) ? 1 : 0;
+    const c = Math.sign(DL.compareText(x, y));
+    assert.strictEqual(k, c, x + ' vs ' + y);
+  }
+  assert.strictEqual(DL.sortKey('a@b'), null);
+  const r = run('sort', { keys: [{ column: 'A', type: 'text', dir: 'asc' }] }, T(['A'], [['b2'], ['B10'], ['a'], [''], ['b1']]));
+  assert.deepStrictEqual(rowsOf(r.table).map((x) => x[0]), ['a', 'b1', 'b2', 'B10', '']);
+});
+
 /* ---- performance smoke ---- */
 test('performance on 200k rows', () => {
   const rows = new Array(200000);

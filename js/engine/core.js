@@ -610,6 +610,40 @@
     return a < b ? -1 : a > b ? 1 : 0;
   };
 
+  // True when the collator sorts plain Latin text in the root order (English and similar locales).
+  var latinCollation = (function () {
+    try {
+      var loc = DL.collator ? DL.collator.resolvedOptions().locale : 'en';
+      return /^(en|und|root|de|fr|es|it|pt|nl)(-|$)/i.test(loc);
+    } catch (e) { return false; }
+  })();
+
+  // Gives a key for text made of letters A-Z, digits and spaces, such that plain "<" on the keys
+  // gives the same order as the collator (numeric, base sensitivity). Gives null for other text,
+  // so the caller must then compare with the collator. A run of digits becomes one length
+  // character (48 + the number of digits without leading zeros) and then those digits.
+  DL.sortKey = function (s) {
+    if (!latinCollation) return null;
+    var out = '';
+    var i = 0, n = s.length, last = 0;
+    while (i < n) {
+      var c = s.charCodeAt(i);
+      if (c >= 48 && c <= 57) {
+        var si = i;
+        while (si < n && s.charCodeAt(si) === 48) si++;
+        var ei = si;
+        while (ei < n && s.charCodeAt(ei) >= 48 && s.charCodeAt(ei) <= 57) ei++;
+        var len = ei - si;
+        if (len > 40) return null;
+        out += s.slice(last, i) + String.fromCharCode(48 + len) + s.slice(si, ei);
+        last = i = ei;
+      } else if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 32) {
+        i++;
+      } else return null;
+    }
+    return (out + s.slice(last)).toLowerCase();
+  };
+
   // Guesses the type of a column from a sample of its values: 'number', 'date' or 'text'.
   DL.detectType = function (col, sampleSize) {
     var n = Math.min(col.length, sampleSize || 500);
