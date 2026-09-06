@@ -1,24 +1,25 @@
 # CONTEXT.md
 
-This document is for the developers who maintain and extend Delimiter Lab. It tells you how the application is built, why it is built this way, how to change it safely, and which mistakes cost time before. Read it before the code.
+This document is for the developers who maintain and extend Delimiter Lab. It tells you how the application is built, why it is built this way, how to change it safely, and which mistakes cost time before. Read it before the code. The README tells users what the application does; this document tells you how and why.
 
 ## 1. What the application is
 
-Delimiter Lab is a static web application. It reads a CSV, TSV, text or Excel file in the browser, applies a chain of steps (operations) to the data, shows a preview of each step and downloads the result. No data leaves the computer. There is no server, no build step and no package manager. The application is plain ES5 JavaScript with Bootstrap 5.3 for the user interface.
+Delimiter Lab is a static web application. It reads a CSV, TSV, text or Excel file in the browser, applies a chain of steps (operations) to the data, shows a preview of each step and downloads the result. No data leaves the computer. There is no server, no build step and no package manager. The application is plain ES5 JavaScript (no classes, no arrow functions, no modules) with Bootstrap 5.3 for the user interface. Vendor libraries are pinned copies in `vendor/`: Bootstrap 5.3.3, Bootstrap Icons, PapaParse 5.4.1 and SheetJS 0.20.3.
 
-The version in `js/manifest.js` is 1.4.0. The changelog (`CHANGELOG.md`) lists the changes with the commit hashes.
+The version in `js/manifest.js` is 1.4.0. `CHANGELOG.md` lists the changes with the commit hashes. The project was built from scratch on 2026-09-04 and 2026-09-05, reviewed with several multi-agent code reviews, and reviewed as a whole on 2026-09-06.
 
 ## 2. How to run, test and release
 
 | Task | Command |
 | --- | --- |
-| Run the application | `python -m http.server 8765` in the project folder, then open `http://localhost:8765`. The Web Worker does not start from a `file://` address. |
+| Run the application | `python -m http.server 8765` in the project folder, then open `http://localhost:8765`. The Web Worker does not start from a `file://` address; the page shows a clear message then. `.claude/launch.json` holds this server for the coding assistant. |
+| Debug handle | Open the page with `?debug`. `window.DLApp` then gives `store`, `engine`, `grid`, `openFile(file)` and `openFiles(files)`. |
 | Run the engine tests | `node test/engine.test.js` (73 tests) |
-| Run the worker tests | `node test/worker.test.js` (15 tests; loads the real worker in Node with a fake File) |
-| Make test data | `node test/make-data.js 300000` |
+| Run the worker tests | `node test/worker.test.js` (15 tests; loads the real worker in Node with a fake File and the real PapaParse and SheetJS) |
+| Make test data | `node test/make-data.js 300000` writes `test/data/` (the `big*.csv` files are ignored by git) |
 | Run the benchmark | `node test/bench.js 1200000` |
-| Check the text keys | A script that compares every `DL.t('key')` and `data-i18n*` attribute with `js/i18n/en.js` exists in the session scratch folder; write one if it is gone. Zero missing and zero unused keys is the rule. |
-| Release | Set `DL.VERSION` in `js/manifest.js` and the two `?v=` values in `index.html`. Close the changelog section. Commit "Release x.y.z". |
+| Check the text keys | Write a small Node script that collects every `DL.t('key'` in `js/` and every `data-i18n*` attribute in `index.html`, loads `js/i18n/en.js` with a stub `DL.registerLocale`, and reports missing and unused keys. Zero of both is the rule. |
+| Release | Set `DL.VERSION` in `js/manifest.js` and the two `?v=` values in `index.html` (stylesheet link and manifest tag). Close the changelog section with the hashes. Commit "Release x.y.z". |
 
 Run both test files before every commit. There is no test runner; each file counts its own results and sets the exit code.
 
@@ -32,125 +33,174 @@ js/engine/worker.js   Web Worker: readers, chain runner with cache, slices, diff
 js/ops/*.js           Operations by group: text, rows, columns, dates, reshape, verify
 js/app/i18n.js        DL.t, DL.registerLocale, DL.setLocale, DL.applyI18n
 js/i18n/en.js         Every user interface text (the only locale today)
-js/app/util.js        DOM helpers, modal, toast, tooltips, debounce, file helpers
+js/app/util.js        DOM helpers, modal, toast, tooltips, debounce, file helpers, cell budget
 js/app/store.js       Application state, undo/redo, session persistence, events
 js/app/engineClient.js  Promise wrapper around the worker messages
-js/app/workflows.js   Saved workflows in localStorage, workflow file format
+js/app/workflows.js   Saved workflows in localStorage, the workflow file format
 js/ui/*.js            Views: fields (param renderers), chain, source, config, grid, dialogs, perf
 js/main.js            Controller: wires the store, the engine and the views
 css/app.css           Styles with theme tokens
-vendor/               Bootstrap, Bootstrap Icons, PapaParse, SheetJS (pinned copies)
-test/                 Tests, benchmark, test data (big*.csv is ignored by git)
-docs/embedding.md     Plan for a library and a command line tool
+vendor/               Pinned libraries
+test/                 Tests, benchmark, test data
+docs/embedding.md     Plan for a library and a command line tool (not built)
+.gitattributes        `* text=auto eol=lf`
 ```
 
-The loader in `index.html` and the worker both read `DL.FILES`. A new file must go into the manifest, or neither the page nor the worker loads it. The worker loads only `engine` and `ops`. Never call `DL.t`, the DOM or `U.*` from engine or operation code.
+The loader in `index.html` reads `DL.FILES` and appends `<script>` tags with `async = false`, so the files run in manifest order. The worker calls `importScripts` with the same `engine` and `ops` lists. A new file must go into the manifest, or neither the page nor the worker loads it. The worker never loads `app` or `ui`: never call `DL.t`, `U.*` or the DOM from engine or operation code.
+
+Manifest order matters: `js/app/i18n.js` and `js/i18n/en.js` come before `util.js`; `core.js` before the operations; the locale file of the user (when `DL.LOCALES` has it) loads between `app` and `ui`. A module must not call `DL.t` while it loads, only inside functions.
 
 ## 4. The data model
 
 A table is `{ columns: string[], cols: Column[], length: number }`. Every cell is a string; an empty cell is `''`. A `Column` is a plain array of strings, or a lazy column `{ src: string[], idx: Uint32Array }` that refers to rows of another array.
 
-- `DL.selectRows(table, indexes)` gives lazy columns and sets `table.rowMap` (output row to input row). Filter, sort, dedupe and verify use it. The Changes view reads `rowMap` to follow moved rows.
-- `DL.col(table, c)` materializes a lazy column and writes the plain array back into the table. This mutation is safe for values but it changes object identity. The worker's `sameColumn` fast path and the profile memo are keyed on column objects, so they miss after a materialization. That is a cost, not a bug.
-- `DL.cellGetter(table, c)` gives a function `(row) -> value` for hot loops.
-- `DL.mapValues(src, n, fn, stats)` and `DL.mapColumns(...)` memoize `fn` per distinct value (limit 50,000 distinct values, then no memo). Use them for every per-cell transformation and for parsing. `fn` must depend on the value only.
-- `DL.groupRows(getters, n)` is an open-addressing FNV-1a hash table in typed arrays. It gives `first[i]` (the first row of the group of row `i`), `count[first]` and `groups`. Dedupe, unique, verify unique, pivot, the text sort ranks and the profile use it.
+- `DL.makeTable(columns, cols, length)` makes a table. `DL.fromRows` exists for tests.
+- `DL.selectRows(table, indexes)` gives lazy columns, composes index arrays when the input is already lazy, and sets `table.rowMap` (output row to input row). Filter, sort, dedupe, outliers and verify use it. The Changes view reads `rowMap` to follow moved rows. A new operation that keeps, removes or moves rows must use it.
+- `DL.col(table, c)` materializes a lazy column and writes the plain array back into the table. This is safe for values but changes object identity. The worker's `sameColumn` fast path and the profile memo are keyed on column objects, so they miss after a materialization. That is a cost, not a bug.
+- `DL.cellGetter(table, c)` gives `(row) -> value` for hot loops; `DL.rowAt`, `DL.rowsSlice`, `DL.pickColumns`, `DL.dropColumns`, `DL.addColumn` are the other table helpers.
+- `DL.mapValues(src, n, fn, stats)` and `DL.mapColumns(table, idxs, fn, stats)` memoize `fn` per distinct value; above 50,000 distinct values (`MEMO_LIMIT`) the memo stops. `fn(value, ctx)` may call `ctx.tag()` and `stats.tagged` counts the tagged cells. Use them for every per-cell transformation and for parsing (dates, numbers). `fn` must depend on the value only; a function that reads the row index (Add Column "row number", the JavaScript step) must not use them.
+- `DL.groupRows(getters, n)` is an open-addressing FNV-1a hash table in typed arrays (seed `2166136261 | 0`, a separator between key columns). It gives `first[i]`, `count[first]` and `groups`. Dedupe, unique, verify unique, pivot, the text sort ranks, fill "most common" and the profile use it. `DL.keyGetters(table, idxs, { trim, ignoreCase })` gives normalized getters for it.
+- Sort ranks: `textRanks` (sort key or collator, equal values share a rank, direction and empty placement are in the rank), `numberRanks` (a `Float64Array` sort and binary search), then a stable LSD `countingSort` from the last key to the first.
 
-Why: row objects caused heavy garbage collection on million-row files; `Set` and `Map` were several times slower than the typed-array hash; interning strings at load did not help because V8 charges the first hash of a fresh string anyway.
+Why: row objects caused heavy garbage collection on million-row files; `Set` and `Map` were several times slower than the typed-array hash (a dedupe went from 12 s to 0.5 s); interning strings at load did not help because V8 charges about 0.5 µs for the first hash of every fresh string anyway.
 
-## 5. Operations
+## 5. Parsing and formatting rules
+
+These functions in `core.js` hold the product decisions about data. Change them only with negative tests.
+
+- `DL.toNumber`: accepts `1,234.56`, `1.234,56`, `1.234.567` (groups of three), `$1,000`, `(12)` as negative, `12%`, exponents. Rejects `1e400` (infinite), `1,234,56` (bad groups), `(-5)`, text. `isPlainNumber` is the fast path.
+- `DL.toDate(v, dayFirst)`: ISO with optional time and zone; `YYYYMMDD` only for years 1900 to 2099 (other 8-digit values are identifiers); slash dates with `/`, `.` or `-` as one consistent separator, and with `.` or `-` the year needs four digits (so `1.5.3` is not a date); two-digit years pivot at 70 (`1/2/69` is 2069; Excel pivots at 30); `a > 12` means day first; AM/PM with an hour above 12 is invalid; month-name text needs a full or three-letter month name and a four-digit year (so "5 March" and "Room 12 march" are not dates). Impossible dates such as 30 February give NaN. Years 0 to 99 are real years (`setFullYear`), not 1900 to 1999. A zoned value is an instant; the formatter writes it in the local time of the computer, and the field help says so.
+- `DL.formatDate(ts, pattern)`: tokens `YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A a`; `[text]` is literal; other characters pass through, but any bare token letter is a token (the help text says to use brackets). Patterns compile once into a null-prototype cache (a pattern named `constructor` broke the plain object). `DL.formatDateISO` pads the year to four digits.
+- `DL.formatFixed(v, dec)`: half away from zero; `dec` clamped to 0 to 15; `''` for NaN and infinities; values at or above 1e15 use `toFixed`, at or above 1e21 the exponent form without grouping.
+- `DL.titleCase`: an apostrophe starts a new word only after a single letter (O'Neil, D'Angelo), not inside a word (don't); `_` is a separator. `DL.sentenceCase` handles a quote or bracket before the first letter.
+- `DL.detectType(col, sampleSize)`: samples with a seeded pseudo-random sequence, so a column whose type alternates with a fixed period is not misread; thresholds are 90 % numbers, then 90 % dates.
+- `DL.sortKey(s)`: for text of letters A to Z, digits and spaces, a key whose plain `<` order equals the collator with `numeric: true, sensitivity: 'base'`. Digit runs become a length character plus the digits. Only active when the collator locale is English or another Latin locale with the root order (`en, und, root, de, fr, es, it, pt, nl`). Any other text falls back to the collator. Do not extend the key to punctuation without a verified order table.
+- `DL.pluralize(n, one)` adds a plain `s`. Every unit word in the code takes a plain `s`; check before you add one that does not.
+- `DL.unescapeText` turns `\t`, `\n` and `\r` typed by the user into characters. Every text parameter that the user types as a separator, a replacement or a value goes through it: concat, split, replace (both modes), substitute, fill, Add Column, extract joiner.
+
+## 6. Operations
 
 An operation is registered with `DL.registerOp(def)`. The contract is documented above `DL.registerOp` in `core.js`:
 
-- `id`, `name`, `category` (Text, Dates, Rows, Columns, Quality, Advanced, Other), `icon`, `description`, `keywords`, `params`.
+- `id`, `name`, `category` (Text, Dates, Rows, Columns, Quality, Advanced, Other), `icon` (a Bootstrap icon class), `description`, `keywords`, `params`.
 - `summary(params)` gives the short text on the step card.
-- `validate(params, cols)` gives extra problems. `cols` is `null` when the input columns are not known yet. Do not treat null as an empty list.
-- `outputColumns(cols, params)` predicts the columns. Return `null` when the step must run before the columns are known.
-- `apply(table, params)` gives `{ table, notes, status }`. Never mutate the input table or the params. Status is `'ok'` or `'warning'`. A note is a text, or `{ text, rows }` for a note that the user can click to see rows; then also give `findRows(inputTable, params, rows, limit)`.
-- `hashExtra(params)` gives text that must change the cached result, for example today's date.
-- An operation that can make a very large result must compare the cell count with `DL.maxCells` and throw a clear error.
+- `validate(params, cols)` gives extra problems. `cols` is `null` when the input columns are not known yet; guard with `if (!cols) return []`.
+- `outputColumns(cols, params)` predicts the columns. Return `null` when the step must run before the columns are known (Split without a maximum, Pivot). The store then shows "columns known after the earlier steps run" in later steps.
+- `apply(table, params)` gives `{ table, notes, status }`. Never mutate the input table or the params. Status is `'ok'` or `'warning'`; the runner throws on anything else. A note is a text, or `{ text, rows }` for a note that the user can click to see rows; then also give `findRows(inputTable, params, rows, limit)` that gives `{ matches: [[row, col]], total, removed }` for the output table.
+- `hashExtra(params)` gives text that must change the cached result, for example today's date (Add Column "today", Date Math "until today").
+- An operation that can make a very large result must compare the cell count with `DL.maxCells` and throw a clear error (Pivot and Unpivot do).
+- An operation with zero rows in must give zero rows out, not an error.
 
-Param types (`DL.registerParamType`) are `text`, `code`, `number`, `boolean`, `select`, `checkboxes`, `column`, `columns`, `columnOrder`, `renameMap`, `mapping`, `conditions`, `rules` and `sortKeys`. Each type has `empty`, `coerce`, `validate`, `columnsUsed`, and some have `init` and `blank`. `DL.cleanParams` runs `coerce` on every field; `DL.validateParams` cleans first and skips fields whose `showIf` is false. The UI renderers live in `js/ui/fields.js`, one per type.
+Param types (`DL.registerParamType`) are `text`, `code`, `number` (with `integer`, `min`, `max`, `required`), `boolean`, `select`, `checkboxes` (values deduplicated), `column` (with `required: false` for an optional column), `columns` (deduplicated; `required: false` means "all columns"), `columnOrder` (empty means the original order), `renameMap` (a null-prototype object), `mapping`, `conditions`, `rules` and `sortKeys`. Each type has `empty`, `coerce`, `validate`, `columnsUsed`, and some have `init` and `blank`. A field can have `showIf(params)`, `help`, `default`, `notBlank`. `DL.cleanParams` runs `coerce` on every field and drops unknown keys; `DL.validateParams` cleans first and skips fields whose `showIf` is false. The rule lists check their `op` against the operator lists of Filter and Verify, so an unknown test from a file becomes the default. The UI renderers live in `js/ui/fields.js`, one per type; a new type needs one.
 
-Helpers you should use instead of new code: `DL.newColumnName(columns, wanted, fallback)`, `DL.isBlank`, `DL.charCount` (code points), `DL.startOfDay`, `DL.localDate` (years 0 to 99 without the 1900 shift), `DL.unescapeText` (`\t`, `\n`), `DL.toNumber`, `DL.toDate(v, dayFirst)`, `DL.formatDate(ts, pattern)`, `DL.formatFixed`, `DL.formatNumber`, `DL.pluralize`, `DL.keyGetters` (normalized keys for hashing), `DL.buildRegex`, `DL.regexProblem`.
+Helpers you should use instead of new code: `DL.newColumnName(columns, wanted, fallback)`, `DL.isBlank`, `DL.charCount` (code points, so an emoji counts as one), `DL.startOfDay`, `DL.localDate` (years 0 to 99 without the 1900 shift), `DL.unescapeText`, `DL.toNumber`, `DL.toDate`, `DL.formatDate`, `DL.formatFixed`, `DL.formatNumber`, `DL.pluralize`, `DL.keyGetters`, `DL.buildRegex` (whole-word boundaries only where the pattern starts or ends with a word character), `DL.regexProblem` (user regexes use the `u` flag everywhere; `\-` inside a class is invalid with it, and that is consistent across the operations), `DL.noteText`.
 
-When you add an operation: add it to a file in `js/ops/`, add the file to the manifest if it is new, add a test in `test/engine.test.js` that runs it on a plain table AND on a filtered (lazy) table, add the `outputColumns` parity case in the "every op has metadata" test, update the operation count in that test, and add it to the README table. If it has a new category, add the category to `CATEGORY_ORDER` in `js/ui/dialogs.js`.
+The 27 operations and their notable decisions:
 
-## 6. The worker
+- Text: `case`, `concat`, `split` (a regex separator runs on the whole text, so `^` keeps its meaning; empty matches end the split), `splitName` (the whole part before a comma is the last name; particles such as "van der" go into the last name; a title with one name gives a last name), `replace` (a replacement counts only when the cell changed; `$` is literal without regex mode), `substitute`, `padTrim` (pads by characters, a whole emoji as pad character), `extract` (empty matches do not count; the group number is checked against the pattern), `textClean` (one ordered list `CLEAN_STEPS` holds the options and the order; the html step removes a tag only without attributes or with `=` attributes, so "a<b and c>d" stays; the accents step strips marks from Latin letters only; the control step keeps U+200D so emoji sequences survive; the spaces step collapses all white space including line breaks).
+- Rows: `dedupe`, `filter` (date rules parse each distinct value once), `sort` (auto type from `detectType`), `outliers` (no numbers gives an empty result with a note), `unique`, `pivot` (at most 1,000 key values; the empty key is named `(empty)` first so a real "(empty)" value cannot take it; white-space keys are `(blank)`; the total column exists also for an empty input; non-numeric values in numeric aggregates are counted in a note; aggregates sum, count, avg, min, max, first, list), `unpivot` (cell limit).
+- Columns: `rename`, `reorder`, `remove` (counts only present columns for "cannot remove every column"), `addColumn`, `fill` (above, below, fixed value, average, most common; the note says "Changed N cells"), `calculate`, `numFormat`, `javascript` (runs `new Function` in the worker; see the pitfalls).
+- Dates: `dateFormat`, `dateMath` (add with amount limited to ±1,000,000 and results limited to the years 0 to 9999; differences symmetric with month ends counting as full months; parts year, month, month name, day, weekday, ISO week, quarter, day of year, hour, minute; the second date can be a column, today or a fixed date).
+- Quality: `verify` (the unique rule ignores case and spaces at the ends, and its label says so; length rules count characters; per-rule notes carry `rows` for the click-to-see-rows feature).
 
-`js/engine/worker.js` runs in a Web Worker. `js/app/engineClient.js` sends messages and resolves promises by `requestId`. Message types: `config`, `sheets`, `load`, `run`, `cancel`, `slice`, `export`, `batch`, `zip`, `columnInfo`, `columnStats`, `diffSummary`, `search`, `findRows`, `memory`.
+When you add an operation: put it in a file in `js/ops/`; add the file to the manifest if it is new; add a test in `test/engine.test.js` that runs it on a plain table and on a filtered (lazy) table; add the `outputColumns` parity case in the "every op has metadata" test and update the operation count there; add it to the README table; if it has a new category, add the category to `CATEGORY_ORDER` in `js/ui/dialogs.js` (an unknown category sorts last).
 
-- **Readers.** The delimited reader decodes the file in 8 MB slices with one streaming `TextDecoder` and feeds PapaParse through a fake Node stream (`TextStream`). PapaParse's own file chunking corrupts multi-byte characters at chunk boundaries; do not go back to it. PapaParse guesses the line ending once, so the reader strips a stray `\r` from the last value. `checkSize` samples the file before the full read and throws `tooLarge`. The spreadsheet reader has no pre-check; SheetJS needs the whole workbook in memory.
-- **Chain runner.** `runChain` runs the steps in 50 ms slices with `setTimeout(0)` between them, so a `cancel` message can arrive. While a run is active, other messages wait in `queue`. A cancel stops the run at the first step that needs computing; cached steps still pass. `state.cancelledFrom` blocks on-demand recompute of the cancelled steps until the next run.
-- **Cache.** `state.cache` maps step id to an entry with a 64-bit content hash (`stepHash` of upstream hash, op id, params, `hashExtra`). `enforceBudget` frees the least recently used tables when the cache exceeds three times `DL.maxCells`; `state.pinned` (sent by the page as `protect`) and `state.recent` (the last two tables read) stay. `tableFor(stepId)` recomputes a freed step from the nearest cached upstream table.
-- **Diff and profile.** `diffSummary` pairs columns by name and then by shared data (renamed columns), follows `rowMap`, and keeps its result in a `WeakMap` on the output table. `columnStats` keeps its result in a `WeakMap` keyed by the column data and the column name.
-- **Writers.** CSV, TSV and custom delimited files use the own columnar writer with PapaParse's quoting rule (three times faster than `Papa.unparse`). JSON is written as text, so a column named `__proto__` survives. Excel goes through SheetJS in 20,000-row blocks and refuses cells over 32,767 characters, more than 16,384 columns and reserved sheet names.
-- **Batch and zip.** `batchFile` reads one file and runs every step through `computeStep` without touching the interactive cache. `makeZip` stores the files without compression and refers to the blobs; CRC-32 runs over 8 MB slices.
+Scope note: the built operations have options beyond the original request (Fill "below" and "most common", Date Math parts and "today", Clean Text quotes, Extract "all matches", Unpivot "skip empty"). A review flagged them as unrequested; the owner kept them.
 
-The worker has no access to `DL.t`. Its notes are English by design.
+## 7. The worker
 
-## 7. The page
+`js/engine/worker.js` runs in a Web Worker. `js/app/engineClient.js` sends messages and resolves promises by `requestId`; it re-sends `config` after a restart and marks itself `dead` when the worker stops. Message types: `config`, `sheets`, `load`, `run`, `cancel`, `slice`, `export`, `batch`, `zip`, `columnInfo`, `columnStats`, `diffSummary`, `search`, `findRows`, `memory`. A reply has the same `requestId`; `progress` messages have none. Every reply is a plain object; Blobs and Files cross by structured clone.
 
-- **Store** (`js/app/store.js`) holds `state.workflow` (id, name, steps), `state.selectedId`, `state.results` (from the worker), `state.source` (file, options, info, status). It emits `steps`, `params`, `selection`, `source`, `sourceOptions`, `results` and `workflow`. Undo snapshots hold the workflow, the selection and the source options. Param edits within 1.5 s merge into one undo entry (`lastEditKey`). The session (steps, selection, source options, file name) is saved in `localStorage` and restored on the next visit; the file itself is not.
-- **Controller** (`js/main.js`) listens to the store, runs the chain after each change (debounced 220 ms with a `runToken` so old results are dropped), refreshes the preview, and owns the progress bar. Four flags describe the progress bar: `runInFlight`, `cancelable`, `batchLabel` and `exporting`. A run, a batch, a download and a file load must not hide each other's bar or Stop timer; `runEnded` checks the others first.
-- **Views** rebuild their DOM on store events. The config panel updates in place while the user types (`update` versus `render`); the source panel waits for the input to blur before it rebuilds; the chain restores the focus to the same card after a rebuild.
-- **Grid** (`js/ui/grid.js`) is a virtual grid: only visible rows and columns are in the DOM, pages of rows come from the worker, and tables above 285,714 rows use a scaled scrollbar. The header click opens the column profile in a Bootstrap popover.
-- **Texts.** Every user-visible text goes through `DL.t('key', vars)` with the key in `js/i18n/en.js`, or through a `data-i18n*` attribute in `index.html`. Engine texts (operation names, notes, status labels, plural words) stay English by design; the README lists them.
-- **Theme.** `css/app.css` defines color tokens on `:root` and overrides them under `[data-bs-theme="dark"]`. Do not write literal colors in the CSS or in JavaScript; use a token.
+- **Limits.** `U.cellBudget()` on the page reads `navigator.deviceMemory` (Chrome only; other browsers get the 4 GB default), multiplies by 2.5 million cells and clamps to 4 to 30 million. The `config` message sets `DL.maxCells` in the worker and the cache budget to three times that. The page keeps its own default copy of `DL.maxCells`. A file above 1.5 GB is refused before reading.
+- **Readers.** `readers.delimited` detects the encoding from a 1 MB sample (BOMs, then UTF-16 by the parity of zero bytes, then UTF-8 with `fatal`, else windows-1252), guesses the delimiter from a 64 KB sample with the line endings normalized, projects the size with `checkSize` (1.3 times the budget throws `tooLarge` before the full read), then decodes the file in 8 MB slices with one streaming `TextDecoder` and feeds PapaParse through a fake Node stream (`TextStream`). PapaParse's own file chunking corrupts multi-byte characters at chunk boundaries; do not go back to it. PapaParse guesses the line ending once, so the reader strips a stray `\r` from the last value. `DL.TableBuilder` in core handles the header row, skipped rows, blank rows (a blank line kept on request is a row of empty values, not a ragged row), ragged rows and the cell count. The quote character "None" is the NUL character `' '`; write it as an escape, never as a raw byte, or git treats the file as binary. `readers.spreadsheet` uses SheetJS with `cellDates`; a time-only cell (the date 30 or 31 December 1899) becomes a time; a sheet that is not in the workbook gives a note and the first sheet. SheetJS needs the whole workbook in memory and there is no pre-check.
+- **Chain runner.** `runChain` runs the steps in 50 ms slices with `setTimeout(0)` between them, so a `cancel` message can arrive. While a run is active (`busy`), other messages wait in `queue` and run after it, in order. A cancel marks the active run and every queued run; a cancelled run still uses the cached steps and stops at the first step that needs computing; the steps after it get a blocked note. `state.cancelledFrom` blocks on-demand recompute of the cancelled steps until the next run. A step that is turned off passes its input through (`DL.SKIPPED_NOTE`).
+- **Cache.** `state.cache` maps a step id to an entry with a 64-bit content hash (`stepHash` of the upstream hash, the op id, `skip`, the params as JSON and `hashExtra`). A result with a table is kept; invalid, blocked and error results are cheap and are made again on each run. `enforceBudget` frees the least recently used tables when the cache exceeds the budget; `state.pinned` (the step ids the page sends as `protect`: the shown step and its input) and `state.recent` (the last two tables any request read) stay. `tableFor(stepId)` recomputes a freed step from the nearest cached upstream table; a request for a cancelled step gives no table. `inputFor(stepId)` gives the table that feeds a step.
+- **Diff and profile.** `diffSummary` pairs columns by name and then by shared data (renamed columns), follows `rowMap` for sorted or filtered tables, and keeps its result in a `WeakMap` on the output table, so a freed table frees its entry. `columnStats` visits each distinct value once with `groupRows`, keeps the top five values, and memoizes in a `WeakMap` keyed by the column data and then the column name. The profile shows the number block when at least half of the filled values are numbers.
+- **Search and rows.** `search` gives the first matching column per row, at most 2,000 rows. `findRows` runs the operation's `findRows` on the input table; the page shows the result with the search highlight machinery.
+- **Writers.** CSV, TSV and custom delimited files use the own columnar writer with PapaParse's quoting rule (a value gets quotes when it holds the delimiter, a quote, a line break, a byte order mark or a space at an end); it is three times faster than `Papa.unparse`. The BOM is on by default and the line ending is CRLF by default. A quote or a line break as separator is refused. JSON is written as text, so a column named `__proto__` survives; every value is a string. Excel goes through SheetJS in 20,000-row blocks and refuses more than 1,048,575 rows, more than 16,384 columns, a cell above 32,767 characters, a table above a quarter of the cell budget, and reserved sheet names. `writeTable(table, options)` picks the writer for the export and the batch.
+- **Batch and zip.** `batchFile` reads one file with the interactive source options, runs every step through `computeStep` with an empty hash (it does not touch the interactive cache), and returns the blob, the row count, the reader notes and the step warnings. `makeZip` stores the files without compression (deflate needs a library or an asynchronous stream), refers to the blobs, runs CRC-32 over 8 MB slices, sets the UTF-8 name flag, and refuses more than 65,535 entries or 4 GiB including the headers.
 
-## 8. Conventions
+The worker has no access to `DL.t`. Its notes and progress phases are English by design.
 
-- Readme, changelog, documents, comments and commit messages are in ASD-STE100 Simplified Technical English: short sentences, active voice, one instruction per sentence, no fragments, American spelling.
-- A changelog entry is one short line with the commit hash. A fix commit adds the hash of the fixed feature if the entry lacks it.
-- Group logical work per commit: engine, worker, application layer, views, documents. Do not mix a feature with unrelated fixes.
-- No speculative features or abstractions. A helper needs at least two callers.
+## 8. The page
+
+- **Store** (`js/app/store.js`) holds `state.workflow` (id, name, steps with `id`, `opId`, `params`, `enabled`), `state.selectedId` (`'source'` or a step id), `state.results` (the worker results by step id: `stepId`, `hash`, `status`, `hasTable`, `notes`, `error`, `columns`, `rowCount`, `ms`), `state.source` (file, options, info, status, error, sheets) and `state.dirty`. It emits `steps`, `params`, `selection`, `source`, `sourceOptions`, `results` and `workflow`. All changes to the workflow go through the store; the one exception is `loadSource` in `main.js`, which sets the loading status directly. `Store.normalizeStep` repairs a step from a file or from storage. `DL.RESULT_STATUS` gives the labels: Done, Done with warnings, Turned off, Needs setup, Waiting, Error, and `running` (page only).
+- **Undo.** Snapshots hold the workflow, the selection and the source options; `MAX_HISTORY` is 100. Param edits of the same field within 1.5 s merge into one undo entry (`lastEditKey`); a structural change resets it. Saving does not push history. `displayResultFor(sel)` gives the step whose table the preview shows when the selected step cannot run, with a reason text.
+- **Persistence.** `localStorage` keys: `dl.session.v1` (steps, selection, source options and file name, not the file), `dl.workflows.v1` (the saved records: id, name, steps, columns, sourceOptions, createdAt, updatedAt, uses) and `dl.theme`. Every reader of these keys filters bad records; a shape change needs a migration there. On restore, a workflow with an id is compared with its record to decide the saved state; steps of unknown operations are dropped with a toast.
+- **Workflow files.** `{ format: 'delimiter-lab-workflow', version: 1, name, exportedAt, columns, sourceOptions, steps }`. Import refuses a newer version, caps the name at 80 characters, asks before it replaces steps, warns when the file has a JavaScript step, saves after the confirmation, and replaces a saved record with the same name instead of making a copy. `matchLevel` rates a record against the open file's columns: full, partial, none or unknown.
+- **Controller** (`js/main.js`) listens to the store, runs the chain after each change (debounced 220 ms with a `runToken`, so an old result is dropped), refreshes the preview by a key (shown step, result hash, message, diff flag), and owns the progress bar. Four flags describe the bar: `runInFlight`, `cancelable`, `batchLabel` and `exporting`; a run, a batch, a download and a file load must not hide each other's bar or Stop timer, and `runEnded` checks the others first. Stop appears after 15 s of any progress: it bumps the run token, terminates the worker, turns the selected step off, and reloads the file; in a batch it ends the batch. Cancel asks the worker to stop before the next step, or ends a batch after the current file. `openFiles(files)` routes one `.json` file to the workflow import, one data file to `openFile`, and several files to the batch (files that are not data files or are too large are listed in the report).
+- **Keyboard.** Ctrl+Z / Ctrl+Y undo and redo (not while typing in a text field), Ctrl+S save, Ctrl+D download, Ctrl+O open a file, Ctrl+F find, Insert add a step, Delete remove the selected step, Alt+Up / Alt+Down move the selection. No shortcut runs while a dialog is open. The step cards, the drop zone and the operation cards are keyboard operable; the code editor writes two spaces on Tab and releases the keyboard on Shift+Tab and Escape.
+- **Drag and drop.** A page-level counter (`dragDepth`) shows the drop overlay; a capture-phase `drop` listener resets it because the drop zone stops propagation. Steps reorder by drag in the chain (`DL.fields.sortable`), and `moveStep` uses the same "to" convention.
+- **Views** rebuild their DOM on store events. The config panel updates in place while the user types in a text field (`update` versus `render`); the source panel waits for a focused input to blur before it rebuilds; the chain restores the focus to the same card after a rebuild; views that replace HTML call `U.hideOrphanTooltips()`.
+- **Grid** (`js/ui/grid.js`): rows are 28 px, a page holds 20,000 cells (20 to 200 rows, by the column count), at most 600,000 cells of pages stay per grid, eight rows and two columns of buffer render outside the view, only the visible columns are in the DOM, and tables whose height would exceed 8,000,000 px (285,714 rows) use a scaled scrollbar with rows positioned relative to the scroll position. The grid renders on the scroll event itself, because `requestAnimationFrame` pauses in hidden tabs. `computeWidths` measures the header and the longest sample value of the first page with a canvas. The header click opens the column profile in a Bootstrap popover (container `body`); the profile data is cached per column for the shown table; a popover moves to the new cell when the header re-renders; dialogs close it. The Compare view is a second grid with synchronized scrolling that shows the input of the shown step. The Changes view marks changed cells and new columns and puts counts on the header.
+- **Texts.** Every user-visible text goes through `DL.t('key', vars)` with the key in `js/i18n/en.js`, or through a `data-i18n`, `data-i18n-title`, `data-i18n-placeholder` or `data-i18n-label` attribute in `index.html`. `{name}` placeholders are replaced from `vars`; a missing key shows the key. The page loads `js/i18n/<lang>.js` when `DL.LOCALES` lists the language of `?lang=` or of the browser; the locale file activates itself in `DL.registerLocale`; `document.documentElement.lang` follows. Engine texts (operation names, settings, notes, status labels, plural words, reader notes) stay English by design and the README lists them.
+- **Theme.** `css/app.css` defines color tokens on `:root` and overrides them under `[data-bs-theme="dark"]`; the inline script in `index.html` sets the theme before the first paint from `dl.theme` or the system preference. Do not write literal colors in the CSS or in JavaScript; use a token. The `no-tip` class marks buttons with `data-bs-toggle` that must not get the delegated tooltip (Bootstrap refuses two instances on one element). Tooltips show on hover and on focus.
+
+## 9. Conventions
+
+- Readme, changelog, documents, comments and commit messages are in ASD-STE100 Simplified Technical English: short sentences (about 20 words), active voice, one instruction per sentence, no fragments, no idioms, American spelling ("color").
+- A changelog entry is one short line with the commit hash. A fix commit adds the hash of the feature entry if the entry lacks it.
+- Group logical work per commit by layer: engine, worker, application layer, views, documents, release. Do not mix a feature with unrelated fixes. When two features grew in the same files at the same time, save the final files, reset, rebuild the first feature from its patch script, commit, then restore the final files and commit the second.
+- No speculative features or abstractions. A helper needs at least two callers. Every changed line must trace to the request.
 - Keep the engine free of DOM, texts and browser APIs; the tests and the planned library depend on it.
-- After every feature: run `/code-review medium`, fix the findings, and commit the fixes by layer.
+- After every feature: run `/code-review medium`, fix the findings, and commit the fixes by layer. A large milestone gets `/code-review max`. The findings tool takes at most 32 entries per report; report the rest in prose.
 
-## 9. Lessons learned
+## 10. Lessons learned
 
 These came from measured failures. Each one changed the design.
 
 1. **Measure before you optimize the text layer.** The first version copied rows; the columnar model with lazy selection came from a GC profile on 1.2 million rows. A `Set` of keys took 12 s where the typed-array hash takes 0.5 s.
-2. **Do not intern strings at load.** V8 charges the first hash of every fresh string. Memoizing per distinct value in the operation is cheaper and more general.
-3. **PapaParse chunking corrupts UTF-8.** A multi-byte character that crosses a 4 MB boundary became two replacement characters. The streaming decoder plus the fake stream fixed it. A test with a small slice size (`SLICE_OVERRIDE` in `test/worker.test.js`) guards it.
+2. **Do not intern strings at load.** V8 charges the first hash of every fresh string. Memoizing per distinct value in the operation is cheaper and more general. Date parsing in sort, verify and filter went from about 1.8 s to about 0.3 s per million rows with the same memo.
+3. **PapaParse chunking corrupts UTF-8.** A multi-byte character that crossed a 4 MB boundary became replacement characters. The streaming decoder plus the fake stream fixed it. A test with a small slice size (`SLICE_OVERRIDE` in `test/worker.test.js`) guards it.
 4. **The worker must validate against the real columns.** The page predicts columns from `outputColumns`; the prediction can be null or wrong. The worker's result is the truth; the page's validation is only for quick feedback.
 5. **Cached results must not outlive their inputs.** Content hashes keyed on the upstream hash were needed after stale results showed for fixed steps. Anything that changes the output must be in the hash (`hashExtra` for "today").
-6. **Cooperative cancel needs slices.** A synchronous chain cannot be cancelled. The 50 ms slice loop plus the message queue gave a Cancel button without a worker restart. Stop (terminate and reload) is the last resort and it costs a reload.
-7. **Every layer that reads a table must follow row moves.** The first Changes view compared rows by position and marked every cell after a sort. `rowMap` on lazy tables solved it; a new row-selecting operation must keep using `DL.selectRows`.
-8. **Number and date parsing needs negative tests.** "1e400", "1,234,56", "1.5.3", "5 March" and "13:04 PM" all parsed as valid before the whole-codebase review. Every parser change needs cases that must fail.
-9. **Dialog flows need to close before they open.** Bootstrap does not support stacked modals. Use `modal.closeThen(fn)` from `U.modal` to open the next dialog after the first is gone.
-10. **A strict-mode `for (i = ...)` without `var` is a runtime crash, not a lint warning.** A refactor removed the declaring loop and broke every recompute of an evicted step; only a test with a small cache budget found it. Keep `test/worker.test.js` running.
+6. **Cooperative cancel needs slices.** A synchronous chain cannot be cancelled. The 50 ms slice loop plus the message queue gave a Cancel button without a worker restart. The first cancel design cancelled the queued run completely and wiped the cache; the second let a queued run reuse cached steps. A cancel must also block on-demand recompute, or the next slice request computes the cancelled steps anyway.
+7. **Every layer that reads a table must follow row moves.** The first Changes view compared rows by position and marked every cell after a sort, and treated a renamed column as new plus removed. `rowMap` on lazy tables and pairing columns by shared data solved it.
+8. **Parsers need negative tests.** "1e400", "1,234,56", "1.5.3", "10000101", "5 March" and "13:04 PM" all parsed as valid before the whole-codebase review. Every parser change needs cases that must fail.
+9. **Dialog flows must close before they open.** Bootstrap does not support stacked modals. Use `closeThen(fn)` from `U.modal` to open the next dialog after the first is gone; give `U.confirm` and `U.prompt` an `onCancel` when the flow must continue either way.
+10. **A strict-mode `for (i = ...)` without `var` is a runtime crash.** A refactor removed the declaring loop and broke every recompute of an evicted step; only a test with a small cache budget found it. Keep `test/worker.test.js` running.
+11. **The progress bar needs owners.** Four things share one bar (run, batch, download, load). Each fix that hid or showed the bar broke another owner until every path checked the others first.
+12. **Reviews that only read the diff miss the whole.** The diff reviews caught regressions; the whole-codebase review found 53 defects the diffs had never touched, from the strict-mode crash to the import that saved before the user confirmed.
+13. **Two features in one working tree make one spaghetti commit.** Keep patch scripts per feature so the commits can be rebuilt separately.
+14. **Icon-only buttons hide features.** Export and import of workflows existed for a day before the owner could find them; give buttons text.
 
-## 10. Pitfalls and footguns
+## 11. Pitfalls and footguns
 
-- **Cache busting.** The browser and the worker load files with `?v=DL.VERSION`. After you edit a file, bump the version (a `-devN` suffix is fine during work) or the browser serves the old file. The stylesheet link and the manifest tag in `index.html` have their own `?v=` values.
-- **The manifest order matters.** `i18n.js` and `en.js` load before `util.js`; `core.js` loads before the operations; the locale file loads between `app` and `ui`. A module must not call `DL.t` at load time.
-- **`DL.col` mutates tables in place.** Never rely on column object identity across a `DL.col` call. Memos keyed on column objects can miss; they must not give wrong data.
-- **`DL.maxCells` is a global that the worker overwrites** from the `config` message. Operations read it at run time. The page's own copy of core keeps the default.
-- **`validateParams` skips hidden fields.** A field whose `showIf` is false is not checked. If a hidden field is still used by `apply`, clamp it in `apply`.
-- **Number params keep bad text.** `coerce` keeps text that is not a number, so validation shows "Enter a number". Do not "repair" it to the default silently; that hid a workflow-import bug.
-- **`op.validate` gets `null` columns** when the input is unknown. Guard with `if (!cols) return []`.
-- **Notes can be objects.** Use `DL.noteText(note)` where a note is displayed. Only notes with `rows` become links.
-- **Result status `'warning'` is not an error.** The step ran; the notes explain. `'invalid'`, `'blocked'` and `'error'` have no table.
-- **The step hash includes `JSON.stringify(params)`.** Key order in params must be stable; `cleanParams` gives a stable shape. Do not put functions or Dates in params.
-- **Workflow files run code.** A `javascript` step in an imported file runs `new Function` in the worker with access to the worker global. The import asks the user first. There is no sandbox and no time limit; see the open items below.
-- **Excel dates.** SheetJS gives Date objects with `cellDates`; time-only cells have the date 30 or 31 December 1899 and `DL.cellText` writes them as a time.
-- **Zoned dates.** `2024-01-01T00:00:00Z` is an instant; the formatter writes it in the local time of the computer. The field help says so.
-- **The browser pane of the coding assistant** throttles timers when hidden, often times out on screenshots, and never completes Bootstrap hide transitions. Test dialog flows by reading the code or in a real browser. Inject `.fade { transition: none }` when you must drive dialogs there.
-- **Bash heredocs in the assistant environment mangle backslashes.** A `\d` in a JavaScript string arrives as `d`. Write patch scripts and tests with the file-writing tool, never through a heredoc.
-- **Two-digit years pivot at 70** (`1/2/69` is 2069). Excel pivots at 30. This is a documented choice, not a bug.
-- **`Intl.Collator` costs about 1 µs per compare.** The sort key fast path applies only to plain Latin text in English-like locales; other text uses the collator. Do not extend the key to punctuation without a verified order table.
+- **Cache busting.** The browser and the worker load files with `?v=DL.VERSION`. After you edit a file, bump the version (a `-devN` suffix is fine during work) or the browser serves the old file; symptoms are missing functions and old texts. The stylesheet link and the manifest tag in `index.html` have their own `?v=` values.
+- **The manifest order and the worker list.** See section 3. A UI helper in an operation file breaks the worker.
+- **`DL.col` mutates tables in place.** Never rely on column object identity across a `DL.col` call. Memos keyed on column objects may miss; they must never give wrong data.
+- **`DL.maxCells` is a global that the worker overwrites** from the `config` message. Operations read it at run time. Tests run with the default.
+- **`validateParams` skips hidden fields.** A field whose `showIf` is false is not checked. If `apply` still reads it, clamp it in `apply`.
+- **Number params keep bad text.** `coerce` keeps text that is not a number, so validation shows "Enter a number" and the step shows "Needs setup". Do not "repair" it to the default silently; that hid a workflow-import bug. A non-text value (a boolean from a bad file) does become the default.
+- **`op.validate` gets `null` columns** when the input is unknown.
+- **Notes can be objects.** Use `DL.noteText(note)` where a note is displayed; only notes with `rows` become links.
+- **Result status `'warning'` is not an error.** The step ran; the notes explain. `'invalid'`, `'blocked'` and `'error'` have no table, and `'skipped'` passes the input through.
+- **The step hash includes `JSON.stringify(params)`.** `cleanParams` gives a stable key order. Do not put functions or Dates in params.
+- **Workflow files run code.** A `javascript` step in an imported file runs `new Function` in the worker with access to the worker global (`state.source`, `fetch`). The import asks the user first; there is no sandbox and no time limit.
+- **The JavaScript step API.** User code gets a `Row` object with the cell values; a return value becomes text through `DL.cellText`; the first error per step is reported in a note. A thrown non-Error value or a BigInt return still fails the step (open item).
+- **Excel dates.** SheetJS gives Date objects; time-only cells have the date 30 or 31 December 1899 and `DL.cellText` writes them as a time; the serial 45321 is 30 January 2024 in local time.
+- **Zoned dates and two-digit years.** See section 5.
+- **Spreadsheet options.** The `sheet` option is special-cased in five places (defaults, clean, new file, restore, apply workflow). A batch reads every workbook with the same sheet name and falls back to the first sheet with a note.
+- **`Intl.Collator` costs about 1 µs per compare.** The sort key fast path applies only to plain Latin text in English-like locales.
 - **Bootstrap tooltips outlive their elements.** Views that replace `innerHTML` call `U.hideOrphanTooltips()`.
-- **The `dl.workflows.v1` and session keys in `localStorage`** are the persistence format. A change to the record shape needs a migration in `W.list` and `restoreSession`; both filter bad records.
+- **The `rowsMatch` and other count texts** take an already pluralized English fragment; a translation cannot fix the word order. This is the documented localization limit.
+- **`localStorage` can be blocked or full.** Every access is in a `try`; the theme script computes the system preference outside its `try`.
+- **The browser pane of the coding assistant** throttles timers when hidden, often times out on screenshots, and never completes Bootstrap hide transitions, so a closed dialog keeps `.modal.show`. Test dialog flows by reading the code or in a real browser. `document.querySelector('.modal.show')` can therefore be stale there.
+- **Bash heredocs in the assistant environment mangle backslashes.** A `\d` in a JavaScript string arrives as `d`, a `\n` becomes a line break. Write patch scripts and tests with the file-writing tool, then run them; never patch source through a heredoc. Sub-agents share one scratch folder: give scratch files unique prefixes.
+- **A usage limit kills background agents mid-work.** Their partial results are lost; record what came back and relaunch the same prompts.
+- **Raw control characters in source files.** A raw NUL byte makes git treat the file as binary; write `' '`.
+- **The line-ending policy is LF** (`.gitattributes`). Editors on Windows must not write CRLF.
 
-## 11. Open items
+## 12. Open items
 
 These are known and documented, not fixed:
 
-- A sandbox and a time limit for the Custom JavaScript step (a disposable worker or a sandboxed iframe).
-- Cooperative cancel checks inside long row loops, so Stop never needs a worker restart.
-- Plural words and status labels stay English in translated interfaces.
+- A sandbox and a time limit for the Custom JavaScript step (a disposable worker or a sandboxed iframe with a strict content security policy).
+- Cooperative cancel checks inside long row loops, so Stop never needs a worker restart, and a Stop that does not turn the step off.
+- Plural words and status labels stay English in translated interfaces; a plural form in `DL.t` would close it.
 - A size pre-check for very large workbooks; SheetJS reads the whole file.
 - Filter and Verify have separate rule builders with slightly different semantics for list and equality tests.
-- `docs/embedding.md` describes a library and a command line tool that do not exist yet.
+- Unpivot builds its lazy columns by hand instead of `DL.selectRows`, so the Changes view cannot follow its rows.
+- The JavaScript step's error path assumes an `Error` object and a JSON-safe return.
+- `DL.maxCells` as a global and `state.pinned`/`state.recent` as eviction heuristics could become explicit limits and reference counts when the engine becomes a library.
+- `docs/embedding.md` describes a library and a command line tool that do not exist yet. The engine is already free of the DOM, so the first step (an ESM build with `runWorkflow`) is small.
