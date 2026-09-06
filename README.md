@@ -15,6 +15,7 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 - Applies the steps to many files at once: drop the files, choose the output format and download a zip file.
 - Undo and redo.
 - Light and dark theme. The theme follows the system setting until you change it.
+- A timing panel shows the time and the memory of each step.
 - A Cancel button stops a slow run before its next step. The steps that ran keep their results.
 - Works with large files. The file size limit depends on the memory of the computer.
 

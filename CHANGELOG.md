@@ -10,6 +10,7 @@
 - Add: apply the steps to many files at once and download a zip file (7db3961).
 - Add: Cancel button that stops a run or a batch before the next step or file (31d3558).
 - Add: dark theme with a switch in the header (0cf8166).
+- Add: timing panel with the time and the memory of each step.
 
 ## 1.2.0
 

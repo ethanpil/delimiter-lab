@@ -71,6 +71,7 @@
   EngineClient.prototype.columnStats = function (stepId, col) { return this.send({ type: 'columnStats', stepId: stepId, col: col }); };
   EngineClient.prototype.diffSummary = function (stepId) { return this.send({ type: 'diffSummary', stepId: stepId }); };
   EngineClient.prototype.search = function (stepId, query, limit) { return this.send({ type: 'search', stepId: stepId, query: query, limit: limit }); };
+  EngineClient.prototype.memory = function () { return this.send({ type: 'memory' }); };
   EngineClient.prototype.findRows = function (stepId, lookup, limit) { return this.send({ type: 'findRows', stepId: stepId, lookup: lookup, limit: limit }); };
   EngineClient.prototype.batch = function (file, options, steps, output) { return this.send({ type: 'batch', file: file, options: options, steps: steps, output: output }); };
   EngineClient.prototype.zip = function (entries) { return this.send({ type: 'zip', entries: entries }); };

@@ -633,6 +633,9 @@
   $('btnWorkflows').addEventListener('click', openWorkflows);
   $('btnDownload').addEventListener('click', download);
   $('btnHelp').addEventListener('click', DL.dialogs.help);
+  $('btnTiming').addEventListener('click', function () {
+    engine.memory().then(function (m) { DL.showTiming(store, m); }).catch(function () { DL.showTiming(store, null); });
+  });
 
   /* ---------- Theme ---------- */
   function applyTheme(theme) {
