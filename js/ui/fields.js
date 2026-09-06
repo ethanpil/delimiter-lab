@@ -24,15 +24,15 @@
   }
 
   function noColumnsMessage(columns) {
-    return columns === null ? 'The columns are known after the earlier steps run.' : 'No columns: load a file, or check the earlier steps.';
+    return DL.t(columns === null ? 'fields.columnsLater' : 'fields.noColumns');
   }
 
   function colSelect(columns, value, allowEmpty, emptyLabel) {
     var known = columns || [];
     var options = [];
-    if (allowEmpty || !value || known.indexOf(value) < 0) options.push({ value: '', label: emptyLabel || (known.length ? 'Choose a column…' : noColumnsMessage(columns)) });
+    if (allowEmpty || !value || known.indexOf(value) < 0) options.push({ value: '', label: emptyLabel || (known.length ? DL.t('fields.chooseColumn') : noColumnsMessage(columns)) });
     known.forEach(function (c) { options.push({ value: c, label: c }); });
-    if (value && known.indexOf(value) < 0) options.push({ value: value, label: columns ? value + ' (missing)' : value });
+    if (value && known.indexOf(value) < 0) options.push({ value: value, label: columns ? DL.t('fields.missing', { name: value }) : value });
     return U.select(options, value || '');
   }
 
@@ -92,13 +92,13 @@
     var ul = U.el('ul', { class: 'sortable-list' });
     var rebuild = function () {
       U.empty(ul);
-      if (!items.length) ul.appendChild(U.el('li', { class: 'text-secondary', text: opts && opts.emptyText || 'Nothing chosen yet.' }));
+      if (!items.length) ul.appendChild(U.el('li', { class: 'text-secondary', text: opts && opts.emptyText || DL.t('fields.nothingChosen') }));
       items.forEach(function (name, i) {
         ul.appendChild(U.el('li', { draggable: 'true' }, [
           U.el('i', { class: 'bi bi-grip-vertical grip' }),
           U.el('span', { class: 'item-label', text: name, title: name }),
-          U.el('button', { type: 'button', class: 'btn btn-link btn-sm', title: 'Move up', disabled: i === 0, onclick: function () { items = moveItem(items, i, i - 1); onChange(items); rebuild(); } }, [U.el('i', { class: 'bi bi-chevron-up' })]),
-          U.el('button', { type: 'button', class: 'btn btn-link btn-sm', title: 'Move down', disabled: i === items.length - 1, onclick: function () { items = moveItem(items, i, i + 2); onChange(items); rebuild(); } }, [U.el('i', { class: 'bi bi-chevron-down' })])
+          U.el('button', { type: 'button', class: 'btn btn-link btn-sm', title: DL.t('fields.moveUp'), disabled: i === 0, onclick: function () { items = moveItem(items, i, i - 1); onChange(items); rebuild(); } }, [U.el('i', { class: 'bi bi-chevron-up' })]),
+          U.el('button', { type: 'button', class: 'btn btn-link btn-sm', title: DL.t('fields.moveDown'), disabled: i === items.length - 1, onclick: function () { items = moveItem(items, i, i + 2); onChange(items); rebuild(); } }, [U.el('i', { class: 'bi bi-chevron-down' })])
         ]));
       });
     };
@@ -173,7 +173,7 @@
     });
     var w = wrap(param, ta, true);
     if (ctx.columns && ctx.columns.length) {
-      var hint = U.el('div', { class: 'form-text' }, ['Columns: ']);
+      var hint = U.el('div', { class: 'form-text' }, [DL.t('fields.columnsHint')]);
       ctx.columns.slice(0, 30).forEach(function (c) {
         hint.appendChild(U.el('a', { href: '#', class: 'text-mono me-2', text: 'row["' + c + '"]', onclick: function (e) {
           e.preventDefault();
@@ -215,7 +215,7 @@
   };
 
   renderers.column = function (param, value, ctx) {
-    var sel = colSelect(ctx.columns, value, param.required === false, param.required === false ? '(none)' : null);
+    var sel = colSelect(ctx.columns, value, param.required === false, param.required === false ? DL.t('fields.noneOption') : null);
     sel.addEventListener('change', function () { ctx.onChange(sel.value); });
     return wrap(param, sel);
   };
@@ -225,11 +225,11 @@
     var columns = ctx.columns || [];
     var known = !!ctx.columns;
     var box = U.el('div', { class: 'column-list' });
-    var filter = U.el('input', { type: 'search', class: 'form-control form-control-sm', placeholder: 'Filter columns…' });
+    var filter = U.el('input', { type: 'search', class: 'form-control form-control-sm', placeholder: DL.t('fields.filterColumns') });
     var countEl = U.el('span', { class: 'text-secondary ms-auto' });
     var tools = U.el('div', { class: 'column-list-tools' }, [
-      U.el('a', { href: '#', text: 'All', onclick: function (e) { e.preventDefault(); setChosen(columns.slice()); } }),
-      U.el('a', { href: '#', text: 'None', onclick: function (e) { e.preventDefault(); setChosen([]); } }),
+      U.el('a', { href: '#', text: DL.t('fields.all'), onclick: function (e) { e.preventDefault(); setChosen(columns.slice()); } }),
+      U.el('a', { href: '#', text: DL.t('fields.none'), onclick: function (e) { e.preventDefault(); setChosen([]); } }),
       countEl
     ]);
     var ordered = null;
@@ -242,7 +242,7 @@
       ctx.onChange(chosen.slice());
     }
     function updateCount() {
-      countEl.textContent = chosen.length && columns.length ? chosen.length + ' of ' + columns.length + ' chosen' : '';
+      countEl.textContent = chosen.length && columns.length ? DL.t('fields.chosenCount', { n: chosen.length, total: columns.length }) : '';
     }
     if (!columns.length) box.appendChild(U.el('div', { class: 'text-secondary small', text: noColumnsMessage(ctx.columns) }));
     columns.forEach(function (c) {
@@ -259,7 +259,7 @@
       box.appendChild(check.el);
     });
     chosen.filter(function (c) { return columns.indexOf(c) < 0; }).forEach(function (c) {
-      var check = U.check(known ? c + ' (missing)' : c, true, function () { setChosen(chosen.filter(function (x) { return x !== c; })); });
+      var check = U.check(known ? DL.t('fields.missing', { name: c }) : c, true, function () { setChosen(chosen.filter(function (x) { return x !== c; })); });
       if (known) check.el.classList.add('text-danger');
       box.appendChild(check.el);
     });
@@ -269,8 +269,8 @@
     });
     var parts = [columns.length > 8 ? filter : null, tools, box];
     if (param.ordered) {
-      ordered = orderedList(chosen, function (next) { chosen = next; ctx.onChange(chosen.slice()); }, { emptyText: 'Tick columns above to add them here.' });
-      parts.push(U.el('div', { class: 'form-text mt-2', text: 'Order (drag or use the arrows):' }));
+      ordered = orderedList(chosen, function (next) { chosen = next; ctx.onChange(chosen.slice()); }, { emptyText: DL.t('fields.tickColumns') });
+      parts.push(U.el('div', { class: 'form-text mt-2', text: DL.t('fields.orderHint') }));
       parts.push(ordered);
     }
     updateCount();
@@ -285,9 +285,9 @@
     var list = orderedList(order, function (next) { order = next; ctx.onChange(next.slice()); });
     var set = function (next) { order = next; list.setItems(next); ctx.onChange(next.slice()); };
     var tools = U.el('div', { class: 'd-flex gap-2 mb-1' }, [
-      U.el('button', { type: 'button', class: 'btn btn-link btn-sm p-0', text: 'Sort A → Z', onclick: function () { set(order.slice().sort(DL.compareText)); } }),
-      U.el('button', { type: 'button', class: 'btn btn-link btn-sm p-0', text: 'Reverse', onclick: function () { set(order.slice().reverse()); } }),
-      U.el('button', { type: 'button', class: 'btn btn-link btn-sm p-0', text: 'Original order', onclick: function () { set(columns.slice()); } })
+      U.el('button', { type: 'button', class: 'btn btn-link btn-sm p-0', text: DL.t('fields.sortAZ'), onclick: function () { set(order.slice().sort(DL.compareText)); } }),
+      U.el('button', { type: 'button', class: 'btn btn-link btn-sm p-0', text: DL.t('fields.reverse'), onclick: function () { set(order.slice().reverse()); } }),
+      U.el('button', { type: 'button', class: 'btn btn-link btn-sm p-0', text: DL.t('fields.originalOrder'), onclick: function () { set(columns.slice()); } })
     ]);
     return wrap(param, U.el('div', {}, [tools, list]), true);
   };
@@ -308,7 +308,7 @@
       tbody.appendChild(U.el('tr', {}, [U.el('td', { class: 'align-middle', text: c }), U.el('td', {}, [input])]));
     });
     var table = U.el('table', { class: 'table table-sm mb-0 mapping-table' }, [
-      U.el('thead', {}, [U.el('tr', {}, [U.el('th', { text: 'Current name' }), U.el('th', { text: 'New name' })])]),
+      U.el('thead', {}, [U.el('tr', {}, [U.el('th', { text: DL.t('fields.currentName') }), U.el('th', { text: DL.t('fields.newName') })])]),
       tbody
     ]);
     function quickLink(label, fn) {
@@ -320,10 +320,10 @@
       } });
     }
     var tools = U.el('div', { class: 'd-flex gap-3 mb-1 small' }, [
-      quickLink('Title Case', function (c) { return DL.titleCase(c.replace(/[_\-]+/g, ' ')); }),
-      quickLink('lower_snake_case', function (c) { return c.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }),
-      quickLink('Remove spaces', function (c) { return c.replace(/\s+/g, ''); }),
-      quickLink('Clear', function () { return ''; })
+      quickLink(DL.t('fields.titleCase'), function (c) { return DL.titleCase(c.replace(/[_\-]+/g, ' ')); }),
+      quickLink(DL.t('fields.snakeCase'), function (c) { return c.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }),
+      quickLink(DL.t('fields.removeSpaces'), function (c) { return c.replace(/\s+/g, ''); }),
+      quickLink(DL.t('fields.clear'), function () { return ''; })
     ]);
     return wrap(param, U.el('div', {}, [tools, U.el('div', { class: 'column-list', style: 'max-height:260px' }, [table])]), true);
   };
@@ -331,11 +331,11 @@
   renderers.mapping = function (param, value, ctx) {
     var blank = DL.paramTypes.mapping.blank;
     var editor = listEditor(param, value, ctx, {
-      addLabel: 'Add value',
+      addLabel: DL.t('fields.addValue'),
       focusSelector: 'input',
       renderRow: function (r, api) {
-        var from = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.from, spellcheck: 'false', placeholder: 'Find this value, e.g. CA' });
-        var to = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.to, spellcheck: 'false', placeholder: 'Replace with, e.g. California' });
+        var from = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.from, spellcheck: 'false', placeholder: DL.t('fields.findValue') });
+        var to = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.to, spellcheck: 'false', placeholder: DL.t('fields.replaceWith') });
         from.addEventListener('input', function () { r.from = from.value; api.emit(true); });
         to.addEventListener('input', function () { r.to = to.value; api.emit(true); });
         // A pasted block of two tab separated columns fills many rows at once.
@@ -365,27 +365,27 @@
         };
         from.addEventListener('paste', function (e) { paste(e, false); });
         to.addEventListener('paste', function (e) { paste(e, true); });
-        return U.el('div', { class: 'rule-row' }, [from, U.el('i', { class: 'bi bi-arrow-right text-secondary', style: 'flex:0 0 auto' }), to, removeButton('Remove', api.remove)]);
+        return U.el('div', { class: 'rule-row' }, [from, U.el('i', { class: 'bi bi-arrow-right text-secondary', style: 'flex:0 0 auto' }), to, removeButton(DL.t('fields.remove'), api.remove)]);
       }
     });
-    var hint = U.el('div', { class: 'form-text', text: 'Tip: paste two columns from a spreadsheet into a box to fill the whole list.' });
+    var hint = U.el('div', { class: 'form-text', text: DL.t('fields.pasteTip') });
     return wrap(param, U.el('div', {}, [editor.box, editor.add, hint]), true);
   };
 
   // Shared renderer for lists of rules (filter conditions and verify rules).
   function ruleRows(param, value, ctx, operators, allowEmpty) {
     var editor = listEditor(param, value, ctx, {
-      addLabel: 'Add rule',
+      addLabel: DL.t('fields.addRule'),
       renderRow: function (r, api) {
         var col = colSelect(ctx.columns, r.column);
         col.addEventListener('change', function () { r.column = col.value; api.emit(); });
         var val = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.value == null ? '' : r.value, spellcheck: 'false' });
-        var val2 = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.value2 == null ? '' : r.value2, placeholder: 'and' });
+        var val2 = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.value2 == null ? '' : r.value2, placeholder: DL.t('fields.and') });
         var syncInputs = function () {
           var def = DL.findOption(operators, r.op) || { needs: 'text' };
           val.hidden = def.needs === 'none';
           val2.hidden = def.needs !== 'range';
-          val.placeholder = def.needs === 'number' ? 'number' : def.needs === 'date' ? 'e.g. 2024-01-31' : def.needs === 'range' ? 'from' : 'value';
+          val.placeholder = DL.t(def.needs === 'number' ? 'fields.phNumber' : def.needs === 'date' ? 'fields.phDate' : def.needs === 'range' ? 'fields.phFrom' : 'fields.phValue');
         };
         var op = U.select(operators, r.op || operators[0].value, function (v) { r.op = v; syncInputs(); api.emit(); });
         val.addEventListener('input', function () { r.value = val.value; api.emit(true); });
@@ -393,11 +393,11 @@
         syncInputs();
         var row = U.el('div', { class: 'rule-row' }, [col, op, val, val2]);
         if (allowEmpty) {
-          var check = U.check('Skip empty', r.allowEmpty !== false, function (on) { r.allowEmpty = on; api.emit(); });
-          check.el.title = 'Empty values pass this rule';
+          var check = U.check(DL.t('fields.skipEmpty'), r.allowEmpty !== false, function (on) { r.allowEmpty = on; api.emit(); });
+          check.el.title = DL.t('fields.skipEmptyHelp');
           row.appendChild(check.el);
         }
-        row.appendChild(removeButton('Remove rule', api.remove));
+        row.appendChild(removeButton(DL.t('fields.removeRule'), api.remove));
         return row;
       }
     });
@@ -414,16 +414,16 @@
 
   renderers.sortKeys = function (param, value, ctx) {
     var editor = listEditor(param, value, ctx, {
-      addLabel: 'Add another column',
+      addLabel: DL.t('fields.addColumn'),
       renderRow: function (k, api, index) {
         var col = colSelect(ctx.columns, k.column);
         col.addEventListener('change', function () { k.column = col.value; api.emit(); });
         var row = U.el('div', { class: 'rule-row' }, [
-          U.el('span', { class: 'text-secondary small', style: 'flex:0 0 auto', text: index === 0 ? 'Sort by' : 'then by' }),
+          U.el('span', { class: 'text-secondary small', style: 'flex:0 0 auto', text: DL.t(index === 0 ? 'fields.sortBy' : 'fields.thenBy') }),
           col,
           U.select(DL.SORT_TYPES, k.type, function (v) { k.type = v; api.emit(); }),
           U.select(DL.SORT_DIRS, k.dir, function (v) { k.dir = v; api.emit(); }),
-          removeButton('Remove', api.remove)
+          removeButton(DL.t('fields.remove'), api.remove)
         ]);
         return row;
       }
@@ -433,7 +433,7 @@
 
   F.render = function (param, value, ctx) {
     var r = renderers[param.type];
-    if (!r) return wrap(param, U.el('div', { class: 'text-danger', text: 'Unknown field type "' + param.type + '".' }));
+    if (!r) return wrap(param, U.el('div', { class: 'text-danger', text: DL.t('fields.unknownType', { type: param.type }) }));
     return r(param, value, ctx);
   };
 

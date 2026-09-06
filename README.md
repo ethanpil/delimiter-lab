@@ -16,6 +16,7 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 - Undo and redo.
 - Light and dark theme. The theme follows the system setting until you change it.
 - A timing panel shows the time and the memory of each step.
+- The user interface can be translated (see "Add a language").
 - A Cancel button stops a slow run before its next step. The steps that ran keep their results.
 - Works with large files. The file size limit depends on the memory of the computer.
 
@@ -71,7 +72,8 @@ css/app.css         Styles
 js/engine/core.js   Table model, value parsing, field types, operation and format registries
 js/engine/worker.js Web Worker: reads files, runs the chain, makes downloads
 js/ops/*.js         Operations (one file per group)
-js/app/*.js         State store, worker client, saved workflows, helpers
+js/app/*.js         State store, worker client, saved workflows, texts, helpers
+js/i18n/*.js        Texts of the user interface, one file per language
 js/ui/*.js          Views: steps list, source panel, step form, data grid, dialogs
 js/main.js          Application controller
 vendor/             Bootstrap, Bootstrap Icons, PapaParse, SheetJS
@@ -95,6 +97,15 @@ A result note can be an object `{ text, rows }` instead of a text. The user can 
 ## Add an input or output format
 
 Input formats are listed in `DL.inputFormats` (`core.js`) with their file extensions and options. The worker has a reader for each format id in `readers` (`worker.js`). Output formats are listed in `DL.outputFormats` with their options. The worker has a writer for each format id in `writers`.
+
+## Add a language
+
+The texts of the user interface are in `js/i18n/en.js`. To add a language:
+
+1. Copy `js/i18n/en.js` to `js/i18n/xx.js`, where `xx` is the two-letter language code. Change `'en'` in `DL.registerLocale('en', ...)` to `'xx'` and translate the texts. Keep the `{placeholders}`. A key that you leave out shows the English text.
+2. Add `'xx'` to `DL.LOCALES` in `js/manifest.js`.
+
+The page uses the language of the browser. Add `?lang=xx` to the address to force a language. The names and the settings of the operations, and the notes in the results, are in English.
 
 ## Release
 

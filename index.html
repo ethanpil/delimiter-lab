@@ -18,7 +18,7 @@
       } catch (e) { /* no storage: the light theme stays */ }
     })();
   </script>
-  <link rel="stylesheet" href="css/app.css?v=1.3.0-dev5">
+  <link rel="stylesheet" href="css/app.css?v=1.3.0-dev6">
 </head>
 <body>
   <noscript><div class="p-4">Delimiter Lab needs JavaScript to run.</div></noscript>
@@ -29,41 +29,41 @@
       <span class="fw-semibold">Delimiter Lab</span>
     </a>
     <div class="workflow-name-wrap d-flex align-items-center gap-2 ms-3">
-      <input id="workflowName" class="form-control form-control-sm workflow-name" type="text" placeholder="Untitled workflow" maxlength="80" title="Workflow name" aria-label="Workflow name">
+      <input id="workflowName" class="form-control form-control-sm workflow-name" type="text" placeholder="Untitled workflow" maxlength="80" title="Workflow name" aria-label="Workflow name" data-i18n-placeholder="header.untitled" data-i18n-title="header.workflowName" data-i18n-label="header.workflowName">
       <span id="saveState" class="text-secondary small"></span>
     </div>
     <div class="ms-auto d-flex align-items-center gap-2">
-      <div class="btn-group btn-group-sm" role="group" aria-label="Undo and redo">
-        <button id="btnUndo" class="btn btn-outline-secondary" type="button" title="Undo (Ctrl+Z)" disabled><i class="bi bi-arrow-counterclockwise"></i></button>
-        <button id="btnRedo" class="btn btn-outline-secondary" type="button" title="Redo (Ctrl+Y)" disabled><i class="bi bi-arrow-clockwise"></i></button>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Undo and redo" data-i18n-label="header.undoRedo">
+        <button id="btnUndo" class="btn btn-outline-secondary" type="button" title="Undo (Ctrl+Z)" data-i18n-title="header.undo" disabled><i class="bi bi-arrow-counterclockwise"></i></button>
+        <button id="btnRedo" class="btn btn-outline-secondary" type="button" title="Redo (Ctrl+Y)" data-i18n-title="header.redo" disabled><i class="bi bi-arrow-clockwise"></i></button>
       </div>
       <div class="btn-group btn-group-sm">
-        <button id="btnSave" class="btn btn-outline-primary" type="button" title="Save this workflow in the browser (Ctrl+S)"><i class="bi bi-bookmark-plus"></i><span class="btn-label"> Save</span></button>
-        <button id="btnWorkflows" class="btn btn-outline-primary" type="button" title="Open a saved workflow"><i class="bi bi-collection"></i><span class="btn-label"> Workflows</span></button>
+        <button id="btnSave" class="btn btn-outline-primary" type="button" title="Save this workflow in the browser (Ctrl+S)" data-i18n-title="header.saveTitle"><i class="bi bi-bookmark-plus"></i> <span class="btn-label" data-i18n="header.save">Save</span></button>
+        <button id="btnWorkflows" class="btn btn-outline-primary" type="button" title="Open a saved workflow" data-i18n-title="header.workflowsTitle"><i class="bi bi-collection"></i> <span class="btn-label" data-i18n="header.workflows">Workflows</span></button>
       </div>
-      <button id="btnDownload" class="btn btn-primary btn-sm" type="button" title="Download the result of the selected step (Ctrl+D)"><i class="bi bi-download"></i><span class="btn-label"> Download</span></button>
-      <button id="btnTiming" class="btn btn-outline-secondary btn-sm" type="button" title="Show the time and the memory of each step"><i class="bi bi-speedometer2"></i></button>
-      <button id="btnTheme" class="btn btn-outline-secondary btn-sm" type="button" title="Switch between the light and the dark theme"><i class="bi bi-moon"></i></button>
-      <button id="btnHelp" class="btn btn-outline-secondary btn-sm" type="button" title="Help"><i class="bi bi-question-circle"></i></button>
+      <button id="btnDownload" class="btn btn-primary btn-sm" type="button" title="Download the result of the selected step (Ctrl+D)" data-i18n-title="header.downloadTitle"><i class="bi bi-download"></i> <span class="btn-label" data-i18n="header.download">Download</span></button>
+      <button id="btnTiming" class="btn btn-outline-secondary btn-sm" type="button" title="Show the time and the memory of each step" data-i18n-title="header.timing"><i class="bi bi-speedometer2"></i></button>
+      <button id="btnTheme" class="btn btn-outline-secondary btn-sm" type="button" title="Switch between the light and the dark theme" data-i18n-title="header.theme"><i class="bi bi-moon"></i></button>
+      <button id="btnHelp" class="btn btn-outline-secondary btn-sm" type="button" title="Help" data-i18n-title="header.help"><i class="bi bi-question-circle"></i></button>
     </div>
   </header>
 
   <div id="progress" class="app-progress" hidden>
     <div class="progress" role="progressbar"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div></div>
     <div class="app-progress-label small text-secondary"></div>
-    <button id="btnCancel" class="btn btn-outline-secondary btn-sm no-tip" type="button" hidden title="Stop before the next step. The steps that ran keep their results.">Cancel</button>
-    <button id="btnStop" class="btn btn-outline-danger btn-sm no-tip" type="button" hidden title="Stop the work and turn the current step off">Stop</button>
+    <button id="btnCancel" class="btn btn-outline-secondary btn-sm no-tip" type="button" hidden title="Stop before the next step. The steps that ran keep their results." data-i18n-title="progress.cancelTitle" data-i18n="progress.cancel">Cancel</button>
+    <button id="btnStop" class="btn btn-outline-danger btn-sm no-tip" type="button" hidden title="Stop the work and turn the current step off" data-i18n-title="progress.stopTitle" data-i18n="progress.stop">Stop</button>
   </div>
 
   <main class="app-body">
     <aside class="app-sidebar" id="sidebar">
       <div class="sidebar-head d-flex align-items-center justify-content-between">
-        <span class="fw-semibold">Steps</span>
-        <span class="text-secondary small">Click a step to edit it</span>
+        <span class="fw-semibold" data-i18n="sidebar.steps">Steps</span>
+        <span class="text-secondary small" data-i18n="sidebar.hint">Click a step to edit it</span>
       </div>
       <div id="chain" class="chain"></div>
       <div class="sidebar-foot">
-        <button id="btnAddStep" class="btn btn-primary w-100" type="button"><i class="bi bi-plus-lg"></i> Add step</button>
+        <button id="btnAddStep" class="btn btn-primary w-100" type="button"><i class="bi bi-plus-lg"></i> <span data-i18n="sidebar.addStep">Add step</span></button>
       </div>
     </aside>
 
@@ -76,13 +76,13 @@
           <div class="ms-auto d-flex align-items-center gap-2">
             <div class="input-group input-group-sm preview-search">
               <span class="input-group-text"><i class="bi bi-search"></i></span>
-              <input id="previewSearch" type="search" class="form-control" placeholder="Find in preview" aria-label="Find in preview">
-              <button id="previewSearchPrev" class="btn btn-outline-secondary" type="button" title="Previous match" disabled><i class="bi bi-chevron-up"></i></button>
-              <button id="previewSearchNext" class="btn btn-outline-secondary" type="button" title="Next match" disabled><i class="bi bi-chevron-down"></i></button>
+              <input id="previewSearch" type="search" class="form-control" placeholder="Find in preview" aria-label="Find in preview" data-i18n-placeholder="preview.search" data-i18n-label="preview.search">
+              <button id="previewSearchPrev" class="btn btn-outline-secondary" type="button" title="Previous match" data-i18n-title="preview.prev" disabled><i class="bi bi-chevron-up"></i></button>
+              <button id="previewSearchNext" class="btn btn-outline-secondary" type="button" title="Next match" data-i18n-title="preview.next" disabled><i class="bi bi-chevron-down"></i></button>
             </div>
             <span id="previewSearchInfo" class="text-secondary small"></span>
-            <button id="btnDiff" class="btn btn-outline-secondary btn-sm no-tip" type="button" title="Mark the cells that this step changed" data-bs-toggle="button"><i class="bi bi-highlighter"></i><span class="btn-label"> Changes</span></button>
-            <button id="btnCompare" class="btn btn-outline-secondary btn-sm no-tip" type="button" title="Show the input of this step next to its output" data-bs-toggle="button"><i class="bi bi-layout-split"></i><span class="btn-label"> Compare</span></button>
+            <button id="btnDiff" class="btn btn-outline-secondary btn-sm no-tip" type="button" title="Mark the cells that this step changed" data-i18n-title="preview.changesTitle" data-bs-toggle="button"><i class="bi bi-highlighter"></i> <span class="btn-label" data-i18n="preview.changes">Changes</span></button>
+            <button id="btnCompare" class="btn btn-outline-secondary btn-sm no-tip" type="button" title="Show the input of this step next to its output" data-i18n-title="preview.compareTitle" data-bs-toggle="button"><i class="bi bi-layout-split"></i> <span class="btn-label" data-i18n="preview.compare">Compare</span></button>
           </div>
         </div>
         <div id="gridWrap" class="grid-wrap">
@@ -97,11 +97,15 @@
   <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
 
   <script src="vendor/bootstrap.bundle.min.js"></script>
-  <script src="js/manifest.js?v=1.3.0-dev5"></script>
+  <script src="js/manifest.js?v=1.3.0-dev6"></script>
   <script>
-    // Loads the application files listed in the manifest, in order.
+    // Loads the application files listed in the manifest, in order. The texts of the language of the
+    // user (?lang=xx or the browser language) load when js/i18n/ has a file for it.
     (function () {
-      var files = [].concat(DL.FILES.engine, DL.FILES.ops, DL.FILES.app, DL.FILES.ui, DL.FILES.main);
+      var m = /[?&]lang=([a-zA-Z-]+)/.exec(location.search);
+      var lang = (m ? m[1] : navigator.language || 'en').toLowerCase().split('-')[0];
+      var locale = lang !== 'en' && DL.LOCALES.indexOf(lang) >= 0 ? ['js/i18n/' + lang + '.js'] : [];
+      var files = [].concat(DL.FILES.engine, DL.FILES.ops, DL.FILES.app, locale, DL.FILES.ui, DL.FILES.main);
       files.forEach(function (f) {
         var s = document.createElement('script');
         s.src = f + '?v=' + DL.VERSION;

@@ -3,6 +3,7 @@
   'use strict';
   var U = DL.util;
   var $ = function (id) { return document.getElementById(id); };
+  DL.setLocale(DL.detectLocale()); // before any view makes text
 
   var store = new DL.Store();
   var progressEl = $('progress');
@@ -51,7 +52,7 @@
   var stopTimer = null;
   function armStop() {
     clearTimeout(stopTimer);
-    stopTimer = setTimeout(function () { showProgress('Still running… this takes longer than usual.', 50); $('btnStop').hidden = false; }, 15000);
+    stopTimer = setTimeout(function () { showProgress(DL.t('progress.slow'), 50); $('btnStop').hidden = false; }, 15000);
   }
   function disarmStop() { clearTimeout(stopTimer); $('btnStop').hidden = true; }
   $('btnStop').addEventListener('click', function () {
@@ -61,9 +62,9 @@
     var sel = store.state.selectedId;
     if (sel !== 'source' && store.getStep(sel) && store.getStep(sel).enabled !== false) {
       store.toggleStep(sel);
-      U.toast('Step ' + (store.stepIndex(sel) + 1) + ' did not finish and was turned off. Check its settings.', 'warning');
+      U.toast(DL.t('msg.stepStopped', { n: store.stepIndex(sel) + 1 }), 'warning');
     }
-    grid.show(null, 'Reading the file…');
+    grid.show(null, DL.t('preview.readingFile'));
     previewKey = null;
     if (store.state.source.file) loadSource();
   });
@@ -76,7 +77,7 @@
     if (!files || !files.length) return;
     if (files.length === 1) { openFile(files[0]); return; }
     if (!store.state.workflow.steps.length) {
-      U.toast('Add steps first. Then drop many files to apply the steps to all of them. The first file is open now.', 'info');
+      U.toast(DL.t('msg.addStepsFirst'), 'info');
       openFile(files[0]);
       return;
     }
@@ -86,13 +87,13 @@
   function openFile(file) {
     if (!file) return;
     if (file.size > 1.5 * 1024 * 1024 * 1024) {
-      U.toast('This file is larger than 1.5 GB. Browsers cannot work with files this big. Split it first.', 'danger');
+      U.toast(DL.t('msg.fileTooBig'), 'danger');
       return;
     }
     store.setSourceFile(file);
     if (DL.inputFormatFor(file.name).hasSheets) {
       var token = ++loadToken;
-      showProgress('Reading workbook', 5);
+      showProgress(DL.t('progress.readingWorkbook'), 5);
       engine.listSheets(file).then(function (msg) {
         if (token !== loadToken) return;
         store.setSheets(msg.sheets);
@@ -113,7 +114,7 @@
     var token = ++loadToken;
     src.status = 'loading';
     store.emit('source');
-    showProgress('Reading file', 2);
+    showProgress(DL.t('progress.readingFile'), 2);
     armStop();
     engine.load(src.file, src.options).then(function (msg) {
       if (token !== loadToken) return;
@@ -150,7 +151,7 @@
       return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false };
     });
     var started = Date.now();
-    var slowTimer = setTimeout(function () { showProgress('Running steps…', 50); }, 400);
+    var slowTimer = setTimeout(function () { showProgress(DL.t('progress.runningSteps'), 50); }, 400);
     armStop();
     runInFlight = true;
     cancelable = true;
@@ -162,7 +163,7 @@
       disarmStop();
       if (!batchLabel) hideProgress();
       store.setResults(msg.results);
-      if (msg.cancelled) U.toast('The run was cancelled. The steps that ran keep their results.', 'info');
+      if (msg.cancelled) U.toast(DL.t('msg.runCancelled'), 'info');
     }).catch(function (err) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
@@ -170,7 +171,7 @@
       cancelable = false;
       disarmStop();
       hideProgress();
-      U.toast('Something went wrong while running the steps: ' + err.message, 'danger');
+      U.toast(DL.t('msg.runFailed', { error: err.message }), 'danger');
     });
   }
 
@@ -207,11 +208,11 @@
     var shown = store.displayResultFor(sel);
     var title = '';
     var stats = '';
-    if (sel === 'source') title = 'Source file';
+    if (sel === 'source') title = DL.t('preview.sourceFile');
     else {
       var step = store.getStep(sel);
       var op = step && DL.getOp(step.opId);
-      title = 'Step ' + (store.stepIndex(sel) + 1) + ': ' + (op ? op.name : '');
+      title = DL.t('preview.step', { n: store.stepIndex(sel) + 1, name: op ? op.name : '' });
     }
     if (shown.stepId === 'source' && st.source.info) stats = DL.rowsAndColumns(st.source.info.rowCount, st.source.info.columns.length);
     else if (shown.result) stats = DL.rowsAndColumns(shown.result.rowCount, shown.result.columns.length) + (shown.result.ms > 50 ? ' · ' + (shown.result.ms / 1000).toFixed(1) + ' s' : '');
@@ -221,7 +222,7 @@
     previewStats = stats;
     $('btnDiff').disabled = !shown.stepId || shown.stepId === 'source';
     grid.diff = !!(diffOn() && shown.stepId && shown.stepId !== 'source');
-    var message = shown.stepId ? '' : (st.source.status === 'loading' ? 'Reading the file…' : 'Open a file to see a preview.');
+    var message = shown.stepId ? '' : (st.source.status === 'loading' ? DL.t('preview.readingFile') : DL.t('preview.openFile'));
     var key = (shown.stepId || 'none') + '|' + resultKey(shown.stepId || 'source') + '|' + message + '|' + (grid.diff ? 'diff' : '');
     if (key !== previewKey) {
       previewKey = key;
@@ -244,15 +245,15 @@
     if (!summary || !diffOn()) return;
     var text;
     if (!summary.sameRows) {
-      text = 'Rows went from ' + summary.rowsBefore.toLocaleString() + ' to ' + summary.rowsAfter.toLocaleString() + '. Cell changes are not marked when the rows change.';
+      text = DL.t('preview.rowsWent', { before: summary.rowsBefore.toLocaleString(), after: summary.rowsAfter.toLocaleString() });
     } else {
       var cells = 0, cols = 0, added = 0;
       summary.columns.forEach(function (c) { if (c.isNew) added++; else if (c.changed) { cells += c.changed; cols++; } });
       var parts = [];
-      if (cells) parts.push(DL.pluralize(cells, 'changed cell') + ' in ' + DL.pluralize(cols, 'column'));
+      if (cells) parts.push(DL.t('preview.changedCells', { cells: DL.pluralize(cells, 'changed cell'), cols: DL.pluralize(cols, 'column') }));
       if (added) parts.push(DL.pluralize(added, 'new column'));
-      if (summary.removed.length) parts.push(DL.pluralize(summary.removed.length, 'removed column') + ' (' + summary.removed.join(', ') + ')');
-      text = parts.length ? parts.join(' · ') : 'No cell changed.';
+      if (summary.removed.length) parts.push(DL.t('preview.removedColumns', { n: DL.pluralize(summary.removed.length, 'removed column'), names: summary.removed.join(', ') }));
+      text = parts.length ? parts.join(' · ') : DL.t('preview.noCellChanged');
     }
     $('previewStats').textContent = previewStats + (previewStats ? ' · ' : '') + text;
   };
@@ -290,11 +291,11 @@
     }
     wrap.hidden = false;
     if (!gridBefore) {
-      gridBefore = new DL.GridView(wrap, engine, { title: 'Before' });
+      gridBefore = new DL.GridView(wrap, engine, { title: DL.t('preview.before') });
       gridBefore.onScroll = function (top) { if (Math.abs(grid.scroll.scrollTop - top) > 1) grid.scroll.scrollTop = top; };
       grid.onScroll = function (top) { if (gridBefore && Math.abs(gridBefore.scroll.scrollTop - top) > 1) gridBefore.scroll.scrollTop = top; };
     }
-    grid.setTitle('After');
+    grid.setTitle(DL.t('preview.after'));
     var key = beforeId + '|' + resultKey(beforeId);
     if (gridBefore.key !== key) { gridBefore.key = key; gridBefore.show(beforeId); }
   }
@@ -317,7 +318,7 @@
 
   function setSearchResult(matches, total) {
     var info = '';
-    if (searchQuery) info = !total ? 'No matches' : U.fmtInt(total) + (total > matches.length ? ' rows match (first ' + matches.length + ' shown)' : ' rows match');
+    if (searchQuery) info = !total ? DL.t('preview.noMatches') : DL.t(total > matches.length ? 'preview.rowsMatchFirst' : 'preview.rowsMatch', { n: U.fmtInt(total), shown: matches.length });
     showMatches(matches, info);
   }
 
@@ -340,9 +341,9 @@
     engine.findRows(stepId, note.rows, 2000).then(function (msg) {
       if (token !== searchToken) return;
       var r = msg.result;
-      if (r.removed) { showMatches([], 'These rows are not in the output of this step.'); return; }
+      if (r.removed) { showMatches([], DL.t('preview.notInOutput')); return; }
       if (grid.stepId !== stepId) { showMatches([], ''); return; }
-      showMatches(r.matches, note.text + (r.total > r.matches.length ? ' (first ' + r.matches.length + ' shown)' : ''));
+      showMatches(r.matches, note.text + (r.total > r.matches.length ? DL.t('preview.firstShown', { shown: r.matches.length }) : ''));
     }).catch(function (err) { U.toast(err.message, 'danger'); });
   };
 
@@ -367,7 +368,7 @@
   /* ---------- Steps ---------- */
   function addStep() {
     if (store.state.source.status !== 'ready' && !store.state.workflow.steps.length) {
-      U.toast('Tip: open a file first so you can pick columns by name.', 'info');
+      U.toast(DL.t('msg.openFileTip'), 'info');
     }
     DL.dialogs.pickOperation({}, function (opId) { store.addStep(opId, store.state.selectedId); });
   }
@@ -375,7 +376,7 @@
   /* ---------- Workflows ---------- */
   function saveWorkflow() {
     var st = store.state;
-    if (!st.workflow.steps.length) { U.toast('Add at least one step before saving.', 'info'); return; }
+    if (!st.workflow.steps.length) { U.toast(DL.t('msg.addStepBeforeSave'), 'info'); return; }
     var doSave = function (name) {
       var rec = DL.workflows.save({
         id: st.workflow.id,
@@ -386,12 +387,12 @@
       });
       if (!rec) return;
       store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
-      U.toast('Workflow "' + rec.name + '" saved.', 'success');
+      U.toast(DL.t('msg.workflowSaved', { name: rec.name }), 'success');
     };
     if (st.workflow.id && st.workflow.name) doSave(st.workflow.name);
     else {
       var suggested = st.workflow.name || (st.source.file ? U.baseName(st.source.file.name) + ' workflow' : 'My workflow');
-      U.prompt({ title: 'Save workflow', message: 'Give this workflow a name so you can find it again.', value: suggested, yes: 'Save' }, doSave);
+      U.prompt({ title: DL.t('msg.saveTitle'), message: DL.t('msg.saveMessage'), value: suggested, yes: DL.t('common.save') }, doSave);
     }
   }
 
@@ -408,10 +409,10 @@
         }
       }
       var level = DL.workflows.matchLevel(wf, store.sourceColumns());
-      if (level === 'partial' || level === 'none') U.toast('Some steps refer to columns that are not in this file. Check the steps marked "Needs setup".', 'warning');
+      if (level === 'partial' || level === 'none') U.toast(DL.t('msg.columnsMissing'), 'warning');
     };
     if (store.state.workflow.steps.length && store.state.dirty) {
-      U.confirm({ title: 'Replace current steps?', message: 'The steps you built now will be replaced. You can undo this.', yes: 'Replace' }, go);
+      U.confirm({ title: DL.t('msg.replaceTitle'), message: DL.t('msg.replaceMessage'), yes: DL.t('msg.replace') }, go);
     } else go();
   }
 
@@ -422,10 +423,10 @@
         var wf = DL.workflows.fromJSON(reader.result);
         var rec = DL.workflows.save(wf);
         applyWorkflow(rec || wf);
-        U.toast('Workflow "' + wf.name + '" imported and saved.', 'success');
+        U.toast(DL.t('msg.workflowImported', { name: wf.name }), 'success');
       } catch (e) { U.toast(e.message, 'danger'); }
     };
-    reader.onerror = function () { U.toast('The file could not be read.', 'danger'); };
+    reader.onerror = function () { U.toast(DL.t('msg.fileNotRead'), 'danger'); };
     reader.readAsText(file);
   }
 
@@ -442,25 +443,25 @@
     var st = store.state;
     var el = $('saveState');
     if (!st.workflow.steps.length) el.textContent = '';
-    else if (st.workflow.id && !st.dirty) el.textContent = 'Saved';
-    else if (st.workflow.id) el.textContent = 'Changed since last save';
-    else el.textContent = 'Not saved yet';
+    else if (st.workflow.id && !st.dirty) el.textContent = DL.t('header.saved');
+    else if (st.workflow.id) el.textContent = DL.t('header.unsavedChanges');
+    else el.textContent = DL.t('header.notSaved');
   }
 
   /* ---------- Download ---------- */
   function download() {
     var st = store.state;
-    if (st.source.status !== 'ready') { U.toast('Open a file first.', 'info'); return; }
+    if (st.source.status !== 'ready') { U.toast(DL.t('msg.openFileFirst'), 'info'); return; }
     var sel = st.selectedId;
     var shown = store.displayResultFor(sel);
     var note = null;
     if (sel !== 'source') {
       var idx = store.stepIndex(sel);
       var op = DL.getOp(st.workflow.steps[idx].opId);
-      if (shown.stepId !== sel) note = 'Step ' + (idx + 1) + ' cannot run yet, so the download holds the data going into it.';
-      else note = 'This download holds the result after step ' + (idx + 1) + (op ? ' (' + op.name + ')' : '') + '.';
+      if (shown.stepId !== sel) note = DL.t('msg.downloadNoteBlocked', { n: idx + 1 });
+      else note = DL.t('msg.downloadNoteStep', { n: idx + 1, op: op ? ' (' + op.name + ')' : '' });
     } else if (st.workflow.steps.length) {
-      note = 'The source is selected, so this download holds the unchanged source data. Select the last step to download the final result.';
+      note = DL.t('msg.downloadNoteSource');
     }
     var base = U.baseName(st.source.file.name);
     var wfName = (st.workflow.name || '').trim();
@@ -468,11 +469,11 @@
     DL.dialogs.download({ baseName: base + suffix, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
-      showProgress('Preparing download', 20);
+      showProgress(DL.t('progress.preparingDownload'), 20);
       engine.exportStep(shown.stepId, options).then(function (msg) {
         hideProgress();
         U.downloadBlob(msg.blob, fileName);
-        U.toast('Downloaded ' + fileName + ' (' + DL.pluralize(msg.rowCount, 'row') + ').', 'success');
+        U.toast(DL.t('msg.downloaded', { name: fileName, rows: DL.pluralize(msg.rowCount, 'row') }), 'success');
       }).catch(function (err) { hideProgress(); U.toast(err.message, 'danger'); });
     });
   }
@@ -491,26 +492,26 @@
     batchRunning = false;
     batchLabel = '';
     engine.restart();
-    grid.show(null, 'Reading the file…');
+    grid.show(null, DL.t('preview.readingFile'));
     previewKey = null;
     if (store.state.source.file) loadSource();
-    U.toast('The batch was stopped.', 'warning');
+    U.toast(DL.t('msg.batchStopped'), 'warning');
   }
 
   function batchApply(files) {
-    if (batchRunning) { U.toast('A batch is still running.', 'info'); return; }
+    if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
     var accepted = DL.acceptedExtensions();
     var skipped = files.filter(function (f) { return accepted.indexOf('.' + DL.fileExtension(f.name)) < 0; });
     files = files.filter(function (f) { return skipped.indexOf(f) < 0; });
-    if (!files.length) { U.toast('None of the files is a data file (' + accepted.join(', ') + ').', 'warning'); return; }
+    if (!files.length) { U.toast(DL.t('msg.noDataFiles', { types: accepted.join(', ') }), 'warning'); return; }
     var st = store.state;
     var steps = st.workflow.steps.map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
     var wfName = U.safeFileName((st.workflow.name || '').trim() || 'workflow');
-    var note = 'Each file is read with the current source options, goes through all ' + DL.pluralize(steps.length, 'step') + ' and is written to a zip file. The open file stays as it is.';
+    var note = DL.t('msg.batchNote', { steps: DL.pluralize(steps.length, 'step') });
     DL.dialogs.download({ files: files, baseName: wfName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, zipName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
-      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: 'Not a data file.' }; }));
+      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: DL.t('msg.notDataFile') }; }));
     });
   }
 
@@ -533,10 +534,10 @@
     function end() { batchRunning = false; batchLabel = ''; cancelable = false; disarmStop(); hideProgress(); }
     function next() {
       if (token !== batchToken) return;
-      if (batchCancelled) { for (; i < files.length; i++) items.push({ name: files[i].name, error: 'Cancelled.' }); }
+      if (batchCancelled) { for (; i < files.length; i++) items.push({ name: files[i].name, error: DL.t('msg.cancelled') }); }
       if (i >= files.length) { finish(); return; }
       var file = files[i++];
-      batchLabel = 'File ' + i + ' of ' + files.length + ': ' + file.name;
+      batchLabel = DL.t('progress.file', { n: i, total: files.length, name: file.name });
       cancelable = !batchCancelled;
       showProgress('', Math.round(100 * (i - 1) / files.length));
       armStop();
@@ -554,7 +555,7 @@
     function finish() {
       var done = items.filter(function (it) { return it.blob; });
       if (!done.length) { end(); DL.dialogs.batchReport(items); return; }
-      batchLabel = 'Making the zip file';
+      batchLabel = DL.t('progress.zip');
       cancelable = false;
       showProgress('', 95);
       engine.zip(done.map(function (it) { return { name: it.name, blob: it.blob }; })).then(function (msg) {
@@ -562,7 +563,7 @@
         U.downloadBlob(msg.blob, zipName);
         var attention = items.some(function (it) { return it.error || (it.notes && it.notes.length); });
         if (attention) DL.dialogs.batchReport(items);
-        else U.toast('Downloaded ' + zipName + ' with ' + DL.pluralize(done.length, 'file') + '.', 'success');
+        else U.toast(DL.t('msg.downloadedZip', { name: zipName, files: DL.pluralize(done.length, 'file') }), 'success');
       }).catch(function (err) { if (token !== batchToken) return; end(); U.toast(err.message, 'danger'); });
     }
     next();
@@ -698,6 +699,7 @@
   });
 
   /* ---------- Start ---------- */
+  DL.applyI18n(document);
   U.tooltips(document.body);
   chain.render(true);
   renderConfig();
@@ -706,7 +708,7 @@
   updateSaveState();
   $('workflowName').value = store.state.workflow.name || '';
   if (store.restoredSourceName && store.state.workflow.steps.length) {
-    U.toast('Your steps were restored. Open "' + store.restoredSourceName + '" again to continue.', 'info');
+    U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
   }
   // A handle for tests: open the page with ?debug to use it from the browser console.
   if (/[?&]debug\b/.test(location.search)) window.DLApp = { store: store, engine: engine, grid: grid, openFile: openFile, openFiles: openFiles };

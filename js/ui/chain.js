@@ -42,7 +42,7 @@
       el.appendChild(U.el('div', { class: 'chain-connector' }));
       el.appendChild(U.el('div', { class: 'chain-empty' }, [
         U.el('i', { class: 'bi bi-arrow-down me-1' }),
-        st.source.status === 'ready' ? 'Add a step to start changing the data.' : 'Open a file first, then add steps.'
+        DL.t(st.source.status === 'ready' ? 'chain.addStep' : 'chain.openFirst')
       ]));
     }
     var self = this;
@@ -70,17 +70,17 @@
         DL.rowsAndColumns(src.info.rowCount, src.info.columns.length)
       ]);
     } else if (src.status === 'loading') {
-      meta = U.el('div', { class: 'step-meta text-secondary' }, [U.el('span', { class: 'spinner-border spinner-border-sm' }), ' Reading file…']);
+      meta = U.el('div', { class: 'step-meta text-secondary' }, [U.el('span', { class: 'spinner-border spinner-border-sm' }), ' ' + DL.t('chain.readingFile')]);
     } else if (src.status === 'error') {
-      meta = U.el('div', { class: 'step-meta text-danger' }, [U.el('span', { class: 'status-dot status-error' }), 'Could not read the file']);
+      meta = U.el('div', { class: 'step-meta text-danger' }, [U.el('span', { class: 'status-dot status-error' }), DL.t('chain.readError')]);
     } else {
-      meta = U.el('div', { class: 'step-meta text-secondary' }, ['No file yet']);
+      meta = U.el('div', { class: 'step-meta text-secondary' }, [DL.t('chain.noFile')]);
     }
     return U.el('div', { class: 'step-card' + (selected ? ' is-selected' : ''), tabindex: '0', role: 'button' }, [
       U.el('span', { class: 'step-num' }, [U.el('i', { class: 'bi bi-file-earmark-text' })]),
       U.el('div', { class: 'step-body' }, [
-        U.el('div', { class: 'step-title', text: 'Source file' }),
-        U.el('div', { class: 'step-summary', text: src.file ? src.file.name : 'Click to open a file' }),
+        U.el('div', { class: 'step-title', text: DL.t('preview.sourceFile') }),
+        U.el('div', { class: 'step-summary', text: src.file ? src.file.name : DL.t('chain.clickToOpen') }),
         meta
       ])
     ]);
@@ -110,9 +110,9 @@
         U.el('div', { class: 'step-meta' }, [U.el('span', { class: 'status-dot status-' + status }), statusText])
       ]),
       U.el('div', { class: 'step-actions btn-group-vertical' }, [
-        U.el('button', { type: 'button', class: 'btn btn-link btn-sm text-secondary no-tip', title: disabled ? 'Turn on' : 'Turn off (skip this step)', dataset: { action: 'toggle' } }, [U.el('i', { class: 'bi ' + (disabled ? 'bi-toggle-off' : 'bi-toggle-on') })]),
-        U.el('button', { type: 'button', class: 'btn btn-link btn-sm text-secondary no-tip', title: 'Duplicate', dataset: { action: 'duplicate' } }, [U.el('i', { class: 'bi bi-copy' })]),
-        U.el('button', { type: 'button', class: 'btn btn-link btn-sm text-danger no-tip', title: 'Delete', dataset: { action: 'remove' } }, [U.el('i', { class: 'bi bi-trash' })])
+        U.el('button', { type: 'button', class: 'btn btn-link btn-sm text-secondary no-tip', title: DL.t(disabled ? 'chain.turnOn' : 'chain.turnOff'), dataset: { action: 'toggle' } }, [U.el('i', { class: 'bi ' + (disabled ? 'bi-toggle-off' : 'bi-toggle-on') })]),
+        U.el('button', { type: 'button', class: 'btn btn-link btn-sm text-secondary no-tip', title: DL.t('chain.duplicate'), dataset: { action: 'duplicate' } }, [U.el('i', { class: 'bi bi-copy' })]),
+        U.el('button', { type: 'button', class: 'btn btn-link btn-sm text-danger no-tip', title: DL.t('common.delete'), dataset: { action: 'remove' } }, [U.el('i', { class: 'bi bi-trash' })])
       ])
     ]);
   };

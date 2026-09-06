@@ -113,7 +113,7 @@
     var t = U.el('div', { class: 'toast align-items-center text-bg-' + (kind || 'dark') + ' border-0', role: 'status' }, [
       U.el('div', { class: 'd-flex' }, [
         U.el('div', { class: 'toast-body', text: message }),
-        U.el('button', { type: 'button', class: 'btn-close btn-close-white me-2 m-auto', 'data-bs-dismiss': 'toast', 'aria-label': 'Close' })
+        U.el('button', { type: 'button', class: 'btn-close btn-close-white me-2 m-auto', 'data-bs-dismiss': 'toast', 'aria-label': DL.t('common.close') })
       ])
     ]);
     wrap.appendChild(t);
@@ -130,7 +130,7 @@
         U.el('div', { class: 'modal-content' }, [
           U.el('div', { class: 'modal-header' }, [
             U.el('h5', { class: 'modal-title', text: opts.title || '' }),
-            U.el('button', { type: 'button', class: 'btn-close', 'data-bs-dismiss': 'modal', 'aria-label': 'Close' })
+            U.el('button', { type: 'button', class: 'btn-close', 'data-bs-dismiss': 'modal', 'aria-label': DL.t('common.close') })
           ]),
           U.el('div', { class: 'modal-body' }, opts.body),
           opts.footer ? U.el('div', { class: 'modal-footer' }, opts.footer) : null
@@ -162,11 +162,11 @@
     var m;
     m = U.modal({
       enterSubmits: true,
-      title: opts.title || 'Are you sure?',
+      title: opts.title || DL.t('common.sure'),
       body: U.el('p', { class: 'mb-0', text: opts.message || '' }),
       footer: [
-        U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: 'Cancel' }),
-        U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || 'OK', autofocus: true, onclick: function () { m.close(); onYes(); } })
+        U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: DL.t('common.cancel') }),
+        U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () { m.close(); onYes(); } })
       ]
     });
   };
@@ -186,8 +186,8 @@
       title: opts.title || '',
       body: [opts.message ? U.el('p', { text: opts.message }) : null, input],
       footer: [
-        U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: 'Cancel' }),
-        U.el('button', { type: 'button', class: 'btn btn-primary', text: opts.yes || 'OK', onclick: submit })
+        U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: DL.t('common.cancel') }),
+        U.el('button', { type: 'button', class: 'btn btn-primary', text: opts.yes || DL.t('common.ok'), onclick: submit })
       ],
       onShown: function () { input.focus(); input.select(); }
     });

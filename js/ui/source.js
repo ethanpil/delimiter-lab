@@ -28,8 +28,8 @@
 
     el.appendChild(U.el('div', { class: 'config-head' }, [
       U.el('div', {}, [
-        U.el('h5', {}, [U.el('i', { class: 'bi bi-file-earmark-text text-primary' }), 'Source file']),
-        U.el('p', { class: 'config-desc', text: 'Open a CSV, TSV, text or Excel file. Nothing leaves your computer: the file is read inside your browser.' })
+        U.el('h5', {}, [U.el('i', { class: 'bi bi-file-earmark-text text-primary' }), DL.t('preview.sourceFile')]),
+        U.el('p', { class: 'config-desc', text: DL.t('source.intro') })
       ])
     ]));
 
@@ -39,8 +39,8 @@
 
     var drop = U.el('div', { class: 'dropzone', tabindex: '0', role: 'button' }, [
       U.el('i', { class: 'bi bi-cloud-arrow-up' }),
-      src.file ? U.el('div', {}, [U.el('strong', { text: src.file.name }), ' · ' + U.fmtBytes(src.file.size), U.el('div', { class: 'small', text: 'Drop another file here or click to change it' })])
-        : U.el('div', {}, [U.el('strong', { text: 'Drop a file here' }), ' or click to choose one', U.el('div', { class: 'small mt-1', text: DL.acceptedExtensions().map(function (e) { return e.slice(1).toUpperCase(); }).join(', ') + '. Drop many files to apply the steps to all of them.' })])
+      src.file ? U.el('div', {}, [U.el('strong', { text: src.file.name }), ' · ' + U.fmtBytes(src.file.size), U.el('div', { class: 'small', text: DL.t('source.dropAnother') })])
+        : U.el('div', {}, [U.el('strong', { text: DL.t('source.dropHere') }), DL.t('source.orClick'), U.el('div', { class: 'small mt-1', text: DL.t('source.formats', { types: DL.acceptedExtensions().map(function (e) { return e.slice(1).toUpperCase(); }).join(', ') }) })])
     ]);
     drop.addEventListener('click', function () { fileInput.click(); });
     drop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
@@ -56,14 +56,14 @@
 
     if (!src.file) {
       el.appendChild(U.el('div', { class: 'mt-2 small' }, [
-        'No file at hand? ',
-        U.el('a', { href: '#', text: 'Try the sample data', onclick: function (e) { e.preventDefault(); self.actions.loadSample(); } }),
-        ' to see how Delimiter Lab works.'
+        DL.t('source.noFile'),
+        U.el('a', { href: '#', text: DL.t('source.trySample'), onclick: function (e) { e.preventDefault(); self.actions.loadSample(); } }),
+        DL.t('source.sampleSuffix')
       ]));
     }
 
     if (src.status === 'error') {
-      el.appendChild(U.el('div', { class: 'alert alert-danger mt-3 mb-0' }, [U.el('i', { class: 'bi bi-exclamation-triangle me-1' }), src.error || 'The file could not be read.']));
+      el.appendChild(U.el('div', { class: 'alert alert-danger mt-3 mb-0' }, [U.el('i', { class: 'bi bi-exclamation-triangle me-1' }), src.error || DL.t('msg.fileNotRead')]));
     }
 
     if (src.file) el.appendChild(this.optionsForm());
@@ -71,10 +71,10 @@
     if (src.status === 'ready' && src.info) {
       var info = src.info;
       var bits = [DL.rowsAndColumns(info.rowCount, info.columns.length)];
-      if (info.encoding) bits.push('encoding ' + info.encoding.toUpperCase());
-      if (info.delimiter) bits.push('separator ' + describeDelimiter(info.delimiter));
-      if (info.sheet) bits.push('sheet "' + info.sheet + '"');
-      bits.push('read in ' + (info.ms / 1000).toFixed(1) + ' s');
+      if (info.encoding) bits.push(DL.t('source.encoding', { name: info.encoding.toUpperCase() }));
+      if (info.delimiter) bits.push(DL.t('source.separator', { name: describeDelimiter(info.delimiter) }));
+      if (info.sheet) bits.push(DL.t('source.sheet', { name: info.sheet }));
+      bits.push(DL.t('source.readIn', { s: (info.ms / 1000).toFixed(1) }));
       var box = U.el('div', { class: 'alert alert-light border mt-3 mb-0 py-2' }, [
         U.el('div', {}, [U.el('i', { class: 'bi bi-check-circle text-success me-1' }), bits.join(' · ')])
       ]);
@@ -86,10 +86,10 @@
   };
 
   function describeDelimiter(d) {
-    if (d === '\t') return 'tab';
-    if (d === ',') return 'comma';
-    if (d === ';') return 'semicolon';
-    if (d === '|') return 'pipe';
+    if (d === '\t') return DL.t('source.tab');
+    if (d === ',') return DL.t('source.comma');
+    if (d === ';') return DL.t('source.semicolon');
+    if (d === '|') return DL.t('source.pipe');
     return '"' + d + '"';
   }
 
@@ -116,10 +116,10 @@
 
     if (format.hasSheets) {
       var sheets = st.source.sheets || [];
-      var options = sheets.length ? sheets.map(function (s) { return { value: s, label: s }; }) : [{ value: '', label: 'Reading sheets…' }];
+      var options = sheets.length ? sheets.map(function (s) { return { value: s, label: s }; }) : [{ value: '', label: DL.t('source.readingSheets') }];
       var current = o.sheet || (st.source.info && st.source.info.sheet) || sheets[0] || '';
       var sheetSel = U.select(options, current, function (v) { self.store.setSourceOptions({ sheet: v }); apply.cancel(); self.actions.reload(); });
-      grid.insertBefore(U.el('div', { class: 'field' }, [U.el('label', { class: 'field-label', text: 'Sheet' }), sheetSel]), grid.firstChild);
+      grid.insertBefore(U.el('div', { class: 'field' }, [U.el('label', { class: 'field-label', text: DL.t('source.sheetLabel') }), sheetSel]), grid.firstChild);
     }
     return grid;
   };

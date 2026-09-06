@@ -11,6 +11,7 @@
 - Add: Cancel button that stops a run or a batch before the next step or file (31d3558).
 - Add: dark theme with a switch in the header (0cf8166).
 - Add: timing panel with the time and the memory of each step.
+- Add: texts of the user interface in a table, so other languages can be added.
 
 ## 1.2.0
 

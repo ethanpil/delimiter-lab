@@ -41,18 +41,18 @@
         U.el('p', { class: 'config-desc', text: op ? op.description : '' })
       ]),
       U.el('div', { class: 'btn-group btn-group-sm' }, [
-        U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: 'Change to a different operation, keeping the position in the chain', onclick: function () { self.actions.changeOp(id); } }, [U.el('i', { class: 'bi bi-arrow-repeat' }), ' Change operation']),
-        U.el('button', { type: 'button', class: 'btn btn-outline-danger', title: 'Delete this step', onclick: function () { self.actions.remove(id); } }, [U.el('i', { class: 'bi bi-trash' })])
+        U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('config.changeOpTitle'), onclick: function () { self.actions.changeOp(id); } }, [U.el('i', { class: 'bi bi-arrow-repeat' }), ' ' + DL.t('config.changeOp')]),
+        U.el('button', { type: 'button', class: 'btn btn-outline-danger', title: DL.t('config.deleteStep'), onclick: function () { self.actions.remove(id); } }, [U.el('i', { class: 'bi bi-trash' })])
       ])
     ]));
 
     if (!op) {
-      el.appendChild(U.el('div', { class: 'alert alert-danger', text: 'This operation is not available in this version.' }));
+      el.appendChild(U.el('div', { class: 'alert alert-danger', text: DL.t('config.opMissing') }));
       return;
     }
 
     if (st.source.status !== 'ready') {
-      el.appendChild(U.el('div', { class: 'alert alert-info py-2' }, [U.el('i', { class: 'bi bi-info-circle me-1' }), 'Open a source file to see its columns and preview this step.']));
+      el.appendChild(U.el('div', { class: 'alert alert-info py-2' }, [U.el('i', { class: 'bi bi-info-circle me-1' }), DL.t('config.openSource')]));
     }
 
     var rendered = DL.fields.renderAll(op.params, step.params, { columns: columns }, function (key, value, opts) {
@@ -90,7 +90,7 @@
     U.empty(pbox);
     if (problems.length) {
       pbox.appendChild(U.el('div', { class: 'alert alert-warning py-2 mb-0' }, [
-        U.el('div', { class: 'fw-semibold' }, [U.el('i', { class: 'bi bi-exclamation-circle me-1' }), 'To run this step:']),
+        U.el('div', { class: 'fw-semibold' }, [U.el('i', { class: 'bi bi-exclamation-circle me-1' }), DL.t('config.toRun')]),
         U.el('ul', { class: 'notes-list' }, problems.map(function (m) { return U.el('li', { text: m }); }))
       ]));
     }
@@ -101,16 +101,16 @@
       rbox.appendChild(U.el('div', { class: 'alert alert-secondary py-2 mb-0 mt-2', text: DL.SKIPPED_NOTE }));
     } else if (res && !problems.length) {
       if (res.status === 'error') {
-        rbox.appendChild(U.el('div', { class: 'alert alert-danger py-2 mb-0 mt-2' }, [U.el('i', { class: 'bi bi-x-circle me-1' }), res.error || 'This step failed.']));
+        rbox.appendChild(U.el('div', { class: 'alert alert-danger py-2 mb-0 mt-2' }, [U.el('i', { class: 'bi bi-x-circle me-1' }), res.error || DL.t('config.failed')]));
       } else if (!res.hasTable) {
-        rbox.appendChild(U.el('div', { class: 'alert alert-secondary py-2 mb-0 mt-2', text: res.notes[0] || 'Waiting for an earlier step.' }));
+        rbox.appendChild(U.el('div', { class: 'alert alert-secondary py-2 mb-0 mt-2', text: res.notes[0] || DL.t('config.waiting') }));
       } else if (res.notes.length) {
         var self = this;
         rbox.appendChild(U.el('div', { class: 'alert py-2 mb-0 mt-2 ' + (res.status === 'warning' ? 'alert-warning' : 'alert-success') }, [
           U.el('ul', { class: 'notes-list' }, res.notes.map(function (n) {
             if (typeof n === 'string' || !self.onShowRows) return U.el('li', { text: DL.noteText(n) });
             // A note with rows is a link: a click shows those rows in the preview.
-            var link = U.el('a', { href: '#', class: 'note-link', text: n.text, title: 'Show these rows in the preview' });
+            var link = U.el('a', { href: '#', class: 'note-link', text: n.text, title: DL.t('config.showRows') });
             link.addEventListener('click', function (e) { e.preventDefault(); self.onShowRows(id, n); });
             return U.el('li', {}, [link]);
           }))

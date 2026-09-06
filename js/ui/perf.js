@@ -18,7 +18,7 @@
   // Opens the panel. store gives the steps and results; memory is the reply of the worker.
   DL.showTiming = function (store, memory) {
     var st = store.state;
-    var head = U.el('tr', {}, ['Step', 'Operation', 'Time', 'Rows', 'Cells', 'Status']
+    var head = U.el('tr', {}, [DL.t('timing.step'), DL.t('timing.operation'), DL.t('timing.time'), DL.t('timing.rows'), DL.t('timing.cells'), DL.t('timing.status')]
       .map(function (t, i) { return U.el('th', { class: i >= 2 && i <= 4 ? 'text-end' : '', text: t }); }));
     var rows = [];
     var totalMs = 0;
@@ -27,7 +27,7 @@
       totalMs += info.ms || 0;
       rows.push(U.el('tr', {}, [
         U.el('td', { text: '' }),
-        U.el('td', { text: 'Source file' + ' · ' + info.fileName }),
+        U.el('td', { text: DL.t('timing.source') + ' · ' + info.fileName }),
         U.el('td', { class: 'text-end', text: timeText(info.ms) }),
         U.el('td', { class: 'text-end', text: U.fmtInt(info.rowCount) }),
         U.el('td', { class: 'text-end', text: cellsText(info.rowCount * info.columns.length) }),
@@ -50,20 +50,24 @@
       ]));
     });
     rows.push(U.el('tr', { class: 'fw-semibold' }, [
-      U.el('td', {}), U.el('td', { text: 'Total' }), U.el('td', { class: 'text-end', text: timeText(totalMs) }), U.el('td', {}), U.el('td', {}), U.el('td', {})
+      U.el('td', {}), U.el('td', { text: DL.t('timing.total') }), U.el('td', { class: 'text-end', text: timeText(totalMs) }), U.el('td', {}), U.el('td', {}), U.el('td', {})
     ]));
-    var memoryText = memory ? 'Results in memory: about ' + DL.pluralize(memory.cells, 'cell') + ' (' + U.fmtBytes(memory.cells * BYTES_PER_CELL) + '). The safe limit on this computer is about ' + DL.pluralize(memory.maxCells, 'cell') + '.' : '';
+    var memoryText = memory ? DL.t('timing.memory', {
+      cells: DL.pluralize(memory.cells, 'cell'),
+      mb: U.fmtBytes(memory.cells * BYTES_PER_CELL),
+      limit: DL.pluralize(memory.maxCells, 'cell')
+    }) : '';
     U.modal({
-      title: 'Time and memory',
+      title: DL.t('timing.title'),
       size: 'lg',
       scrollable: true,
       body: U.el('div', {}, [
-        st.source.status === 'ready' ? null : U.el('p', { class: 'text-secondary', text: 'Open a file to see the timing of the steps.' }),
+        st.source.status === 'ready' ? null : U.el('p', { class: 'text-secondary', text: DL.t('timing.noFile') }),
         U.el('div', { class: 'table-responsive' }, [U.el('table', { class: 'table table-sm timing-table' }, [U.el('thead', {}, [head]), U.el('tbody', {}, rows)])]),
         memoryText ? U.el('p', { class: 'mb-1', text: memoryText }) : null,
-        U.el('p', { class: 'small text-secondary mb-0', text: 'A step that did not run again after a change keeps its last time. The memory is an estimate: unchanged columns are shared between steps.' })
+        U.el('p', { class: 'small text-secondary mb-0', text: DL.t('timing.note') })
       ]),
-      footer: [U.el('button', { type: 'button', class: 'btn btn-primary', 'data-bs-dismiss': 'modal', text: 'Close' })]
+      footer: [U.el('button', { type: 'button', class: 'btn btn-primary', 'data-bs-dismiss': 'modal', text: DL.t('common.close') })]
     });
   };
 })(typeof self !== 'undefined' ? self : this);

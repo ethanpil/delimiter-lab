@@ -97,7 +97,7 @@
       this.renderHeader();
       this.rowsEl.style.height = '0px';
       U.empty(this.rowsEl);
-      this.showMessage(message || 'Nothing to show yet.');
+      this.showMessage(message || DL.t('grid.nothingYet'));
       return Promise.resolve();
     }
     this.showMessage('');
@@ -114,7 +114,7 @@
       self.rowsEl.style.height = Math.max(1, Math.round(self.total * ROW_H * self.scale)) + 'px';
       self.renderHeader();
       self.renderRows();
-      if (!self.total) self.showMessage(self.columns.length ? 'No rows.' : 'No data.');
+      if (!self.total) self.showMessage(DL.t(self.columns.length ? 'grid.noRows' : 'grid.noData'));
       self.engine.columnInfo(stepId).then(function (r) {
         if (self.showVersion !== version) return;
         self.info = r.info;
@@ -228,14 +228,14 @@
       if (info && info[c]) {
         var t = info[c].type;
         icon = '<i class="type-icon bi ' + (t === 'number' ? 'bi-123' : t === 'date' ? 'bi-calendar3' : 'bi-fonts') + '"></i>';
-        title = name + ' · ' + (t === 'number' ? 'numbers' : t === 'date' ? 'dates' : 'text') + (info[c].emptyPct ? ' · ' + info[c].emptyPct + '% empty' : '');
+        title = name + ' · ' + DL.t(t === 'number' ? 'grid.numbers' : t === 'date' ? 'grid.dates' : 'grid.text') + (info[c].emptyPct ? ' · ' + DL.t('grid.emptyPct', { pct: info[c].emptyPct }) : '');
       }
       if (diff && diff.columns[c]) {
         var d = diff.columns[c];
-        if (d.isNew) { cls += ' is-new'; badge = '<span class="hbadge">new</span>'; title += ' · new column'; }
+        if (d.isNew) { cls += ' is-new'; badge = '<span class="hbadge">' + U.esc(DL.t('grid.newBadge')) + '</span>'; title += ' · ' + DL.t('grid.newColumn'); }
         else if (d.changed) { cls += ' is-changed'; badge = '<span class="hbadge">' + d.changed.toLocaleString() + '</span>'; title += ' · ' + DL.pluralize(d.changed, 'changed cell'); }
       }
-      title += ' · Click for the column profile';
+      title += ' · ' + DL.t('grid.clickProfile');
       html += '<div class="' + cls + '" data-col="' + c + '" style="width:' + this.widths[c] + 'px" title="' + U.esc(title) + '">' + icon + '<span class="hname">' + U.esc(name) + '</span>' + badge + '</div>';
     }
     var openCol = keepProfile && this.popover ? this.popover.col : -1;
@@ -329,7 +329,7 @@
           html += '<div class="' + cls + '" style="width:' + widths[c] + 'px">' + esc(v) + '</div>';
         }
       } else {
-        html += '<div class="grid-cell text-secondary" style="width:200px">Loading…</div>';
+        html += '<div class="grid-cell text-secondary" style="width:200px">' + U.esc(DL.t('grid.loading')) + '</div>';
       }
       html += '</div>';
     }
@@ -388,28 +388,28 @@
 
   // Makes the HTML of the column profile.
   function profileHtml(st) {
-    var kind = st.type === 'number' ? 'Numbers' : st.type === 'date' ? 'Dates' : 'Text';
+    var kind = DL.t(st.type === 'number' ? 'profile.numbers' : st.type === 'date' ? 'profile.dates' : 'profile.text');
     var filled = st.rows - st.empty;
     var pct = function (n) { return st.rows ? ' (' + Math.round(100 * n / st.rows) + '%)' : ''; };
-    var rows = statRow('Type', kind) +
-      statRow('Rows', st.rows.toLocaleString()) +
-      statRow('Empty', st.empty.toLocaleString() + pct(st.empty)) +
-      statRow('Different values', st.distinct.toLocaleString() + (st.distinct === filled && filled ? ' (all unique)' : ''));
+    var rows = statRow(DL.t('profile.type'), kind) +
+      statRow(DL.t('profile.rows'), st.rows.toLocaleString()) +
+      statRow(DL.t('profile.empty'), st.empty.toLocaleString() + pct(st.empty)) +
+      statRow(DL.t('profile.distinct'), st.distinct.toLocaleString() + (st.distinct === filled && filled ? ' (' + DL.t('profile.allUnique') + ')' : ''));
     if (st.numbers) {
-      rows += statRow('Numbers', st.numbers.toLocaleString() + pct(st.numbers)) +
-        statRow('Smallest', number(st.min)) + statRow('Largest', number(st.max)) +
-        statRow('Sum', number(st.sum)) + statRow('Average', number(st.avg));
+      rows += statRow(DL.t('profile.numbers'), st.numbers.toLocaleString() + pct(st.numbers)) +
+        statRow(DL.t('profile.smallest'), number(st.min)) + statRow(DL.t('profile.largest'), number(st.max)) +
+        statRow(DL.t('profile.sum'), number(st.sum)) + statRow(DL.t('profile.average'), number(st.avg));
     }
     if (st.dates) {
-      rows += statRow('Dates', st.dates.toLocaleString() + pct(st.dates)) +
-        statRow('Earliest', DL.formatDateISO(st.earliest)) + statRow('Latest', DL.formatDateISO(st.latest));
+      rows += statRow(DL.t('profile.dates'), st.dates.toLocaleString() + pct(st.dates)) +
+        statRow(DL.t('profile.earliest'), DL.formatDateISO(st.earliest)) + statRow(DL.t('profile.latest'), DL.formatDateISO(st.latest));
     }
-    if (filled) rows += statRow('Length', st.minLen === st.maxLen ? st.maxLen + ' characters' : st.minLen + ' to ' + st.maxLen + ' characters');
+    if (filled) rows += statRow(DL.t('profile.length'), st.minLen === st.maxLen ? DL.t('profile.chars', { n: st.maxLen }) : DL.t('profile.lengthRange', { min: st.minLen, max: st.maxLen }));
     var top = st.top.map(function (t) {
       return '<tr><td class="pv">' + U.esc(t.value.length > 40 ? t.value.slice(0, 40) + '…' : t.value) + '</td><td class="pc">' + t.count.toLocaleString() + '</td></tr>';
     }).join('');
     return '<table class="profile-table">' + rows + '</table>' +
-      (top ? '<div class="profile-sub">Most common values</div><table class="profile-table profile-top">' + top + '</table>' : '');
+      (top ? '<div class="profile-sub">' + U.esc(DL.t('profile.mostCommon')) + '</div><table class="profile-table profile-top">' + top + '</table>' : '');
   }
 
   GridView.prototype.showProfile = function (cell, col) {
@@ -419,7 +419,7 @@
     this.closeProfile();
     var pop = new bootstrap.Popover(cell, {
       html: true, sanitize: false, trigger: 'manual', placement: 'bottom', container: 'body',
-      customClass: 'profile-popover', title: U.esc(this.columns[col]), content: '<div class="text-secondary small">Calculating…</div>'
+      customClass: 'profile-popover', title: U.esc(this.columns[col]), content: '<div class="text-secondary small">' + U.esc(DL.t('profile.calculating')) + '</div>'
     });
     pop.col = col;
     pop.show();
