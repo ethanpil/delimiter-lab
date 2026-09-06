@@ -118,7 +118,7 @@
       self.engine.columnInfo(stepId).then(function (r) {
         if (self.showVersion !== version) return;
         self.info = r.info;
-        self.renderHeader();
+        self.renderHeader(true);
         self.renderKey = '';
         self.renderRows();
       }).catch(function () { /* the header keeps plain names */ });
@@ -126,7 +126,7 @@
         self.engine.diffSummary(stepId).then(function (r) {
           if (self.showVersion !== version) return;
           self.diffSummary = r.summary;
-          self.renderHeader();
+          self.renderHeader(true);
           if (self.onDiffSummary) self.onDiffSummary(r.summary);
         }).catch(function () { /* the header keeps plain names */ });
       }
@@ -147,9 +147,10 @@
     if (this.inflight.has(pageIndex)) return this.inflight.get(pageIndex);
     var stepId = this.stepId;
     var page = this.page;
+    var version = this.showVersion;
     var p = this.engine.slice(stepId, pageIndex * page, page, this.diff).then(function (msg) {
       if (self.inflight.get(pageIndex) === p) self.inflight.delete(pageIndex);
-      if (self.stepId !== stepId) return msg.data;
+      if (self.showVersion !== version) return msg.data;
       self.pages.set(pageIndex, msg.data);
       if (self.pages.size * page * self.columns.length > CACHE_CELLS) {
         // Keep memory small: drop the pages that are far from the current view.
@@ -210,7 +211,8 @@
     return [Math.max(0, first - COL_BUFFER), Math.min(w, last + COL_BUFFER)];
   };
 
-  GridView.prototype.renderHeader = function () {
+  // keepProfile: true when the header only gets new data, so an open column profile moves to the new cell.
+  GridView.prototype.renderHeader = function (keepProfile) {
     var h = this.header;
     var range = this.visibleColumns();
     var html = '<div class="grid-hcell rownum" style="width:' + this.rowNumW + 'px">#</div>';
@@ -236,11 +238,14 @@
       title += ' · Click for the column profile';
       html += '<div class="' + cls + '" data-col="' + c + '" style="width:' + this.widths[c] + 'px" title="' + U.esc(title) + '">' + icon + '<span class="hname">' + U.esc(name) + '</span>' + badge + '</div>';
     }
+    var openCol = keepProfile && this.popover ? this.popover.col : -1;
     this.closeProfile();
     h.innerHTML = html;
     h.style.width = this.totalW + 'px';
     this.rowsEl.style.width = this.totalW + 'px';
     this.headerRange = range;
+    var cell = openCol >= 0 ? h.querySelector('.grid-hcell[data-col="' + openCol + '"]') : null;
+    if (cell) this.showProfile(cell, openCol);
   };
 
   // The number of rows that fit in the view below the header.
@@ -381,7 +386,7 @@
     return DL.numberText(Math.round(v * 1e6) / 1e6);
   }
 
-  // The HTML of the column profile.
+  // Makes the HTML of the column profile.
   function profileHtml(st) {
     var kind = st.type === 'number' ? 'Numbers' : st.type === 'date' ? 'Dates' : 'Text';
     var filled = st.rows - st.empty;

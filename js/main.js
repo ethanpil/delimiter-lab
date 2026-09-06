@@ -197,6 +197,8 @@
         if (searchQuery) runSearch();
         else if (shown.result && shown.stepId === sel) scrollToNewColumns(shown);
       });
+    } else if (grid.diff && grid.diffSummary) {
+      grid.onDiffSummary(grid.diffSummary); // the grid did not change: keep the change counts on the stats line
     }
     refreshCompare();
   }

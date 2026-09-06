@@ -23,7 +23,8 @@ var state = {
   recent: [],            // step ids read most recently by the preview
   maxCells: 8e6,
   cacheBudgetCells: 24e6,
-  useCounter: 0
+  useCounter: 0,
+  diffMemo: new WeakMap() // output table -> { input, summary }
 };
 
 self.onmessage = function (e) {
@@ -448,8 +449,8 @@ function getSlice(msg) {
   return data;
 }
 
-// For each row in the slice, the indexes of the cells that differ from the input table.
-// A new column counts as changed in every row. Null when the row count differs.
+// Gives, for each row of the slice, the indexes of the cells that differ from the input table.
+// A new column counts as changed in every row. Gives null when the row count differs.
 function sliceChanges(table, input, start, end) {
   if (!input || input.length !== table.length) return null;
   var w = table.columns.length;
@@ -470,11 +471,19 @@ function sliceChanges(table, input, start, end) {
   return out;
 }
 
-// Counts the cells that a step changed, column by column.
+// Counts the cells that a step changed, column by column. The count is kept for each output table.
 function diffSummary(msg) {
   var table = tableFor(msg.stepId);
   var input = inputFor(msg.stepId);
   if (!table || !input) return null;
+  var memo = state.diffMemo.get(table);
+  if (memo && memo.input === input) return memo.summary;
+  var summary = compareTables(table, input);
+  state.diffMemo.set(table, { input: input, summary: summary });
+  return summary;
+}
+
+function compareTables(table, input) {
   var sameRows = table.length === input.length;
   var n = table.length;
   var columns = table.columns.map(function (name, c) {
@@ -522,6 +531,14 @@ function columnInfo(msg) {
 
 var TOP_VALUES = 5;
 
+// Gives up to `size` values spread over the column, without a copy of the whole column.
+function sampleOf(get, n, size) {
+  var step = Math.max(1, Math.floor(n / size));
+  var out = [];
+  for (var i = 0; i < n && out.length < size; i += step) out.push(get(i));
+  return out;
+}
+
 // Full statistics for one column, for the column profile.
 function columnStats(msg) {
   var table = tableFor(msg.stepId);
@@ -529,10 +546,10 @@ function columnStats(msg) {
   var n = table.length;
   var get = DL.cellGetter(table, msg.col);
   var g = DL.groupRows([get], n);
-  var type = DL.detectType(DL.col(table, msg.col), 500);
+  var type = DL.detectType(sampleOf(get, n, 500), 500);
   var st = { name: table.columns[msg.col], type: type, rows: n, empty: 0, distinct: 0, numbers: 0, sum: 0, min: Infinity, max: -Infinity,
     minLen: Infinity, maxLen: 0, dates: 0, earliest: Infinity, latest: -Infinity, top: [] };
-  // Each different value is looked at once, and its count is used as the weight.
+  // The loop looks at each different value once and uses its count as the weight.
   for (var i = 0; i < n; i++) {
     if (g.first[i] !== i) continue;
     var v = get(i);
@@ -541,7 +558,7 @@ function columnStats(msg) {
     st.distinct++;
     if (v.length < st.minLen) st.minLen = v.length;
     if (v.length > st.maxLen) st.maxLen = v.length;
-    var x = DL.toNumber(v);
+    var x = type === 'number' ? DL.toNumber(v) : NaN;
     if (x === x) {
       st.numbers += count;
       st.sum += x * count;
