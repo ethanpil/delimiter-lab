@@ -2,6 +2,8 @@
 
 Delimiter Lab changes delimited data files step by step, without code. It runs fully in the browser. No data leaves the computer.
 
+Use it here: **https://ethanpil.github.io/delimiter-lab/**
+
 ## Features
 
 - Reads CSV, TSV, text files with any separator, and Excel workbooks (with sheet selection).
@@ -33,7 +35,7 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 
 ## Run
 
-Delimiter Lab is a static site. Open `index.html` from a web server. Example:
+Delimiter Lab is a static site. The published copy runs at https://ethanpil.github.io/delimiter-lab/. To run your own copy, open `index.html` from a web server. Example:
 
 ```bash
 python -m http.server 8765

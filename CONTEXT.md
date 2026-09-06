@@ -6,6 +6,8 @@ This document is for the developers who maintain and extend Delimiter Lab. It te
 
 Delimiter Lab is a static web application. It reads a CSV, TSV, text or Excel file in the browser, applies a chain of steps (operations) to the data, shows a preview of each step and downloads the result. No data leaves the computer. There is no server, no build step and no package manager. The application is plain ES5 JavaScript (no classes, no arrow functions, no modules) with Bootstrap 5.3 for the user interface. Vendor libraries are pinned copies in `vendor/`: Bootstrap 5.3.3, Bootstrap Icons, PapaParse 5.4.1 and SheetJS 0.20.3.
 
+The published copy runs on GitHub Pages at https://ethanpil.github.io/delimiter-lab/, built from the `master` branch at the root. A push to `master` publishes the change. Every path in the application is relative, so the subfolder of the Pages address works; do not add a path that starts with `/`.
+
 The version in `js/manifest.js` is 1.4.0. `CHANGELOG.md` lists the changes with the commit hashes. The project was built from scratch on 2026-09-04 and 2026-09-05, reviewed with several multi-agent code reviews, and reviewed as a whole on 2026-09-06.
 
 ## 2. How to run, test and release

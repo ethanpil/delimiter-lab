@@ -2,6 +2,7 @@
 
 ## 1.4.0
 
+- Add: the application is published at https://ethanpil.github.io/delimiter-lab/.
 - Add: CONTEXT.md with the design, the conventions, the lessons learned and the pitfalls for developers (159eb16).
 - Fix: Clean Text keeps prose with "<"; the unique rule label names its comparison (f1f0b1d).
 - Fix: number parsing refuses infinite values, malformed digit groups and "(-5)"; number formatting stays sane for huge values (c0e1d74).
