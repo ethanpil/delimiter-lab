@@ -219,6 +219,11 @@
     new bootstrap.Tooltip(container, { selector: '[title]:not(.no-tip), [data-bs-original-title]:not(.no-tip)', delay: { show: 500, hide: 0 }, trigger: 'hover focus' });
   };
 
+  // Removes every tooltip that is on screen. Use it when another panel takes the place of the tooltip.
+  U.hideTooltips = function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.tooltip'), function (tip) { tip.remove(); });
+  };
+
   // Removes the tooltips whose element is no longer in the page. Views call this after they rebuild their content.
   U.hideOrphanTooltips = function () {
     Array.prototype.forEach.call(document.querySelectorAll('.tooltip.show'), function (tip) {

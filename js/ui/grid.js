@@ -57,7 +57,11 @@
     });
     this.popover = null;
     document.addEventListener('click', this.onDocClick = function (e) {
-      if (self.popover && !self.popover.tip.contains(e.target) && !self.header.contains(e.target)) self.closeProfile();
+      var tip = self.popover && self.popover.tip;
+      if (self.popover && !(tip && tip.contains(e.target)) && !self.header.contains(e.target)) self.closeProfile();
+    });
+    document.addEventListener('keydown', this.onDocKey = function (e) {
+      if (e.key === 'Escape' && self.popover) self.closeProfile();
     });
   }
 
@@ -416,31 +420,50 @@
       (top ? '<div class="profile-sub">' + U.esc(DL.t('profile.mostCommon')) + '</div><table class="profile-table profile-top">' + top + '</table>' : '');
   }
 
+  // Puts new text into the open panel. Bootstrap's setContent() shows the panel again, and that
+  // second show closes it at once, because the first show left the state "the mouse is not on it".
+  function setProfileBody(pop, html) {
+    var body = pop.tip && pop.tip.querySelector('.popover-body');
+    if (!body) return;
+    body.innerHTML = html;
+    pop.update(); // the panel changed size: place it again
+  }
+
   GridView.prototype.showProfile = function (cell, col) {
     var self = this;
     var stepId = this.stepId;
     if (this.popover && this.popover.col === col) { this.closeProfile(); return; }
     this.closeProfile();
+    // Bootstrap holds one widget per element. The hover text of the column name goes away while the
+    // panel is open: its instance is disposed (this also stops a hover text that waits to open),
+    // and the class keeps a new one away. The next hover after the panel closes makes it again.
+    var waiting = bootstrap.Tooltip.getInstance(cell);
+    if (waiting) waiting.dispose();
+    cell.classList.add('no-tip');
+    U.hideTooltips();
+    var known = this.profiles[col];
     var pop = new bootstrap.Popover(cell, {
       html: true, sanitize: false, trigger: 'manual', placement: 'bottom', container: 'body',
-      customClass: 'profile-popover', title: U.esc(this.columns[col]), content: '<div class="text-secondary small">' + U.esc(DL.t('profile.calculating')) + '</div>'
+      customClass: 'profile-popover', title: U.esc(this.columns[col]),
+      content: known ? profileHtml(known) : '<div class="text-secondary small">' + U.esc(DL.t('profile.calculating')) + '</div>'
     });
     pop.col = col;
+    pop.cell = cell;
     pop.show();
     this.popover = pop;
-    if (this.profiles[col]) { pop.setContent({ '.popover-body': profileHtml(this.profiles[col]) }); return; }
+    if (known) return;
     this.engine.columnStats(stepId, col).then(function (r) {
-      if (r.stats && self.stepId === stepId) self.profiles[col] = r.stats; // kept even when the popover moved
+      if (r.stats && self.stepId === stepId) self.profiles[col] = r.stats; // kept even when the panel moved
       if (self.popover !== pop) return;
-      if (!r.stats) { pop.setContent({ '.popover-body': '<div class="text-secondary small">' + U.esc(DL.t('grid.noData')) + '</div>' }); return; }
-      pop.setContent({ '.popover-body': profileHtml(r.stats) });
+      setProfileBody(pop, r.stats ? profileHtml(r.stats) : '<div class="text-secondary small">' + U.esc(DL.t('grid.noData')) + '</div>');
     }).catch(function (err) {
-      if (self.popover === pop) pop.setContent({ '.popover-body': '<div class="text-danger small">' + U.esc(err.message || String(err)) + '</div>' });
+      if (self.popover === pop) setProfileBody(pop, '<div class="text-danger small">' + U.esc(err.message || String(err)) + '</div>');
     });
   };
 
   GridView.prototype.closeProfile = function () {
     if (!this.popover) return;
+    if (this.popover.cell) this.popover.cell.classList.remove('no-tip'); // the hover text comes back
     this.popover.dispose();
     this.popover = null;
   };
@@ -450,6 +473,7 @@
     clearTimeout(this.fetchTimer);
     this.closeProfile();
     document.removeEventListener('click', this.onDocClick);
+    document.removeEventListener('keydown', this.onDocKey);
   };
 
   DL.GridView = GridView;

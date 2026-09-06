@@ -164,7 +164,9 @@ These came from measured failures. Each one changed the design.
 11. **The progress bar needs owners.** Four things share one bar (run, batch, download, load). Each fix that hid or showed the bar broke another owner until every path checked the others first.
 12. **Reviews that only read the diff miss the whole.** The diff reviews caught regressions; the whole-codebase review found 53 defects the diffs had never touched, from the strict-mode crash to the import that saved before the user confirmed.
 13. **Two features in one working tree make one spaghetti commit.** Keep patch scripts per feature so the commits can be rebuilt separately.
-14. **Icon-only buttons hide features.** Export and import of workflows existed for a day before the owner could find them; give buttons text.
+14. **A test that calls the handler is not a test of the click.** The column profile was verified with `showProfile()` calls, so the click path shipped broken: the click reached Bootstrap code that the direct call never touched.
+15. **A frozen browser pane hides every bug that waits for a transition.** The profile panel closed itself from `_queueCallback`, which waits for `transitionend`. The pane never finishes transitions, so the panel stayed there and the tests passed. Test transition-dependent behaviour in a real browser, or wait longer than the transition and assert what is on screen.
+16. **Icon-only buttons hide features.** Export and import of workflows existed for a day before the owner could find them; give buttons text.
 
 ## 11. Pitfalls and footguns
 
@@ -185,6 +187,8 @@ These came from measured failures. Each one changed the design.
 - **Spreadsheet options.** The `sheet` option is special-cased in five places (defaults, clean, new file, restore, apply workflow). A batch reads every workbook with the same sheet name and falls back to the first sheet with a note.
 - **`Intl.Collator` costs about 1 µs per compare.** The sort key fast path applies only to plain Latin text in English-like locales.
 - **Bootstrap tooltips outlive their elements.** Views that replace `innerHTML` call `U.hideOrphanTooltips()`.
+- **One Bootstrap widget per element.** `Data.set` refuses a second instance and writes "Bootstrap doesn't allow more than one instance per element" in the console. A column name has a hover text (a delegated Tooltip from `U.tooltips`) and can also open the profile panel (a Popover), so `showProfile` disposes the tooltip instance of that cell first and gives the cell the `no-tip` class while the panel is open. `dispose()` also stops a hover text that waits for its 500 ms delay. The same rule made the `no-tip` class necessary for the Compare and Changes buttons.
+- **Never call `setContent()` on an open Bootstrap popover.** It shows the panel again, and `show()` ends with "if the mouse is not on it, leave", which the previous show set. The panel then closes about a second after it opened. Write into `pop.tip.querySelector('.popover-body')` and call `pop.update()` instead.
 - **The `rowsMatch` and other count texts** take an already pluralized English fragment; a translation cannot fix the word order. This is the documented localization limit.
 - **`localStorage` can be blocked or full.** Every access is in a `try`; the theme script computes the system preference outside its `try`.
 - **The browser pane of the coding assistant** throttles timers when hidden, often times out on screenshots, and never completes Bootstrap hide transitions, so a closed dialog keeps `.modal.show`. Test dialog flows by reading the code or in a real browser. `document.querySelector('.modal.show')` can therefore be stale there.

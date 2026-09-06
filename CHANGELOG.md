@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1
+
+- Fix: the column profile stays open. Bootstrap closed it as soon as the statistics arrived, because setContent() shows the panel again and the second show reads the state that the first show left behind.
+- Fix: the hover text of a column name does not cover its profile panel.
+- Add: the Escape key closes the column profile.
+
 ## 1.4.0
 
 - Add: the application is published at https://ethanpil.github.io/delimiter-lab/.
