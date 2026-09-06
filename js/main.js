@@ -626,6 +626,18 @@
   $('btnWorkflows').addEventListener('click', openWorkflows);
   $('btnDownload').addEventListener('click', download);
   $('btnHelp').addEventListener('click', DL.dialogs.help);
+
+  /* ---------- Theme ---------- */
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    $('btnTheme').querySelector('i').className = theme === 'dark' ? 'bi bi-sun' : 'bi bi-moon';
+  }
+  applyTheme(document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light');
+  $('btnTheme').addEventListener('click', function () {
+    var theme = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(theme);
+    try { localStorage.setItem('dl.theme', theme); } catch (e) { /* no storage: the theme lasts for this page only */ }
+  });
   $('brand').addEventListener('click', function (e) { e.preventDefault(); store.select('source'); });
   $('workflowName').addEventListener('change', function () { store.setWorkflowMeta({ name: $('workflowName').value.trim() }); });
   $('workflowName').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); $('workflowName').blur(); } });
