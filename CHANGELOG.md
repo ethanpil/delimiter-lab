@@ -2,12 +2,12 @@
 
 ## 1.5.0
 
-- Add: an Autosave button in the header writes every change to the saved workflow. It asks for a name first when the workflow has none.
-- Add: opening a workflow while your steps are not saved offers to save them first.
-- Change: the saved workflows list shows the number of steps as a label, and the dates of creation, of the last save and of the last use. It no longer lists the steps.
-- Change: the Rename button shows its name.
-- Change: the help dialog is wider and holds two columns, so it needs no scrolling.
-- Fix: a save keeps the time of the last use of a workflow.
+- Add: an Autosave button in the header writes every change to the saved workflow (09cca9a). It asks for a name first when the workflow has none.
+- Add: a dialog offers to save your steps before it opens a different workflow (09cca9a).
+- Change: the saved workflows list shows the number of steps as a label (09cca9a). It also shows the dates, and it no longer lists the steps.
+- Change: the Rename button shows its name (09cca9a).
+- Change: the help dialog is wider and holds two columns (09cca9a).
+- Fix: a save keeps the time of the last use of a workflow (09cca9a).
 
 ## 1.4.1
 

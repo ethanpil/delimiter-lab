@@ -13,7 +13,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Shows a profile of a column (type, empty cells, different values, smallest and largest, most common values) when you click its name.
 - Marks the cells that a step changed (the "Changes" button). The marks follow moved rows and renamed columns.
 - Shows the rows that failed a Verify rule when you click the rule in the result.
-- Saves workflows in the browser and as files, so you can apply them again to new files. Autosave writes every change to the open workflow.
+- Saves workflows in the browser and as files, so you can apply them again to new files. Autosave writes each change of the steps to the open workflow.
 - Applies the steps to many files at once. Drop the files and choose the output format. The result is a zip file.
 - Undo and redo of every change to the steps.
 - Shows a light or a dark theme. The theme follows the system setting until you change it.
