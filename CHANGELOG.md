@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+- Add: a New button in the header removes the steps and starts a new workflow. It asks two times.
+- Add: "Run a file" in the saved workflows list sends files through a workflow and downloads the result. The steps on the screen stay as they are.
+- Change: the Autosave button is green while autosave is on.
+
 ## 1.5.0
 
 - Add: an Autosave button in the header writes every change to the saved workflow (09cca9a). It asks for a name first when the workflow has none.
