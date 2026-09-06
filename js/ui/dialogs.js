@@ -267,9 +267,28 @@
       U.el('h6', { class: 'mt-3 mt-lg-0', text: DL.t('help.tips') }),
       list('ul', [DL.t('help.tip1'), DL.t('help.tip2'), DL.t('help.tip3'), DL.t('help.tip4'), DL.t('help.tip5'), DL.t('help.tip6'), DL.t('help.tip7'), DL.t('help.tip8'), DL.t('help.tip9'), DL.t('help.tip10')])
     ]);
+    function link(href, text) {
+      return U.el('a', { href: href, target: '_blank', rel: 'noopener noreferrer', text: text });
+    }
+    var about = U.el('p', { class: 'text-secondary small mb-1' }, [
+      DL.t('help.project') + ' ', link('https://github.com/ethanpil/delimiter-lab', 'github.com/ethanpil/delimiter-lab'), '.'
+    ]);
+    // The icon of the application comes from another author. The licence asks for these names.
+    var credit = U.el('p', { class: 'text-secondary small mb-0' }, [
+      DL.t('help.iconFrom') + ' ',
+      link('https://www.svgrepo.com/collection/iconpark-duotone-icons/', 'Iconpark Duotone Icons'),
+      ', ' + DL.t('help.iconBy') + ' ',
+      link('https://www.svgrepo.com/author/bytedance/', 'bytedance'),
+      ', ' + DL.t('help.iconLicence') + ' ',
+      link('https://www.svgrepo.com/page/licensing/#Apache', 'Apache License'),
+      '.'
+    ]);
     var body = U.el('div', {}, [
       U.el('div', { class: 'row g-4' }, [left, right]),
-      U.el('p', { class: 'text-secondary small mt-3 mb-0', text: DL.t('help.local') })
+      U.el('hr', { class: 'mt-4 mb-3' }),
+      U.el('p', { class: 'text-secondary small mb-1', text: DL.t('help.local') }),
+      about,
+      credit
     ]);
     U.modal({ title: DL.t('dialog.help'), body: body, size: 'xl', scrollable: true });
   };

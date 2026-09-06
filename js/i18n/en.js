@@ -207,6 +207,10 @@
     'help.tip8': 'Drop many files at once to apply the steps to all of them and download a zip file.',
     'help.tip9': 'Cancel stops a slow run before its next step. The speedometer button shows the time of each step.',
     'help.tip10': 'To use a workflow that is ready, open Workflows and click "Run a file". The file goes through the steps and the result downloads.',
+    'help.project': 'Delimiter Lab is free software. The code and the notes are at',
+    'help.iconFrom': 'The icon "Process Line" comes from',
+    'help.iconBy': 'by',
+    'help.iconLicence': 'under the',
     'help.local': 'Delimiter Lab runs fully in your browser. No data is sent anywhere.',
     // Steps list (js/ui/chain.js)
     'chain.addStep': 'Add a step to start changing the data.',
