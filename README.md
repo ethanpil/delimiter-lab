@@ -9,14 +9,14 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 - Builds a chain of steps. Each step reads the output of the step before it.
 - Shows a preview of each step. You can download the result of any step.
 - Shows a profile of a column (type, empty cells, different values, smallest and largest, most common values) when you click its name.
-- Marks the cells that a step changed (the "Changes" button).
+- Marks the cells that a step changed (the "Changes" button). The marks follow moved rows and renamed columns.
 - Shows the rows that failed a Verify rule when you click the rule in the result.
 - Saves workflows in the browser and as files, so you can apply them again to new files.
-- Applies the steps to many files at once: drop the files, choose the output format and download a zip file.
+- Applies the steps to many files at once. Drop the files and choose the output format. The result is a zip file.
 - Undo and redo.
-- Light and dark theme. The theme follows the system setting until you change it.
-- A timing panel shows the time and the memory of each step.
-- The user interface can be translated (see "Add a language").
+- Shows a light or a dark theme. The theme follows the system setting until you change it.
+- A timing panel shows the time of each step and the memory that the results hold.
+- You can translate the user interface (see "Add a language").
 - A Cancel button stops a slow run before its next step. The steps that ran keep their results.
 - Works with large files. The file size limit depends on the memory of the computer.
 
@@ -71,10 +71,10 @@ js/manifest.js      Version and the list of application files
 css/app.css         Styles
 js/engine/core.js   Table model, value parsing, field types, operation and format registries
 js/engine/worker.js Web Worker: reads files, runs the chain, makes downloads
-js/ops/*.js         Operations (one file per group)
+js/ops/*.js         Operations (text, rows, columns, dates, reshape, verify)
 js/app/*.js         State store, worker client, saved workflows, texts, helpers
 js/i18n/*.js        Texts of the user interface, one file per language
-js/ui/*.js          Views: steps list, source panel, step form, data grid, dialogs
+js/ui/*.js          Views: steps list, source panel, step form, data grid, dialogs, timing panel
 js/main.js          Application controller
 vendor/             Bootstrap, Bootstrap Icons, PapaParse, SheetJS
 test/               Tests, benchmark and test data
@@ -92,6 +92,10 @@ The `params` list makes the form. Field types: `text`, `number`, `code`, `boolea
 
 Add `outputColumns(columns, params)` when the operation changes the columns. Return `null` when the columns are only known after the step runs. The user interface uses this to show the correct column names in the steps that follow.
 
+Set `category` to one of Text, Dates, Rows, Columns, Quality, Advanced or Other. The operation picker lists the groups in this order (`CATEGORY_ORDER` in `js/ui/dialogs.js`). A group that is not in the list goes last.
+
+An operation that makes a large result must compare the cell count with `DL.maxCells` and throw an error with a clear message when the result is too large. An operation that uses the date of today must give `hashExtra(params)` with the date, so the cached result changes with the day.
+
 A result note can be an object `{ text, rows }` instead of a text. The user can then click the note to see the rows it is about. Add `findRows(inputTable, params, rows, limit)` to the operation. It gives `{ matches: [[row, column], ...], total }` for the output table, or `{ removed: true }` when the rows are not in the output.
 
 ## Add an input or output format
@@ -102,10 +106,20 @@ Input formats are listed in `DL.inputFormats` (`core.js`) with their file extens
 
 The texts of the user interface are in `js/i18n/en.js`. To add a language:
 
-1. Copy `js/i18n/en.js` to `js/i18n/xx.js`, where `xx` is the two-letter language code. Change `'en'` in `DL.registerLocale('en', ...)` to `'xx'` and translate the texts. Keep the `{placeholders}`. A key that you leave out shows the English text.
-2. Add `'xx'` to `DL.LOCALES` in `js/manifest.js`.
+1. Copy `js/i18n/en.js` to `js/i18n/xx.js`, where `xx` is the two-letter language code.
+2. Change `'en'` in `DL.registerLocale('en', ...)` to `'xx'`.
+3. Translate the texts. Keep the `{placeholders}`. A key that you leave out shows the English text.
+4. Add `'xx'` to `DL.LOCALES` in `js/manifest.js`.
 
-The page uses the language of the browser. Add `?lang=xx` to the address to force a language. These texts stay in English: the names, the settings and the result notes of the operations, the status labels of the steps, the plural words in counts ("3 rows"), the relative times in the workflow list, and the errors of workflow files. They come from the engine and the data layer, which the worker also loads.
+The page uses the language of the browser. Add `?lang=xx` to the address to force a language.
+
+These texts stay in English, because they come from the engine and the data layer, which the worker also loads:
+
+- The names, the settings and the result notes of the operations.
+- The status labels of the steps.
+- The plural words in counts, for example "3 rows".
+- The relative times in the workflow list.
+- The notes and the errors of file reading, and the errors of workflow files.
 
 ## Release
 

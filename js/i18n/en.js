@@ -164,6 +164,11 @@
     'help.tip2': 'Turn a step off to see the result without it.',
     'help.tip3': 'Use "Compare" above the preview to see a step\'s input and output side by side.',
     'help.tip4': 'Your steps are kept in the browser, so you can reload the page and carry on. Files are never stored.',
+    'help.tip5': 'Use "Changes" above the preview to mark the cells that a step changed.',
+    'help.tip6': 'Click a column name in the preview to see a profile of the column.',
+    'help.tip7': 'Click a rule in the result of a Verify step to see the rows that failed it.',
+    'help.tip8': 'Drop many files at once to apply the steps to all of them and download a zip file.',
+    'help.tip9': 'Cancel stops a slow run before its next step. The speedometer button shows the time of each step.',
     'help.local': 'Delimiter Lab runs fully in your browser. No data is sent anywhere.',
     // Steps list (js/ui/chain.js)
     'chain.addStep': 'Add a step to start changing the data.',

@@ -577,7 +577,7 @@ function sliceChanges(table, input, start, end) {
   return out;
 }
 
-// Counts the cells that a step changed, column by column. The count is kept per step.
+// Counts the cells that a step changed, column by column. The worker keeps the count for each step.
 function diffSummary(msg) {
   var table = tableFor(msg.stepId);
   var input = inputFor(msg.stepId);
@@ -648,7 +648,7 @@ function sampleOf(get, n, size) {
   return out;
 }
 
-// Full statistics for one column, for the column profile.
+// Calculates the statistics of one column for the column profile.
 var statsMemo = new WeakMap(); // column data -> statistics; steps that share a column share the result
 
 function columnStats(msg) {
@@ -788,8 +788,8 @@ function crc32(blob) {
 var ZIP_MAX_BYTES = 4 * 1024 * 1024 * 1024 - 1;
 var ZIP_MAX_ENTRIES = 65535;
 
-// Makes a zip file from [{ name, blob }]. The zip stores the files without compression: deflate
-// needs a library or an asynchronous stream. The zip refers to the blobs, so no file is copied.
+// Makes a zip file from [{ name, blob }]. The zip stores the files without compression, because
+// deflate needs a library or an asynchronous stream. The zip refers to the blobs, so no file is copied.
 function makeZip(entries) {
   var total = entries.reduce(function (sum, e) { return sum + e.blob.size; }, 0);
   if (entries.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) {

@@ -14,7 +14,7 @@ The engine is already separate from the user interface:
 | --- | --- | --- |
 | Engine | `js/engine/core.js`, `js/ops/*.js` | Nothing (pure JavaScript, runs in browsers and in Node) |
 | Readers and writers | `js/engine/worker.js` | PapaParse (CSV), SheetJS (Excel), the browser `FileReaderSync` |
-| User interface | `js/app/*.js`, `js/ui/*.js`, `js/main.js` | Bootstrap, the DOM |
+| User interface | `js/app/*.js`, `js/i18n/*.js`, `js/ui/*.js`, `js/main.js` | Bootstrap, the DOM |
 
 The engine has no DOM code. The tests in `test/engine.test.js` run it in Node. The workflow file format (`delimiter-lab-workflow`, version 1) is JSON with the steps, their settings, the expected input columns and the source options.
 

@@ -33,10 +33,10 @@
 
   /* ---------- Progress ---------- */
   var progressTimer = null;
-  var batchLabel = ''; // "File 2 of 5: x.csv" while a batch runs; worker messages go after it
-  var runInFlight = false; // true while the worker runs the chain: the bar stays until the run ends
-  var cancelable = false;  // true while a click on Cancel can stop the work
-  var exporting = false;   // true while the worker makes a download
+  var batchLabel = ''; // The batch text, for example "File 2 of 5: x.csv". Worker messages go after it.
+  var runInFlight = false; // True while the worker runs the chain. The bar stays until the run ends.
+  var cancelable = false;  // True while a click on Cancel can stop the work.
+  var exporting = false;   // True while the worker makes a download.
   function showProgress(label, percent) {
     progressEl.hidden = false;
     progressEl.querySelector('.progress-bar').style.width = Math.max(2, percent || 0) + '%';
@@ -496,7 +496,7 @@
   // Ends a batch after the current file. The files that are done go into the zip.
   function cancelBatch() { batchCancelled = true; }
 
-  // Ends a batch that does not finish: the worker restarts and the open file is read again.
+  // Ends a batch that does not finish. The worker restarts and reads the open file again.
   function stopBatch() {
     batchToken++;
     batchRunning = false;

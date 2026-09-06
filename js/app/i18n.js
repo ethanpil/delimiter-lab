@@ -20,7 +20,7 @@
     DL.strings = locales[DL.locale] || {};
   };
 
-  // Gives the text for a key. {name} in the text is replaced by vars.name.
+  // Gives the text for a key. The function replaces {name} in the text with vars.name.
   DL.t = function (key, vars) {
     var s = DL.strings[key];
     if (s === undefined) s = locales.en && locales.en[key];

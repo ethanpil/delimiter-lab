@@ -212,7 +212,7 @@
     return [Math.max(0, first - COL_BUFFER), Math.min(w, last + COL_BUFFER)];
   };
 
-  // keepProfile: true when the header only gets new data, so an open column profile moves to the new cell.
+  // keepProfile: true when the header only gets new data. An open column profile then moves to the new cell.
   GridView.prototype.renderHeader = function (keepProfile) {
     var h = this.header;
     var range = this.visibleColumns();

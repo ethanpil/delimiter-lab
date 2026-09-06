@@ -4,7 +4,7 @@
   var DL = root.DL;
   var U = DL.util;
 
-  var BYTES_PER_CELL = 32; // an estimate for short text values in V8
+  var BYTES_PER_CELL = 32; // An estimate for short text values in V8.
 
   function timeText(ms) {
     if (ms == null) return '';

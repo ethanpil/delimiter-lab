@@ -128,8 +128,8 @@
     return DL.makeTable(table.columns, cols, n);
   };
 
-  // Maps one array of values with fn(value, ctx). The result for each different value is kept
-  // and used again, so fn must depend on the value only. stats.tagged counts the cells where fn called ctx.tag().
+  // Maps one array of values with fn(value, ctx). The function keeps the result of each different
+  // value and uses it again, so fn must depend on the value only. stats.tagged counts the cells where fn called ctx.tag().
   DL.mapValues = function (src, n, fn, stats) {
     var out = new Array(n);
     var tagged = 0;

@@ -181,7 +181,7 @@
       var n = table.length;
       var stats = {};
       var values;
-      // The parse function tags a cell that is not empty and not a date, so the note can count it.
+      // The parse function tags a cell that is not empty and not a date. The note counts the tagged cells.
       var parse = function (v, ctx) {
         var t = DL.toDate(v, dayFirst);
         if (t !== t && v.trim() !== '') ctx.tag();

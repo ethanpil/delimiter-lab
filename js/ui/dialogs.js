@@ -56,7 +56,7 @@
     var current = DL.outputFormatById(opts.lastFormat) || formats[0];
     var values = {};
     formats.forEach(function (f) { values[f.id] = Object.assign(DL.defaultFormatOptions(f), opts.lastOptions && opts.lastOptions[f.id] || {}); });
-    var many = !!opts.files; // apply the workflow to many files: the name is the name of the zip file
+    var many = !!opts.files; // True when the workflow applies to many files. The name is then the name of the zip file.
     var name = U.el('input', { type: 'text', class: 'form-control', value: opts.baseName + (many ? '.zip' : current.extension) });
     var optionsBox = U.el('div');
     var fmt = U.select(formats.map(function (f) { return { value: f.id, label: f.label }; }), current.id, function (v) {
@@ -223,7 +223,12 @@
         U.el('li', { text: DL.t('help.tip1') }),
         U.el('li', { text: DL.t('help.tip2') }),
         U.el('li', { text: DL.t('help.tip3') }),
-        U.el('li', { text: DL.t('help.tip4') })
+        U.el('li', { text: DL.t('help.tip4') }),
+        U.el('li', { text: DL.t('help.tip5') }),
+        U.el('li', { text: DL.t('help.tip6') }),
+        U.el('li', { text: DL.t('help.tip7') }),
+        U.el('li', { text: DL.t('help.tip8') }),
+        U.el('li', { text: DL.t('help.tip9') })
       ]),
       U.el('p', { class: 'text-secondary small mb-0', text: DL.t('help.local') })
     ]);
