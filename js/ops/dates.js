@@ -35,7 +35,7 @@
       DAY_FIRST,
       { key: 'format', label: 'Write as', type: 'select', default: 'YYYY-MM-DD', options: OUTPUT_FORMATS },
       { key: 'pattern', label: 'Custom pattern', type: 'text', default: 'YYYY-MM-DD', required: true, showIf: function (p) { return p.format === 'custom'; },
-        help: 'Tokens: YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A. Other characters are kept as they are.' },
+        help: 'Tokens: YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A a. Put other letters in square brackets, for example [at]. Other characters stay as they are.' },
       { key: 'onError', label: 'When a value is not a date', type: 'select', default: 'keep',
         options: [{ value: 'keep', label: 'Keep the text as it is' }, { value: 'blank', label: 'Make it empty' }] }
     ],
@@ -89,7 +89,7 @@
     return d.getTime();
   }
 
-  // Difference b - a in whole units. Days ignore the time of day and daylight saving changes.
+  // Gives b minus a in whole units. For days and weeks, the function ignores the time of day and daylight saving changes.
   function diffUnits(a, b, unit) {
     if (unit === 'days' || unit === 'weeks') {
       var days = Math.round((startOfDay(b) - startOfDay(a)) / 86400000);
@@ -105,7 +105,7 @@
   function isoWeek(ts) {
     var d = new Date(ts);
     d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7)); // Thursday of this week
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7)); // Move d to the Thursday of the same week.
     var firstThursday = new Date(d.getFullYear(), 0, 4);
     return 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getDay() + 6) % 7)) / 7);
   }
@@ -170,33 +170,45 @@
       var col = DL.col(table, DL.requireCol(table, p.column));
       var dayFirst = !!p.dayFirst;
       var n = table.length;
-      var values = new Array(n);
-      var bad = 0;
-      var i, t;
+      var stats = {};
+      var values;
+      // A cell that is not empty and not a date is tagged, so the note can count it.
+      var parse = function (v, ctx) {
+        var t = DL.toDate(v, dayFirst);
+        if (t !== t && v.trim() !== '') ctx.tag();
+        return t;
+      };
       if (p.mode === 'add') {
         var amount = Number(p.amount);
-        for (i = 0; i < n; i++) {
-          t = DL.toDate(col[i], dayFirst);
-          if (t !== t) { if (col[i].trim() !== '') bad++; values[i] = ''; continue; }
-          values[i] = DL.formatDate(addUnits(t, amount, p.unit), p.format);
+        values = DL.mapValues(col, n, function (v, ctx) {
+          var t = parse(v, ctx);
+          return t !== t ? '' : DL.formatDate(addUnits(t, amount, p.unit), p.format);
+        }, stats);
+      } else if (p.mode === 'diff' && p.otherKind === 'column') {
+        var otherCol = DL.col(table, DL.requireCol(table, p.other));
+        var ctx = { tagged: false, tag: function () { this.tagged = true; } };
+        values = new Array(n);
+        stats.tagged = 0;
+        for (var i = 0; i < n; i++) {
+          ctx.tagged = false;
+          var t = parse(col[i], ctx);
+          var u = parse(otherCol[i], ctx);
+          if (ctx.tagged) stats.tagged++;
+          values[i] = t !== t || u !== u ? '' : String(diffUnits(t, u, p.unit));
         }
       } else if (p.mode === 'diff') {
-        var otherCol = p.otherKind === 'column' ? DL.col(table, DL.requireCol(table, p.other)) : null;
-        var fixed = p.otherKind === 'today' ? startOfDay(Date.now()) : p.otherKind === 'fixed' ? DL.toDate(p.fixedDate, dayFirst) : NaN;
-        for (i = 0; i < n; i++) {
-          t = DL.toDate(col[i], dayFirst);
-          var u = otherCol ? DL.toDate(otherCol[i], dayFirst) : fixed;
-          if (t !== t || u !== u) { if (col[i].trim() !== '' && (!otherCol || otherCol[i].trim() !== '')) bad++; values[i] = ''; continue; }
-          values[i] = String(diffUnits(t, u, p.unit));
-        }
+        var fixed = p.otherKind === 'today' ? startOfDay(Date.now()) : DL.toDate(p.fixedDate, dayFirst);
+        values = DL.mapValues(col, n, function (v, ctx) {
+          var t = parse(v, ctx);
+          return t !== t ? '' : String(diffUnits(t, fixed, p.unit));
+        }, stats);
       } else {
-        for (i = 0; i < n; i++) {
-          t = DL.toDate(col[i], dayFirst);
-          if (t !== t) { if (col[i].trim() !== '') bad++; values[i] = ''; continue; }
-          values[i] = datePart(t, p.part);
-        }
+        values = DL.mapValues(col, n, function (v, ctx) {
+          var t = parse(v, ctx);
+          return t !== t ? '' : datePart(t, p.part);
+        }, stats);
       }
-      var notes = bad ? [DL.pluralize(bad, 'value') + ' could not be read as a date.'] : [];
+      var notes = stats.tagged ? [DL.pluralize(stats.tagged, 'value') + ' could not be read as a date.'] : [];
       return { table: DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, RESULT)), values), notes: notes };
     }
   });

@@ -1,4 +1,4 @@
-/* Text operations: Case, Concat, Split, Split Name, Replace, Substitute, Pad / Trim. */
+/* Text operations: Case, Concat, Split, Split Name, Replace, Substitute, Pad / Trim, Extract, Clean. */
 (function (root) {
   'use strict';
   var DL = root.DL;
@@ -470,37 +470,40 @@
       var joiner = unescapeText(p.joiner);
       var keep = p.noMatch === 'keep';
       var stats = {};
-      var picked = DL.mapColumns(DL.makeTable(['x'], [DL.col(table, idx)], table.length), [0], function (v, ctx) {
+      var all = !!p.all;
+      var values = DL.mapValues(DL.col(table, idx), table.length, function (v, ctx) {
         re.lastIndex = 0;
-        if (!p.all) {
-          var m = re.exec(v);
-          if (!m) { ctx.tag(); return keep ? v : ''; }
-          return m[group] == null ? '' : m[group];
-        }
         var parts = [];
         var hit;
         while ((hit = re.exec(v)) !== null) {
           parts.push(hit[group] == null ? '' : hit[group]);
-          if (hit[0].length === 0) re.lastIndex++;
+          if (!all) break;
+          // An empty match does not move lastIndex. Move it past the next character (two units for a surrogate pair).
+          if (hit[0].length === 0) re.lastIndex += isSurrogatePair(v, re.lastIndex) ? 2 : 1;
         }
         if (!parts.length) { ctx.tag(); return keep ? v : ''; }
         return parts.join(joiner);
       }, stats);
-      var out = DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, EXTRACTED)), picked.cols[0]);
+      var out = DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, EXTRACTED)), values);
       return { table: out, notes: stats.tagged ? [DL.pluralize(stats.tagged, 'value') + ' had no match.'] : [] };
     }
   });
+
+  function isSurrogatePair(s, i) {
+    var a = s.charCodeAt(i), b = s.charCodeAt(i + 1);
+    return a >= 0xD800 && a <= 0xDBFF && b >= 0xDC00 && b <= 0xDFFF;
+  }
 
   /* ---------- Text clean ---------- */
   var HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', copy: '\u00a9', reg: '\u00ae', euro: '\u20ac', pound: '\u00a3' };
 
   function stripHtml(s) {
     if (s.indexOf('<') < 0 && s.indexOf('&') < 0) return s;
-    return s.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (m, code) {
+    return s.replace(/<br\s*\/?>/gi, ' ').replace(/<\/?[a-z!][^>]*>/gi, '').replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (m, code) {
       var c = code.toLowerCase();
       if (c.charAt(0) === '#') {
         var n = c.charAt(1) === 'x' ? parseInt(c.slice(2), 16) : parseInt(c.slice(1), 10);
-        return n >= 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : m;
+        return n >= 0 && n <= 0x10FFFF && (n < 0xD800 || n > 0xDFFF) ? String.fromCodePoint(n) : m;
       }
       return HTML_ENTITIES[c] !== undefined ? HTML_ENTITIES[c] : m;
     });
@@ -509,7 +512,7 @@
   var CLEAN_STEPS = {
     accents: function (s) { return s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); },
     html: stripHtml,
-    control: function (s) { return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, ''); },
+    control: function (s) { return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u200C\uFEFF]/g, ''); },
     quotes: function (s) { return s.replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...'); },
     spaces: function (s) { return s.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ').replace(/\s{2,}/g, ' ').trim(); },
     unicode: function (s) { return s.normalize('NFC'); }

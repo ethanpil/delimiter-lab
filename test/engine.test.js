@@ -464,7 +464,8 @@ test('formatDate writes tokens', () => {
   const t = new Date(2024, 0, 3, 9, 5, 7).getTime();
   assert.strictEqual(DL.formatDate(t, 'YYYY-MM-DD HH:mm:ss'), '2024-01-03 09:05:07');
   assert.strictEqual(DL.formatDate(t, 'D MMM YYYY'), '3 Jan 2024');
-  assert.strictEqual(DL.formatDate(t, 'DDDD, MMMM D, YY h A'), 'Wednesday, January 3, 24 h AM');
+  assert.strictEqual(DL.formatDate(t, 'DDDD, MMMM D, YY [at] H a'), 'Wednesday, January 3, 24 at 9 am');
+  assert.strictEqual(DL.formatDate(new Date(50, 1, 28).setFullYear(50), 'YYYY-MM-DD'), '0050-02-28');
 });
 
 test('dateFormat reads many formats and writes one', () => {
@@ -482,6 +483,9 @@ test('dateMath adds, differs and takes parts', () => {
   assert.deepStrictEqual(rowsOf(add.table).map((r) => r[2]), ['2024-02-29', '2024-01-31', '']);
   const diff = run('dateMath', { column: 'A', mode: 'diff', otherKind: 'column', other: 'B', unit: 'days', output: 'R' }, t);
   assert.deepStrictEqual(rowsOf(diff.table).map((r) => r[2]), ['30', '1', '']);
+  assert.ok(diff.notes[0].indexOf('1 value') === 0);
+  const half = run('dateMath', { column: 'A', mode: 'diff', otherKind: 'column', other: 'B', unit: 'days', output: 'R' }, T(['A', 'B'], [['x', '']]));
+  assert.ok(half.notes[0].indexOf('1 value') === 0);
   const months = run('dateMath', { column: 'A', mode: 'diff', otherKind: 'fixed', fixedDate: '2025-01-30', unit: 'months', output: 'R' }, t);
   assert.deepStrictEqual(rowsOf(months.table).map((r) => r[2]), ['11', '12', '']);
   const part = run('dateMath', { column: 'A', mode: 'part', part: 'week', output: 'R' }, t);
@@ -497,6 +501,8 @@ test('extract takes groups and all matches', () => {
   assert.deepStrictEqual(rowsOf(r.table).map((r) => r[1]), ['x.com', '', '']);
   const all = run('extract', { column: 'E', pattern: '\\d+', all: true, joiner: '|', noMatch: 'keep', output: 'N' }, t);
   assert.deepStrictEqual(rowsOf(all.table).map((r) => r[1]), ['a@x.com', 'none', '1|22|333']);
+  const empty = run('extract', { column: 'E', pattern: 'x*', all: true, joiner: '', output: 'N' }, T(['E'], [['\u{1F600}x']]));
+  assert.strictEqual(rowsOf(empty.table)[0][1], 'x');
   const bad = DL.validateParams('extract', Object.assign(DL.defaultParams('extract'), { column: 'E', pattern: 'x', group: 1 }), ['E']);
   assert.ok(bad.length, 'group beyond count');
   assert.ok(DL.validateParams('extract', Object.assign(DL.defaultParams('extract'), { column: 'E', pattern: '(' }), ['E']).length, 'bad regex');
@@ -523,6 +529,8 @@ test('textClean removes html, accents, control characters and odd spaces', () =>
   const nfc = run('textClean', { steps: ['unicode'] }, t);
   assert.strictEqual(rowsOf(nfc.table)[2][0], '\u00e9');
   assert.ok(r.notes[0].indexOf('3 cells') > 0);
+  const keep = run('textClean', { steps: ['html', 'control'] }, T(['A'], [['a < b and c > d'], ['\ud83d\udc68\u200d\ud83d\udc69']]));
+  assert.deepStrictEqual(rowsOf(keep.table).map((r) => r[0]), ['a < b and c > d', '\ud83d\udc68\u200d\ud83d\udc69']);
 });
 
 /* ---- performance smoke ---- */

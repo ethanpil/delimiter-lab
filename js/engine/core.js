@@ -115,35 +115,44 @@
     var cols = table.cols.slice();
     var n = table.length;
     var tagged = 0;
-    var ctx = { tagged: false, tag: function () { this.tagged = true; } };
     for (var k = 0; k < idxs.length; k++) {
       var c = idxs[k];
-      var src = DL.col(table, c);
-      var out = new Array(n);
-      var cache = new Map();
-      for (var i = 0; i < n; i++) {
-        var v = src[i];
-        if (cache !== null) {
-          var e = cache.get(v);
-          if (e !== undefined) {
-            out[i] = e.out;
-            if (e.tag) tagged++;
-            continue;
-          }
-        }
-        ctx.tagged = false;
-        var r = fn(v, ctx);
-        out[i] = r;
-        if (ctx.tagged) tagged++;
-        if (cache !== null) {
-          cache.set(v, { out: r, tag: ctx.tagged });
-          if (cache.size > MEMO_LIMIT) cache = null; // too many different values
-        }
-      }
-      cols[c] = out;
+      var one = {};
+      cols[c] = DL.mapValues(DL.col(table, c), n, fn, one);
+      tagged += one.tagged;
     }
     if (stats) stats.tagged = tagged;
     return DL.makeTable(table.columns, cols, n);
+  };
+
+  // Maps one array of values with fn(value, ctx). The result for each different value is kept
+  // and used again, so fn must depend on the value only. stats.tagged counts the cells where fn called ctx.tag().
+  DL.mapValues = function (src, n, fn, stats) {
+    var out = new Array(n);
+    var tagged = 0;
+    var ctx = { tagged: false, tag: function () { this.tagged = true; } };
+    var cache = new Map();
+    for (var i = 0; i < n; i++) {
+      var v = src[i];
+      if (cache !== null) {
+        var e = cache.get(v);
+        if (e !== undefined) {
+          out[i] = e.out;
+          if (e.tag) tagged++;
+          continue;
+        }
+      }
+      ctx.tagged = false;
+      var r = fn(v, ctx);
+      out[i] = r;
+      if (ctx.tagged) tagged++;
+      if (cache !== null) {
+        cache.set(v, { out: r, tag: ctx.tagged });
+        if (cache.size > MEMO_LIMIT) cache = null; // too many different values
+      }
+    }
+    if (stats) stats.tagged = tagged;
+    return out;
   };
 
   var WS_RE = /\s/;
@@ -444,17 +453,19 @@
   DL.MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   DL.DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  var TOKEN_RE = /YYYY|YY|MMMM|MMM|MM|M|DDDD|DDD|DD|D|HH|H|mm|ss|A|a/g;
+  var TOKEN_RE = /\[[^\]]*\]|YYYY|YY|MMMM|MMM|MM|M|DDDD|DDD|DD|D|HH|H|mm|ss|A|a/g;
 
   // Writes a local timestamp with a pattern such as "YYYY-MM-DD" or "D MMM YYYY HH:mm".
-  // Tokens: YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A a. Other characters are copied.
+  // Tokens: YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A a.
+  // Text in square brackets is written without change. All other characters are written without change.
   DL.formatDate = function (ts, pattern) {
     var d = new Date(ts);
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
     var h = d.getHours();
     return pattern.replace(TOKEN_RE, function (t) {
+      if (t.charAt(0) === '[') return t.slice(1, -1);
       switch (t) {
-        case 'YYYY': return String(d.getFullYear());
+        case 'YYYY': return ('000' + d.getFullYear()).slice(-4);
         case 'YY': return pad(d.getFullYear() % 100);
         case 'MMMM': return DL.MONTH_NAMES[d.getMonth()];
         case 'MMM': return DL.MONTH_NAMES[d.getMonth()].slice(0, 3);
