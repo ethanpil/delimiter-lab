@@ -172,11 +172,12 @@
         var badge = lv === 'full' ? U.el('span', { class: 'badge text-bg-success', text: DL.t('wf.fits') })
           : lv === 'partial' ? U.el('span', { class: 'badge text-bg-warning', text: DL.t('wf.someMissing') })
           : lv === 'none' ? U.el('span', { class: 'badge text-bg-light text-secondary', text: DL.t('wf.differentColumns') }) : null;
+        var opsText = w.steps.map(function (s) { var op = DL.getOp(s.opId); return op ? op.name : s.opId; }).join(' → ');
         var meta = [
-          DL.t('wf.created', { when: w.createdAt ? DL.formatDate(w.createdAt, 'D MMM YYYY') : '' }),
-          DL.t('wf.savedMeta', { when: U.fmtTime(w.updatedAt) }),
+          w.createdAt ? DL.t('wf.created', { when: DL.formatDate(w.createdAt, 'D MMM YYYY') }) : '',
+          w.updatedAt ? DL.t('wf.savedMeta', { when: U.fmtTime(w.updatedAt) }) : '',
           w.lastUsedAt ? DL.t('wf.lastUsed', { when: U.fmtTime(w.lastUsedAt) }) : DL.t('wf.neverUsed')
-        ].join(' · ');
+        ].filter(Boolean).join(' · ');
         var item = U.el('div', { class: 'wf-item flex-wrap' + (lv === 'full' ? ' is-match' : '') }, [
           U.el('div', { class: 'flex-grow-1', style: 'min-width:0' }, [
             U.el('div', { class: 'd-flex align-items-center gap-2 flex-wrap' }, [
@@ -185,10 +186,10 @@
               badge,
               w.id === opts.currentId ? U.el('span', { class: 'badge text-bg-primary', text: DL.t('wf.openNow') }) : null
             ]),
-            U.el('div', { class: 'wf-meta', text: meta })
+            U.el('div', { class: 'wf-meta', title: opsText, text: meta })
           ]),
           U.el('div', { class: 'btn-group btn-group-sm' }, [
-            U.el('button', { type: 'button', class: 'btn btn-primary', title: DL.t('dialog.useWorkflow'), onclick: function () { m.close(); actions.apply(w); } }, [U.el('i', { class: 'bi bi-play-fill' }), ' ' + DL.t('common.use')]),
+            U.el('button', { type: 'button', class: 'btn btn-primary', title: DL.t('dialog.useWorkflow'), onclick: function () { m.closeThen(function () { actions.apply(w); }); } }, [U.el('i', { class: 'bi bi-play-fill' }), ' ' + DL.t('common.use')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('common.rename'), onclick: function () {
               // One dialog at a time: the list opens again after the prompt.
               m.closeThen(function () {
