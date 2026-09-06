@@ -491,6 +491,25 @@
     U.toast(DL.t('msg.autosaveOn', { name: st.workflow.name }), 'success');
   });
 
+  // Empties the steps so that the user can start again. The file that is open stays open.
+  function newWorkflow() {
+    grid.closeProfile();
+    var st = store.state;
+    if (!st.workflow.steps.length && !st.workflow.name) { U.toast(DL.t('msg.newEmpty'), 'info'); return; }
+    U.confirm({
+      title: DL.t('msg.newTitle'),
+      message: DL.t('msg.newMessage', { steps: DL.pluralize(st.workflow.steps.length, 'step') }),
+      yes: DL.t('msg.newYes')
+    }, function () {
+      U.confirm({ title: DL.t('msg.newSureTitle'), message: DL.t('msg.newSureMessage'), yes: DL.t('msg.newSureYes'), danger: true }, function () {
+        autosaveSoon.cancel();
+        autosaveNow(); // a change that waits goes to the old record before the steps go away
+        store.replaceWorkflow({ id: null, name: '', steps: [] });
+        U.toast(DL.t('msg.newDone'), 'success');
+      });
+    });
+  }
+
   function applyWorkflow(wf, then) {
     // Write a waiting autosave first: it decides whether the steps count as saved. autosaveNow() opens
     // no dialog, so it cannot put the save dialog under the dialogs below.
@@ -772,6 +791,7 @@
   $('btnAddStep').addEventListener('click', addStep);
   $('btnUndo').addEventListener('click', function () { store.undo(); });
   $('btnRedo').addEventListener('click', function () { store.redo(); });
+  $('btnNew').addEventListener('click', newWorkflow);
   $('btnSave').addEventListener('click', function () { saveWorkflow(); });
   $('btnWorkflows').addEventListener('click', openWorkflows);
   $('btnDownload').addEventListener('click', download);
