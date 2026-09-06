@@ -171,19 +171,23 @@
     };
   };
 
-  // Simple confirm dialog. Calls onYes when confirmed, onCancel when the dialog closes in another way.
-  U.confirm = function (opts, onYes, onCancel) {
+  // Confirm dialog. Calls onYes for the main button, onAlt for the second button when opts.alt gives
+  // its text, and onCancel when the dialog closes in another way. A callback runs after the dialog is
+  // gone, so it can open the next dialog.
+  U.confirm = function (opts, onYes, onCancel, onAlt) {
     var m;
     var chosen = false;
+    var buttons = [U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: DL.t('common.cancel') })];
+    if (opts.alt) {
+      buttons.push(U.el('button', { type: 'button', class: 'btn btn-outline-primary', text: opts.alt, onclick: function () { chosen = true; m.closeThen(function () { if (onAlt) onAlt(); }); } }));
+    }
+    buttons.push(U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () { chosen = true; m.closeThen(onYes); } }));
     m = U.modal({
       onHidden: function () { if (!chosen && onCancel) onCancel(); },
       enterSubmits: true,
       title: opts.title || DL.t('common.sure'),
       body: U.el('p', { class: 'mb-0', text: opts.message || '' }),
-      footer: [
-        U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: DL.t('common.cancel') }),
-        U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () { chosen = true; m.close(); onYes(); } })
-      ]
+      footer: buttons
     });
   };
 
@@ -196,8 +200,7 @@
       var v = input.value.trim();
       if (!v) { input.classList.add('is-invalid'); return; }
       chosen = true;
-      m.close();
-      onValue(v);
+      m.closeThen(function () { onValue(v); });
     };
     m = U.modal({
       onHidden: function () { if (!chosen && onCancel) onCancel(); },

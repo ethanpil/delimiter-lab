@@ -56,7 +56,7 @@
     };
     var idx = -1;
     for (var i = 0; i < arr.length; i++) if (arr[i].id === rec.id) idx = i;
-    if (idx >= 0) { rec.createdAt = arr[idx].createdAt; rec.uses = arr[idx].uses || 0; arr[idx] = rec; }
+    if (idx >= 0) { rec.createdAt = arr[idx].createdAt; rec.uses = arr[idx].uses || 0; rec.lastUsedAt = arr[idx].lastUsedAt || 0; arr[idx] = rec; }
     else arr.unshift(rec);
     return write(arr) ? rec : null;
   };

@@ -17,7 +17,7 @@
       document.documentElement.setAttribute('data-bs-theme', t);
     })();
   </script>
-  <link rel="stylesheet" href="css/app.css?v=1.4.1">
+  <link rel="stylesheet" href="css/app.css?v=1.5.0">
 </head>
 <body>
   <noscript><div class="p-4">Delimiter Lab needs JavaScript to run.</div></noscript>
@@ -38,6 +38,7 @@
       </div>
       <div class="btn-group btn-group-sm">
         <button id="btnSave" class="btn btn-outline-primary" type="button" title="Save this workflow in the browser (Ctrl+S)" data-i18n-title="header.saveTitle"><i class="bi bi-bookmark-plus"></i> <span class="btn-label" data-i18n="header.save">Save</span></button>
+        <button id="btnAutosave" class="btn btn-outline-primary" type="button" aria-pressed="false" title="Save this workflow after every change" data-i18n-title="header.autosaveTitle"><i class="bi bi-arrow-repeat"></i> <span class="btn-label" data-i18n="header.autosave">Autosave</span></button>
         <button id="btnWorkflows" class="btn btn-outline-primary" type="button" title="Open a saved workflow" data-i18n-title="header.workflowsTitle"><i class="bi bi-collection"></i> <span class="btn-label" data-i18n="header.workflows">Workflows</span></button>
       </div>
       <button id="btnDownload" class="btn btn-primary btn-sm" type="button" title="Download the result of the selected step (Ctrl+D)" data-i18n-title="header.downloadTitle"><i class="bi bi-download"></i> <span class="btn-label" data-i18n="header.download">Download</span></button>
@@ -96,7 +97,7 @@
   <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3" aria-live="polite"></div>
 
   <script src="vendor/bootstrap.bundle.min.js"></script>
-  <script src="js/manifest.js?v=1.4.1"></script>
+  <script src="js/manifest.js?v=1.5.0"></script>
   <script>
     // Loads the application files listed in the manifest, in order. The texts of the language of the
     // user (?lang=xx or the browser language) load when js/i18n/ has a file for it.

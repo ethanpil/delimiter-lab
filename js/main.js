@@ -396,9 +396,10 @@
   }
 
   /* ---------- Workflows ---------- */
-  function saveWorkflow() {
+  // Saves the workflow. then(record) runs after a save; then(null) runs when the user stops.
+  function saveWorkflow(then) {
     var st = store.state;
-    if (!st.workflow.steps.length) { U.toast(DL.t('msg.addStepBeforeSave'), 'info'); return; }
+    if (!st.workflow.steps.length) { U.toast(DL.t('msg.addStepBeforeSave'), 'info'); if (then) then(null); return; }
     var doSave = function (name) {
       var rec = DL.workflows.save({
         id: st.workflow.id,
@@ -407,16 +408,63 @@
         columns: store.sourceColumns() || [],
         sourceOptions: st.source.options
       });
-      if (!rec) return;
+      if (!rec) { if (then) then(null); return; }
       store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
       U.toast(DL.t('msg.workflowSaved', { name: rec.name }), 'success');
+      if (then) then(rec);
     };
     if (st.workflow.id && st.workflow.name) doSave(st.workflow.name);
     else {
       var suggested = st.workflow.name || (st.source.file ? DL.t('msg.suggestedName', { file: U.baseName(st.source.file.name) }) : DL.t('msg.defaultName'));
-      U.prompt({ title: DL.t('msg.saveTitle'), message: DL.t('msg.saveMessage'), value: suggested, yes: DL.t('common.save') }, doSave);
+      U.prompt({ title: DL.t('msg.saveTitle'), message: DL.t('msg.saveMessage'), value: suggested, yes: DL.t('common.save') }, doSave, function () { if (then) then(null); });
     }
   }
+
+  /* ---------- Autosave ---------- */
+  var autosaveOn = false;
+  try { autosaveOn = localStorage.getItem('dl.autosave') === '1'; } catch (e) { /* no storage: autosave stays off */ }
+
+  function showAutosave() {
+    var b = $('btnAutosave');
+    b.classList.toggle('active', autosaveOn);
+    b.setAttribute('aria-pressed', autosaveOn ? 'true' : 'false');
+  }
+
+  function setAutosave(on) {
+    autosaveOn = on;
+    try { localStorage.setItem('dl.autosave', on ? '1' : '0'); } catch (e) { /* the setting lasts for this page only */ }
+    showAutosave();
+  }
+
+  // Writes the open workflow to its saved record. It waits for a pause in the changes.
+  var autosaveSoon = U.debounce(function () {
+    var st = store.state;
+    if (!autosaveOn || !st.workflow.id || !st.workflow.steps.length || !st.dirty) return;
+    var rec = DL.workflows.save({
+      id: st.workflow.id,
+      name: st.workflow.name,
+      steps: st.workflow.steps,
+      columns: store.sourceColumns() || [],
+      sourceOptions: st.source.options
+    });
+    if (rec) store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
+  }, 800);
+
+  $('btnAutosave').addEventListener('click', function () {
+    if (autosaveOn) { setAutosave(false); U.toast(DL.t('msg.autosaveOff'), 'info'); return; }
+    var st = store.state;
+    // Autosave needs a saved workflow: ask for a name first.
+    if (st.workflow.steps.length && !st.workflow.id) {
+      saveWorkflow(function (rec) {
+        if (!rec) return; // the user stopped: autosave stays off
+        setAutosave(true);
+        U.toast(DL.t('msg.autosaveOn', { name: rec.name }), 'success');
+      });
+      return;
+    }
+    setAutosave(true);
+    U.toast(st.workflow.id ? DL.t('msg.autosaveOn', { name: st.workflow.name }) : DL.t('msg.autosaveOff'), 'success');
+  });
 
   function applyWorkflow(wf, then) {
     var go = function () {
@@ -434,11 +482,22 @@
       var level = DL.workflows.matchLevel(wf, store.sourceColumns());
       if (level === 'partial' || level === 'none') U.toast(DL.t('msg.columnsMissing'), 'warning');
     };
+    var cur = store.state.workflow;
     var hasCode = (wf.steps || []).some(function (s) { return s.opId === 'javascript'; });
-    if (store.state.workflow.steps.length || hasCode) {
-      var message = DL.t('msg.replaceMessage');
-      if (hasCode) message = DL.t('msg.codeWarning') + ' ' + (store.state.workflow.steps.length ? message : '');
-      U.confirm({ title: store.state.workflow.steps.length ? DL.t('msg.replaceTitle') : DL.t('msg.applyTitle'), message: message.trim(), yes: store.state.workflow.steps.length ? DL.t('msg.replace') : DL.t('common.use') }, go);
+    var warning = hasCode ? DL.t('msg.codeWarning') + ' ' : '';
+    // The steps on screen are not in a saved record, or they changed after the last save.
+    if (cur.steps.length && (!cur.id || store.state.dirty)) {
+      U.confirm({
+        title: DL.t('msg.unsavedTitle'),
+        message: warning + DL.t('msg.unsavedMessage', { name: wf.name }),
+        yes: DL.t('msg.saveAndUse'),
+        alt: DL.t('msg.useWithoutSaving')
+      }, function () { saveWorkflow(function (rec) { if (rec) go(); }); }, null, go);
+      return;
+    }
+    if (cur.steps.length || hasCode) {
+      var message = warning + (cur.steps.length ? DL.t('msg.replaceMessage') : '');
+      U.confirm({ title: cur.steps.length ? DL.t('msg.replaceTitle') : DL.t('msg.applyTitle'), message: message.trim(), yes: cur.steps.length ? DL.t('msg.replace') : DL.t('common.use') }, go);
     } else go();
   }
 
@@ -626,6 +685,7 @@
         updateUndoButtons();
         updateSaveState();
         store.saveSession();
+        autosaveSoon();
         refreshPreview();
         break;
       case 'params':
@@ -635,6 +695,7 @@
         updateUndoButtons();
         updateSaveState();
         store.saveSession();
+        autosaveSoon();
         break;
       case 'selection':
         chain.render(true);
@@ -737,6 +798,7 @@
   /* ---------- Start ---------- */
   DL.applyI18n(document);
   document.documentElement.lang = DL.locale;
+  showAutosave();
   Array.prototype.forEach.call(document.querySelectorAll('button[title]'), function (b) {
     if (!b.textContent.trim() && !b.getAttribute('aria-label')) b.setAttribute('aria-label', b.title);
   });

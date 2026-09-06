@@ -172,12 +172,20 @@
         var badge = lv === 'full' ? U.el('span', { class: 'badge text-bg-success', text: DL.t('wf.fits') })
           : lv === 'partial' ? U.el('span', { class: 'badge text-bg-warning', text: DL.t('wf.someMissing') })
           : lv === 'none' ? U.el('span', { class: 'badge text-bg-light text-secondary', text: DL.t('wf.differentColumns') }) : null;
-        var opsText = w.steps.map(function (s) { var op = DL.getOp(s.opId); return op ? op.name : s.opId; }).join(' → ');
+        var meta = [
+          DL.t('wf.created', { when: w.createdAt ? DL.formatDate(w.createdAt, 'D MMM YYYY') : '' }),
+          DL.t('wf.savedMeta', { when: U.fmtTime(w.updatedAt) }),
+          w.lastUsedAt ? DL.t('wf.lastUsed', { when: U.fmtTime(w.lastUsedAt) }) : DL.t('wf.neverUsed')
+        ].join(' · ');
         var item = U.el('div', { class: 'wf-item flex-wrap' + (lv === 'full' ? ' is-match' : '') }, [
           U.el('div', { class: 'flex-grow-1', style: 'min-width:0' }, [
-            U.el('div', { class: 'd-flex align-items-center gap-2' }, [U.el('span', { class: 'wf-name', text: w.name }), badge, w.id === opts.currentId ? U.el('span', { class: 'badge text-bg-primary', text: DL.t('wf.openNow') }) : null]),
-            U.el('div', { class: 'wf-meta text-truncate', title: opsText, text: DL.t('wf.stepsMeta', { steps: DL.pluralize(w.steps.length, 'step'), ops: opsText }) }),
-            U.el('div', { class: 'wf-meta', text: DL.t('wf.savedMeta', { when: U.fmtTime(w.updatedAt) }) + (w.uses ? DL.t('wf.usedMeta', { times: DL.pluralize(w.uses, 'time') }) : '') })
+            U.el('div', { class: 'd-flex align-items-center gap-2 flex-wrap' }, [
+              U.el('span', { class: 'wf-name', text: w.name }),
+              U.el('span', { class: 'badge text-bg-light text-secondary', text: DL.pluralize(w.steps.length, 'step') }),
+              badge,
+              w.id === opts.currentId ? U.el('span', { class: 'badge text-bg-primary', text: DL.t('wf.openNow') }) : null
+            ]),
+            U.el('div', { class: 'wf-meta', text: meta })
           ]),
           U.el('div', { class: 'btn-group btn-group-sm' }, [
             U.el('button', { type: 'button', class: 'btn btn-primary', title: DL.t('dialog.useWorkflow'), onclick: function () { m.close(); actions.apply(w); } }, [U.el('i', { class: 'bi bi-play-fill' }), ' ' + DL.t('common.use')]),
@@ -186,7 +194,7 @@
               m.closeThen(function () {
                 U.prompt({ title: DL.t('dialog.renameWorkflow'), value: w.name }, function (v) { DL.workflows.rename(w.id, v); if (actions.renamed) actions.renamed(w.id, v); D.workflows(opts, actions); }, function () { D.workflows(opts, actions); });
               });
-            } }, [U.el('i', { class: 'bi bi-pencil' })]),
+            } }, [U.el('i', { class: 'bi bi-pencil' }), ' ' + DL.t('common.rename')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('dialog.exportWorkflow'), onclick: function () {
               U.downloadBlob(new Blob([DL.workflows.toJSON(w)], { type: 'application/json' }), U.safeFileName(w.name) + '.workflow.json');
             } }, [U.el('i', { class: 'bi bi-download' }), ' ' + DL.t('wf.exportFile')]),
@@ -217,16 +225,18 @@
 
   /* ---------- Help ---------- */
   D.help = function () {
-    var body = U.el('div', {}, [
+    function shortcut(keys, what) {
+      return U.el('tr', {}, [U.el('td', {}, [U.el('kbd', { text: keys })]), U.el('td', { text: what })]);
+    }
+    function list(tag, keys) {
+      return U.el(tag, { class: 'mb-0 ps-3' }, keys.map(function (k) { return U.el('li', { text: DL.t(k) }); }));
+    }
+    // Two columns on a wide screen, so the help needs little scrolling.
+    var left = U.el('div', { class: 'col-lg-6' }, [
       U.el('h6', { text: DL.t('help.howItWorks') }),
-      U.el('ol', {}, [
-        U.el('li', { text: DL.t('help.step1') }),
-        U.el('li', { text: DL.t('help.step2') }),
-        U.el('li', { text: DL.t('help.step3') }),
-        U.el('li', { text: DL.t('help.step4') })
-      ]),
+      list('ol', ['help.step1', 'help.step2', 'help.step3', 'help.step4']),
       U.el('h6', { class: 'mt-3', text: DL.t('help.shortcuts') }),
-      U.el('table', { class: 'table table-sm' }, [
+      U.el('table', { class: 'table table-sm mb-0' }, [
         U.el('tbody', {}, [
           shortcut('Ctrl+Z / Ctrl+Y', DL.t('help.undoRedo')),
           shortcut('Ctrl+S', DL.t('help.saveWorkflow')),
@@ -237,24 +247,16 @@
           shortcut('Delete', DL.t('help.deleteStep')),
           shortcut('Alt+↑ / Alt+↓', DL.t('help.prevNextStep'))
         ])
-      ]),
-      U.el('h6', { class: 'mt-3', text: DL.t('help.tips') }),
-      U.el('ul', {}, [
-        U.el('li', { text: DL.t('help.tip1') }),
-        U.el('li', { text: DL.t('help.tip2') }),
-        U.el('li', { text: DL.t('help.tip3') }),
-        U.el('li', { text: DL.t('help.tip4') }),
-        U.el('li', { text: DL.t('help.tip5') }),
-        U.el('li', { text: DL.t('help.tip6') }),
-        U.el('li', { text: DL.t('help.tip7') }),
-        U.el('li', { text: DL.t('help.tip8') }),
-        U.el('li', { text: DL.t('help.tip9') })
-      ]),
-      U.el('p', { class: 'text-secondary small mb-0', text: DL.t('help.local') })
+      ])
     ]);
-    function shortcut(keys, what) {
-      return U.el('tr', {}, [U.el('td', {}, [U.el('kbd', { text: keys })]), U.el('td', { text: what })]);
-    }
-    U.modal({ title: DL.t('dialog.help'), body: body, scrollable: true });
+    var right = U.el('div', { class: 'col-lg-6' }, [
+      U.el('h6', { class: 'mt-3 mt-lg-0', text: DL.t('help.tips') }),
+      list('ul', ['help.tip1', 'help.tip2', 'help.tip3', 'help.tip4', 'help.tip5', 'help.tip6', 'help.tip7', 'help.tip8', 'help.tip9'])
+    ]);
+    var body = U.el('div', {}, [
+      U.el('div', { class: 'row g-4' }, [left, right]),
+      U.el('p', { class: 'text-secondary small mt-3 mb-0', text: DL.t('help.local') })
+    ]);
+    U.modal({ title: DL.t('dialog.help'), body: body, size: 'xl', scrollable: true });
   };
 })(typeof self !== 'undefined' ? self : this);
