@@ -746,7 +746,12 @@
   DL.cellText = function (v) {
     if (typeof v === 'string') return v;
     if (v == null) return '';
-    if (v instanceof Date) return isNaN(v.getTime()) ? '' : DL.formatDateISO(v.getTime());
+    if (v instanceof Date) {
+      if (isNaN(v.getTime())) return '';
+      // A spreadsheet cell with a time only has the date 30 or 31 December 1899.
+      if (v.getFullYear() === 1899 && v.getMonth() === 11 && v.getDate() >= 30) return pad2(v.getHours()) + ':' + pad2(v.getMinutes()) + ':' + pad2(v.getSeconds());
+      return DL.formatDateISO(v.getTime());
+    }
     if (typeof v === 'number') return DL.numberText(v);
     if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
     return String(v);
@@ -782,8 +787,10 @@
       this.expected = row.length;
       return;
     }
+    // A blank line that the user keeps is a row of empty values, not a ragged row.
+    if (row.length === 1 && row[0] === '' && this.expected > 1) row = [];
     if (this.expected < 0) this.expected = row.length;
-    else if (row.length !== this.expected) this.ragged++;
+    else if (row.length !== this.expected && row.length !== 0) this.ragged++;
     for (var c = this.cols.length; c < row.length; c++) { this.cols.push(new Array(this.n).fill('')); this.cells += this.n; }
     for (c = 0; c < this.cols.length; c++) this.cols[c][this.n] = c < row.length ? DL.cellText(row[c]) : '';
     this.n++;

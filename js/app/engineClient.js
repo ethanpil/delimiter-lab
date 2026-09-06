@@ -15,7 +15,14 @@
   EngineClient.prototype.start = function () {
     var self = this;
     this.dead = null;
-    this.worker = new Worker('js/engine/worker.js?v=' + DL.VERSION);
+    try {
+      this.worker = new Worker('js/engine/worker.js?v=' + DL.VERSION);
+    } catch (e) {
+      // A browser refuses a worker from a file:// address or under a strict content security policy.
+      this.worker = { postMessage: function () {}, terminate: function () {} };
+      this.fail(new Error('The processing engine could not start: ' + (e.message || e) + '. Open the page from a web server.'));
+      return;
+    }
     this.worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { self.onProgress(msg); return; }

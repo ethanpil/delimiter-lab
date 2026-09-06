@@ -45,10 +45,14 @@ Note: The Web Worker needs a web server. Most browsers do not start workers from
 
 ## Test
 
-Run the engine tests:
+Run the engine tests and the worker tests:
 
 ```bash
 node test/engine.test.js
+```
+
+```bash
+node test/worker.test.js
 ```
 
 Make the test data files (the last argument is the number of rows in the large file):
