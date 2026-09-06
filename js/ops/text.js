@@ -493,7 +493,7 @@
 
   function stripHtml(s) {
     if (s.indexOf('<') < 0 && s.indexOf('&') < 0) return s;
-    return s.replace(/<br\s*\/?>/gi, ' ').replace(/<\/?[a-z!?][^>]*>/gi, '').replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, function (m, code) {
+    return s.replace(/<br\s*\/?>/gi, ' ').replace(/<(?:!--[\s\S]*?--|!\[CDATA\[[\s\S]*?\]\]|[!?][^>]*|\/?[a-z][a-z0-9-]*(?:\s+[^<>=]*=[^<>]*)?\s*\/?)>/gi, '').replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, function (m, code) {
       var c = code.toLowerCase();
       if (c.charAt(0) === '#') {
         var n = c.charAt(1) === 'x' ? parseInt(c.slice(2), 16) : parseInt(c.slice(1), 10);

@@ -248,7 +248,7 @@ test('javascript op', () => {
 test('verify op', () => {
   const r = run('verify', { rules: [{ column: 'Email', op: 'isEmail', allowEmpty: false }, { column: 'Age', op: 'gt', value: '18', allowEmpty: true }, { column: 'First', op: 'unique' }], action: 'flag' }, people);
   assert.deepStrictEqual(r.table.columns, ['First', 'Last', 'Age', 'Email', 'Problems']);
-  assert.strictEqual(rowsOf(r.table)[0][4], 'First must be unique in the column');
+  assert.strictEqual(rowsOf(r.table)[0][4], 'First must be unique in the column (case and spaces at the ends do not count)');
   assert.ok(rowsOf(r.table)[1][4].indexOf('Email must be an email address') === 0);
   assert.strictEqual(r.status, 'warning');
   const r2 = run('verify', { rules: [{ column: 'Email', op: 'isEmail' }], action: 'passed' }, people);
@@ -604,6 +604,8 @@ test('clean text keeps other scripts, decodes entities safely and collapses line
   assert.strictEqual(rowsOf(acc.table)[0][0], '\u0439\u0451 \ud55c\uae00 e');
   const html = run('textClean', { steps: ['html'] }, t);
   assert.strictEqual(rowsOf(html.table)[1][0], '&#12abc; &#0; ab');
+  const prose = run('textClean', { steps: ['html'] }, T(['A'], [['a<b and c>d <b>bold</b> <a href="x">y</a> <!-- c --> <br/>z']]));
+  assert.strictEqual(rowsOf(prose.table)[0][0], 'a<b and c>d bold y   z');
   const sp = run('textClean', { steps: ['spaces'] }, t);
   assert.strictEqual(rowsOf(sp.table)[2][0], 'a b c');
   const ex = run('extract', { column: 'A', pattern: '\\d*', all: true, joiner: '|', output: 'N' }, T(['A'], [['a1b22']]));

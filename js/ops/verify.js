@@ -30,7 +30,7 @@
     { value: 'exactLength', label: 'must have exactly this many characters', needs: 'number' },
     { value: 'inList', label: 'must be one of (comma separated)', needs: 'text' },
     { value: 'regex', label: 'must match regular expression', needs: 'text' },
-    { value: 'unique', label: 'must be unique in the column', needs: 'none' }
+    { value: 'unique', label: 'must be unique in the column (case and spaces at the ends do not count)', needs: 'none' }
   ];
 
   // Rules where an empty value is a result in itself, so "Skip empty" does not apply.
