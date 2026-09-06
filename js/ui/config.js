@@ -105,8 +105,15 @@
       } else if (!res.hasTable) {
         rbox.appendChild(U.el('div', { class: 'alert alert-secondary py-2 mb-0 mt-2', text: res.notes[0] || 'Waiting for an earlier step.' }));
       } else if (res.notes.length) {
+        var self = this;
         rbox.appendChild(U.el('div', { class: 'alert py-2 mb-0 mt-2 ' + (res.status === 'warning' ? 'alert-warning' : 'alert-success') }, [
-          U.el('ul', { class: 'notes-list' }, res.notes.map(function (n) { return U.el('li', { text: n }); }))
+          U.el('ul', { class: 'notes-list' }, res.notes.map(function (n) {
+            if (typeof n === 'string' || !self.onShowRows) return U.el('li', { text: DL.noteText(n) });
+            // A note with rows is a link: a click shows those rows in the preview.
+            var link = U.el('a', { href: '#', class: 'note-link', text: n.text, title: 'Show these rows in the preview' });
+            link.addEventListener('click', function (e) { e.preventDefault(); self.onShowRows(id, n); });
+            return U.el('li', {}, [link]);
+          }))
         ]));
       }
     }

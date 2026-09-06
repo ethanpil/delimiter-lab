@@ -993,6 +993,20 @@
   };
 
   // Runs one operation. Gives { table, notes, status }.
+  // Gives the text of a result note. A note is a text, or an object { text, rows } when the
+  // operation can show the rows that the note is about.
+  DL.noteText = function (note) {
+    return typeof note === 'string' ? note : note.text;
+  };
+
+  // Finds rows in the output of an operation for a note with a rows lookup.
+  // Gives { matches: [[row, col], ...], total, removed } where removed is true when the rows are not in the output.
+  DL.findRows = function (opId, params, inputTable, lookup, limit) {
+    var op = DL.getOp(opId);
+    if (!op || typeof op.findRows !== 'function') return { matches: [], total: 0 };
+    return op.findRows(inputTable, params, lookup, limit || 2000);
+  };
+
   DL.runOp = function (opId, params, table) {
     var op = DL.getOp(opId);
     if (!op) throw new Error('Unknown operation "' + opId + '".');

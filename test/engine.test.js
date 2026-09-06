@@ -563,6 +563,20 @@ test('unpivot turns columns into rows', () => {
   assert.deepStrictEqual(rowsOf(all.table)[3], ['b', 'Feb', '']);
 });
 
+test('verify findRows gives the failing rows of one rule', () => {
+  const p = Object.assign(DL.defaultParams('verify'), { rules: [{ column: 'Email', op: 'isEmail' }, { column: 'First', op: 'notEmpty' }], action: 'flag' });
+  const r = DL.findRows('verify', p, people, { rule: 0 }, 10);
+  assert.deepStrictEqual(r.matches, [[1, 3], [2, 3]]);
+  assert.strictEqual(r.total, 2);
+  const failed = DL.findRows('verify', Object.assign({}, p, { action: 'failed' }), people, { rule: 1 }, 10);
+  assert.deepStrictEqual(failed.matches, [[1, 0]], 'row index in the output with only failed rows');
+  assert.ok(DL.findRows('verify', Object.assign({}, p, { action: 'passed' }), people, { rule: 0 }, 10).removed);
+  const notes = run('verify', p, people).notes;
+  assert.strictEqual(DL.noteText(notes[1]).indexOf('2 rows failed'), 0);
+  assert.deepStrictEqual(notes[1].rows, { rule: 0 });
+  assert.deepStrictEqual(DL.findRows('case', {}, people, {}, 10), { matches: [], total: 0 });
+});
+
 /* ---- performance smoke ---- */
 test('performance on 200k rows', () => {
   const rows = new Array(200000);

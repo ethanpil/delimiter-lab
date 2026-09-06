@@ -69,6 +69,7 @@
   EngineClient.prototype.columnStats = function (stepId, col) { return this.send({ type: 'columnStats', stepId: stepId, col: col }); };
   EngineClient.prototype.diffSummary = function (stepId) { return this.send({ type: 'diffSummary', stepId: stepId }); };
   EngineClient.prototype.search = function (stepId, query, limit) { return this.send({ type: 'search', stepId: stepId, query: query, limit: limit }); };
+  EngineClient.prototype.findRows = function (stepId, lookup, limit) { return this.send({ type: 'findRows', stepId: stepId, lookup: lookup, limit: limit }); };
   EngineClient.prototype.exportStep = function (stepId, options) { return this.send({ type: 'export', stepId: stepId, options: options }); };
 
   DL.EngineClient = EngineClient;

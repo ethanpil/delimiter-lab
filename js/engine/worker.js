@@ -45,6 +45,7 @@ self.onmessage = function (e) {
       case 'columnStats': reply({ type: 'columnStats', stepId: msg.stepId, col: msg.col, stats: columnStats(msg) }); break;
       case 'diffSummary': reply({ type: 'diffSummary', stepId: msg.stepId, summary: diffSummary(msg) }); break;
       case 'search': reply({ type: 'search', stepId: msg.stepId, result: search(msg) }); break;
+      case 'findRows': reply({ type: 'findRows', stepId: msg.stepId, result: findRows(msg) }); break;
       default: reply({ type: 'error', message: 'Unknown request "' + msg.type + '".' });
     }
   } catch (err) {
@@ -609,6 +610,15 @@ function search(msg) {
     }
   }
   return { matches: matches, total: total };
+}
+
+// Finds the rows that a result note is about (for example the rows that failed a Verify rule).
+function findRows(msg) {
+  var input = inputFor(msg.stepId);
+  var step = null;
+  for (var i = 0; i < state.steps.length; i++) if (state.steps[i].id === msg.stepId) step = state.steps[i];
+  if (!input || !step || !tableFor(msg.stepId)) return { matches: [], total: 0 };
+  return DL.findRows(step.opId, step.params, input, msg.lookup, msg.limit);
 }
 
 /* ---------- Export ---------- */

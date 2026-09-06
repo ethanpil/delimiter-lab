@@ -283,16 +283,35 @@
   }
 
   function setSearchResult(matches, total) {
+    var info = '';
+    if (searchQuery) info = !total ? 'No matches' : U.fmtInt(total) + (total > matches.length ? ' rows match (first ' + matches.length + ' shown)' : ' rows match');
+    showMatches(matches, info);
+  }
+
+  // Marks rows in the preview and lets the user step through them with the search buttons.
+  function showMatches(matches, info) {
     searchMatches = matches;
     searchIndex = matches.length ? 0 : -1;
     grid.setHits(matches);
-    var info = $('previewSearchInfo');
-    if (!searchQuery) info.textContent = '';
-    else if (!total) info.textContent = 'No matches';
-    else info.textContent = U.fmtInt(total) + (total > matches.length ? ' rows match (first ' + matches.length + ' shown)' : ' rows match');
+    $('previewSearchInfo').textContent = info;
     $('previewSearchPrev').disabled = $('previewSearchNext').disabled = !matches.length;
     if (matches.length) grid.setCurrent(matches[0]);
   }
+
+  // Shows the rows that a result note is about (a click on the note in the step settings).
+  configView.onShowRows = function (stepId, note) {
+    if (store.state.selectedId !== stepId) store.select(stepId);
+    $('previewSearch').value = '';
+    searchQuery = '';
+    var token = ++searchToken;
+    engine.findRows(stepId, note.rows, 2000).then(function (msg) {
+      if (token !== searchToken) return;
+      var r = msg.result;
+      if (r.removed) { showMatches([], 'These rows are not in the output of this step.'); return; }
+      if (grid.stepId !== stepId) { showMatches([], ''); return; }
+      showMatches(r.matches, note.text + (r.total > r.matches.length ? ' (first ' + r.matches.length + ' shown)' : ''));
+    }).catch(function (err) { U.toast(err.message, 'danger'); });
+  };
 
   function stepSearch(dir) {
     if (!searchMatches.length) return;

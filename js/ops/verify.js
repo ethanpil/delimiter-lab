@@ -144,8 +144,32 @@
       var notes = [];
       if (failedRows === 0) notes.push('All ' + DL.pluralize(n, 'row') + ' passed.');
       else notes.push(DL.pluralize(failedRows, 'row') + ' of ' + n + ' failed at least one rule.');
-      rules.forEach(function (r, k) { if (failCounts[k]) notes.push(DL.pluralize(failCounts[k], 'row') + ' failed: ' + r.label); });
+      rules.forEach(function (r, k) {
+        if (failCounts[k]) notes.push({ text: DL.pluralize(failCounts[k], 'row') + ' failed: ' + r.label, rows: { rule: k } });
+      });
       return { table: out, notes: notes, status: failedRows ? 'warning' : 'ok' };
+    },
+    // Finds the rows of the output that failed one rule (lookup.rule). See DL.findRows.
+    findRows: function (table, p, lookup, limit) {
+      var n = table.length;
+      var rules = p.rules.map(function (r) { return DL.buildVerifyRule(table, r); });
+      var k = lookup.rule;
+      if (!rules[k]) return { matches: [], total: 0 };
+      if (p.action === 'passed') return { matches: [], total: 0, removed: true };
+      var col = DL.requireCol(table, p.rules[k].column);
+      var matches = [];
+      var total = 0;
+      var outRow = 0;
+      for (var i = 0; i < n; i++) {
+        var failed = !rules[k].test(i);
+        if (failed) {
+          total++;
+          if (matches.length < limit) matches.push([outRow, col]);
+        }
+        if (p.action === 'flag') outRow++;
+        else if (failed || rules.some(function (r) { return !r.test(i); })) outRow++;
+      }
+      return { matches: matches, total: total };
     }
   });
 })(typeof self !== 'undefined' ? self : this);

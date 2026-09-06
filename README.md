@@ -10,6 +10,7 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 - Shows a preview of each step. You can download the result of any step.
 - Shows a profile of a column (type, empty cells, different values, smallest and largest, most common values) when you click its name.
 - Marks the cells that a step changed (the "Changes" button).
+- Shows the rows that failed a Verify rule when you click the rule in the result.
 - Saves workflows in the browser and as files, so you can apply them again to new files.
 - Undo and redo.
 - Works with large files. The file size limit depends on the memory of the computer.
@@ -84,6 +85,8 @@ The `params` list makes the form. Field types: `text`, `number`, `code`, `boolea
 `apply(table, params)` gets a table `{ columns, cols, length }` and returns `{ table, notes }`. Use the helpers in `core.js`: `DL.col`, `DL.mapColumns`, `DL.addColumn`, `DL.selectRows`, `DL.pickColumns`, `DL.dropColumns`, `DL.groupRows`. Never change the input table.
 
 Add `outputColumns(columns, params)` when the operation changes the columns. Return `null` when the columns are only known after the step runs. The user interface uses this to show the correct column names in the steps that follow.
+
+A result note can be an object `{ text, rows }` instead of a text. The user can then click the note to see the rows it is about. Add `findRows(inputTable, params, rows, limit)` to the operation. It gives `{ matches: [[row, column], ...], total }` for the output table, or `{ removed: true }` when the rows are not in the output.
 
 ## Add an input or output format
 
