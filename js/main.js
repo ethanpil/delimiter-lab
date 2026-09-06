@@ -23,7 +23,7 @@
   });
   var configView = new DL.ConfigView($('config'), store, {
     changeOp: function (id) {
-      DL.dialogs.pickOperation({ title: 'Change operation' }, function (opId) { store.changeOp(id, opId); });
+      DL.dialogs.pickOperation({ title: DL.t('config.changeOp') }, function (opId) { store.changeOp(id, opId); });
     },
     remove: function (id) { store.removeStep(id); }
   });

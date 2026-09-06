@@ -77,7 +77,7 @@ function handle(msg) {
       case 'diffSummary': reply({ type: 'diffSummary', stepId: msg.stepId, summary: diffSummary(msg) }); break;
       case 'search': reply({ type: 'search', stepId: msg.stepId, result: search(msg) }); break;
       case 'findRows': reply({ type: 'findRows', stepId: msg.stepId, result: findRows(msg) }); break;
-      case 'memory': reply({ type: 'memory', cells: cacheCells(), maxCells: state.maxCells, budget: state.cacheBudgetCells }); break;
+      case 'memory': reply({ type: 'memory', cells: cacheCells(), maxCells: state.maxCells }); break;
       default: reply({ type: 'error', message: 'Unknown request "' + msg.type + '".' });
     }
   } catch (err) {

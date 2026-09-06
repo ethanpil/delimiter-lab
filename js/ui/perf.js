@@ -39,11 +39,12 @@
       var r = st.results[step.id];
       var status = r ? (DL.RESULT_STATUS[r.status] ? DL.RESULT_STATUS[r.status].label : r.status) : '';
       var cells = r && r.hasTable ? r.rowCount * r.columns.length : 0;
-      if (r && r.hasTable) totalMs += r.ms || 0;
+      var ran = r && (r.hasTable || r.status === 'error'); // a step that failed also took time
+      if (ran) totalMs += r.ms || 0;
       rows.push(U.el('tr', { class: step.enabled === false ? 'text-secondary' : '' }, [
         U.el('td', { text: String(i + 1) }),
         U.el('td', { text: op ? op.name : step.opId }),
-        U.el('td', { class: 'text-end', text: r && r.hasTable ? timeText(r.ms) : '' }),
+        U.el('td', { class: 'text-end', text: ran ? timeText(r.ms) : '' }),
         U.el('td', { class: 'text-end', text: r && r.hasTable ? U.fmtInt(r.rowCount) : '' }),
         U.el('td', { class: 'text-end', text: r && r.hasTable ? cellsText(cells) : '' }),
         U.el('td', { text: status })
@@ -53,7 +54,7 @@
       U.el('td', {}), U.el('td', { text: DL.t('timing.total') }), U.el('td', { class: 'text-end', text: timeText(totalMs) }), U.el('td', {}), U.el('td', {}), U.el('td', {})
     ]));
     var memoryText = memory ? DL.t('timing.memory', {
-      cells: DL.pluralize(memory.cells, 'cell'),
+      cells: DL.pluralize(Math.round(memory.cells), 'cell'),
       mb: U.fmtBytes(memory.cells * BYTES_PER_CELL),
       limit: DL.pluralize(memory.maxCells, 'cell')
     }) : '';

@@ -105,7 +105,7 @@ The texts of the user interface are in `js/i18n/en.js`. To add a language:
 1. Copy `js/i18n/en.js` to `js/i18n/xx.js`, where `xx` is the two-letter language code. Change `'en'` in `DL.registerLocale('en', ...)` to `'xx'` and translate the texts. Keep the `{placeholders}`. A key that you leave out shows the English text.
 2. Add `'xx'` to `DL.LOCALES` in `js/manifest.js`.
 
-The page uses the language of the browser. Add `?lang=xx` to the address to force a language. The names and the settings of the operations, and the notes in the results, are in English.
+The page uses the language of the browser. Add `?lang=xx` to the address to force a language. These texts stay in English: the names, the settings and the result notes of the operations, the status labels of the steps, the plural words in counts ("3 rows"), the relative times in the workflow list, and the errors of workflow files. They come from the engine and the data layer, which the worker also loads.
 
 ## Release
 
