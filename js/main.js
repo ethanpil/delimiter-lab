@@ -34,14 +34,16 @@
   /* ---------- Progress ---------- */
   var progressTimer = null;
   var batchLabel = ''; // "File 2 of 5: x.csv" while a batch runs; worker messages go after it
+  var runInFlight = false; // true while the worker runs the chain: the bar stays and Cancel shows
   function showProgress(label, percent) {
     progressEl.hidden = false;
     progressEl.querySelector('.progress-bar').style.width = Math.max(2, percent || 0) + '%';
     progressEl.querySelector('.app-progress-label').textContent = batchLabel ? batchLabel + (label ? ' · ' + label : '') : (label || '');
+    $('btnCancel').hidden = !(runInFlight || batchLabel);
     clearTimeout(progressTimer);
-    if (!batchLabel) progressTimer = setTimeout(hideProgress, 4000);
+    if (!batchLabel && !runInFlight) progressTimer = setTimeout(hideProgress, 4000);
   }
-  function hideProgress() { clearTimeout(progressTimer); progressEl.hidden = true; $('btnStop').hidden = true; }
+  function hideProgress() { clearTimeout(progressTimer); progressEl.hidden = true; $('btnStop').hidden = true; $('btnCancel').hidden = true; }
 
   // A step that does not finish (for example a slow regular expression) blocks the worker.
   // Stop ends the worker, loads the file again and turns the selected step off.
@@ -141,7 +143,7 @@
   }
 
   function runChain() {
-    if (store.state.source.status !== 'ready') return;
+    if (store.state.source.status !== 'ready') { runInFlight = false; return; }
     var token = ++runToken;
     var steps = store.state.workflow.steps.map(function (s) {
       return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false };
@@ -149,20 +151,30 @@
     var started = Date.now();
     var slowTimer = setTimeout(function () { showProgress('Running steps…', 50); }, 400);
     armStop();
-    engine.run(steps, protectedSteps()).then(function (msg) {
+    runInFlight = true;
+    engine.run(steps, protectedSteps(), token).then(function (msg) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
+      runInFlight = false;
       disarmStop();
       if (Date.now() - started > 400) hideProgress();
       store.setResults(msg.results);
+      if (msg.cancelled) U.toast('The run was cancelled. The steps that ran keep their results.', 'info');
     }).catch(function (err) {
       clearTimeout(slowTimer);
       if (token !== runToken) return;
+      runInFlight = false;
       disarmStop();
       hideProgress();
       U.toast('Something went wrong while running the steps: ' + err.message, 'danger');
     });
   }
+
+  $('btnCancel').addEventListener('click', function () {
+    $('btnCancel').hidden = true;
+    if (batchRunning) { cancelBatch(); return; }
+    engine.cancel(runToken).catch(function () { /* the worker is gone; Stop handles that */ });
+  });
 
   // Results of a run that started before the latest change are out of date: drop them and run again.
   var runSoon = U.debounce(runChain, 220);
@@ -463,6 +475,10 @@
   /* ---------- Batch: apply the workflow to many files ---------- */
   var batchRunning = false;
   var batchToken = 0;
+  var batchCancelled = false;
+
+  // Ends a batch after the current file. The files that are done go into the zip.
+  function cancelBatch() { batchCancelled = true; }
 
   // Ends a batch that does not finish: the worker restarts and the open file is read again.
   function stopBatch() {
@@ -500,6 +516,7 @@
     var token = ++batchToken;
     var i = 0;
     batchRunning = true;
+    batchCancelled = false;
     // Two inputs with the same base name (a.csv, a.xlsx) get different names in the zip.
     function outputName(file) {
       var base = U.baseName(file.name);
@@ -511,6 +528,7 @@
     function end() { batchRunning = false; batchLabel = ''; disarmStop(); hideProgress(); }
     function next() {
       if (token !== batchToken) return;
+      if (batchCancelled) { for (; i < files.length; i++) items.push({ name: files[i].name, error: 'Cancelled.' }); }
       if (i >= files.length) { finish(); return; }
       var file = files[i++];
       batchLabel = 'File ' + i + ' of ' + files.length + ': ' + file.name;

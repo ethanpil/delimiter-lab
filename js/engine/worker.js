@@ -27,8 +27,24 @@ var state = {
   diffMemo: new WeakMap() // output table -> { input, summary }
 };
 
+// A run gives control back between the steps, so a cancel message can arrive. The other
+// messages wait in a queue until the run is complete, so they see complete results.
+var queue = [];
+var busy = false;
+
 self.onmessage = function (e) {
   var msg = e.data;
+  if (msg.type === 'cancel') { state.cancelRun = msg.runId; self.postMessage({ type: 'ok', requestId: msg.requestId }); return; }
+  if (busy) { queue.push(msg); return; }
+  handle(msg);
+};
+
+function drain() {
+  busy = false;
+  while (queue.length && !busy) handle(queue.shift());
+}
+
+function handle(msg) {
   var reply = function (payload) {
     payload.requestId = msg.requestId;
     self.postMessage(payload);
@@ -38,7 +54,10 @@ self.onmessage = function (e) {
       case 'config': state.maxCells = DL.maxCells = msg.maxCells; state.cacheBudgetCells = msg.maxCells * 3; reply({ type: 'ok' }); break;
       case 'sheets': reply({ type: 'sheets', sheets: sheetNames(msg.file) }); break;
       case 'load': loadFile(msg, reply); break;
-      case 'run': reply({ type: 'ran', results: runChain(msg) }); break;
+      case 'run':
+        busy = true;
+        runChain(msg, function (results, cancelled) { reply({ type: 'ran', results: results, cancelled: cancelled }); drain(); });
+        break;
       case 'slice': reply({ type: 'slice', stepId: msg.stepId, data: getSlice(msg) }); break;
       case 'export': exportStep(msg, reply); break;
       case 'batch': reply({ type: 'batch', result: batchFile(msg) }); break;
@@ -51,9 +70,10 @@ self.onmessage = function (e) {
       default: reply({ type: 'error', message: 'Unknown request "' + msg.type + '".' });
     }
   } catch (err) {
+    busy = false;
     reply({ type: 'error', message: err && err.message ? err.message : String(err), tooLarge: !!(err && err.tooLarge) });
   }
-};
+}
 
 function progress(phase, percent) {
   self.postMessage({ type: 'progress', phase: phase, percent: percent });
@@ -360,44 +380,68 @@ function enforceBudget(keep) {
   }
 }
 
-// Runs the whole chain. Results with a table are kept by content hash. The other results are
-// quick to make, so each run makes them again. A step that is fixed or removed never shows an old result.
-function runChain(msg) {
+var CANCELLED_NOTE = 'The run was cancelled. Change a setting or turn a step off and on to run again.';
+
+// Runs the whole chain and calls done(results, cancelled). Results with a table are kept by content
+// hash. The other results are quick to make, so each run makes them again. A step that is fixed or
+// removed never shows an old result. Between two steps the worker reads its messages, so a cancel
+// message can stop the run before the next step.
+function runChain(msg, done) {
   state.steps = msg.steps || [];
   state.pinned = msg.protect || [];
-  if (!state.source) return [];
+  state.cancelRun = null;
+  if (!state.source) { done([], false); return; }
   var results = [];
   var upstream = state.source;
   var upstreamHash = state.sourceKey;
   var blocked = null;
   var live = new Set();
   var progressAt = Date.now();
-  for (var i = 0; i < state.steps.length; i++) {
-    var step = state.steps[i];
-    live.add(step.id);
-    var h = stepHash(step, upstreamHash);
-    var entry;
-    if (blocked) {
-      entry = makeEntry(h, 'blocked', null, [blocked]);
-    } else {
-      entry = state.cache.get(step.id);
-      if (!entry || entry.hash !== h || !entry.table) entry = computeStep(step, upstream, h);
-      touch(entry);
-    }
-    if (entry.table) state.cache.set(step.id, entry); else state.cache.delete(step.id);
-    if (!entry.table) blocked = 'Waiting for step ' + (i + 1) + (entry.status === 'error' ? ' to be fixed.' : ' to be completed.');
-    results.push(resultOf(step, entry));
-    if (entry.table) { upstream = entry.table; upstreamHash = h; }
-    enforceBudget([step.id]); // keep memory in check while the chain runs
-    if (Date.now() - progressAt > 150) {
-      progressAt = Date.now();
-      progress('Running step ' + (i + 1) + ' of ' + state.steps.length, Math.round(100 * (i + 1) / state.steps.length));
-    }
+  var i = 0;
+  var runId = msg.runId;
+
+  function finish(cancelled) {
+    Array.from(state.cache.keys()).forEach(function (id) { if (!live.has(id)) state.cache.delete(id); });
+    state.recent = state.recent.filter(function (id) { return live.has(id); });
+    enforceBudget([]);
+    done(results, cancelled);
   }
-  Array.from(state.cache.keys()).forEach(function (id) { if (!live.has(id)) state.cache.delete(id); });
-  state.recent = state.recent.filter(function (id) { return live.has(id); });
-  enforceBudget([]);
-  return results;
+
+  function stepLoop() {
+    var sliceStart = Date.now();
+    while (i < state.steps.length) {
+      if (state.cancelRun === runId) {
+        for (; i < state.steps.length; i++) { live.add(state.steps[i].id); results.push(resultOf(state.steps[i], makeEntry('', 'blocked', null, [CANCELLED_NOTE]))); state.cache.delete(state.steps[i].id); }
+        finish(true);
+        return;
+      }
+      var step = state.steps[i];
+      live.add(step.id);
+      var h = stepHash(step, upstreamHash);
+      var entry;
+      if (blocked) {
+        entry = makeEntry(h, 'blocked', null, [blocked]);
+      } else {
+        entry = state.cache.get(step.id);
+        if (!entry || entry.hash !== h || !entry.table) entry = computeStep(step, upstream, h);
+        touch(entry);
+      }
+      if (entry.table) state.cache.set(step.id, entry); else state.cache.delete(step.id);
+      if (!entry.table) blocked = 'Waiting for step ' + (i + 1) + (entry.status === 'error' ? ' to be fixed.' : ' to be completed.');
+      results.push(resultOf(step, entry));
+      if (entry.table) { upstream = entry.table; upstreamHash = h; }
+      enforceBudget([step.id]); // keep memory in check while the chain runs
+      i++;
+      if (Date.now() - progressAt > 150) {
+        progressAt = Date.now();
+        progress('Running step ' + i + ' of ' + state.steps.length, Math.round(100 * i / state.steps.length));
+      }
+      // After 50 ms of work, let the message queue run so a cancel message can arrive.
+      if (Date.now() - sliceStart > 50 && i < state.steps.length) { setTimeout(stepLoop, 0); return; }
+    }
+    finish(false);
+  }
+  stepLoop();
 }
 
 // Gives the table for a step id ('source' or a step id). Recomputes freed results when needed.

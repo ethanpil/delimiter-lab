@@ -14,6 +14,7 @@ Delimiter Lab changes delimited data files step by step, without code. It runs f
 - Saves workflows in the browser and as files, so you can apply them again to new files.
 - Applies the steps to many files at once: drop the files, choose the output format and download a zip file.
 - Undo and redo.
+- A Cancel button stops a slow run before its next step. The steps that ran keep their results.
 - Works with large files. The file size limit depends on the memory of the computer.
 
 ## Operations
