@@ -546,6 +546,8 @@ test('pivot groups, spreads a key column and aggregates', () => {
   assert.deepStrictEqual(rowsOf(list.table), [['N', 'Q1', '10, 2'], ['N', 'Q2', '5.5'], ['S', 'Q1', 'x'], ['S', '', '4']]);
   const avg = run('pivot', { rows: [], columnKey: 'Q', value: 'Sales', aggregate: 'avg', decimals: 0 }, t);
   assert.deepStrictEqual(rowsOf(avg.table), [['6', '6', '4']]);
+  assert.ok(sum.notes[1].indexOf('1 value') === 0, 'ignored values note');
+  assert.strictEqual(avg.notes.length, 2);
   assert.ok(DL.validateParams('pivot', Object.assign(DL.defaultParams('pivot'), { rows: ['Region'], columnKey: 'Region' }), ['Region']).length);
   assert.strictEqual(DL.predictColumns('pivot', DL.defaultParams('pivot'), ['Region']), null);
 });
