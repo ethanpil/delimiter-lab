@@ -2,6 +2,7 @@
 
 ## 1.4.0
 
+- Add: CONTEXT.md with the design, the conventions, the lessons learned and the pitfalls for developers.
 - Fix: number parsing refuses infinite values, malformed digit groups and "(-5)"; number formatting stays sane for huge values (c0e1d74).
 - Fix: date parsing refuses versions, identifiers, year-less month text and "13:04 PM"; years 0 to 999 keep four digits (c0e1d74).
 - Fix: Split Name keeps a multi-word last name before a comma; title case keeps contractions (c0e1d74).

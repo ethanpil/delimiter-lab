@@ -69,6 +69,8 @@ node test/bench.js 1200000
 
 ## Structure
 
+Read `CONTEXT.md` before you change the code. It explains the design, the conventions, the lessons learned and the pitfalls.
+
 ```
 index.html          Page shell. Loads the files from the manifest.
 js/manifest.js      Version and the list of application files
