@@ -66,9 +66,9 @@ body {
 .app-header .btn { white-space: nowrap; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: 7px;
-  background: var(--dl-accent); color: #fff; font-size: 16px;
+  width: 28px; height: 28px;
 }
+.brand-mark img { display: block; width: 28px; height: 28px; }
 .workflow-name { width: 260px; font-weight: 500; }
 .workflow-name:not(:focus) { border-color: transparent; background: transparent; }
 .workflow-name:not(:focus):hover { border-color: var(--dl-border); }

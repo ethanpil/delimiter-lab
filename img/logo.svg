@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Delimiter Lab">
+  <rect width="48" height="48" rx="11" fill="#0d6efd"/>
+  <g transform="translate(4.8 4.8) scale(0.8)" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 8H11L19 16H44"/>
+    <path d="M4 32H24"/>
+    <path d="M32 24H44"/>
+    <path d="M37 40H44"/>
+    <g opacity="0.5">
+      <path d="M22 8H44"/>
+      <path d="M4 16H8"/>
+      <path d="M4 24H6"/>
+      <path d="M16 24H22"/>
+      <path d="M35 32H44"/>
+      <path d="M4 40H14"/>
+      <path d="M22 40H27"/>
+    </g>
+  </g>
+</svg>
