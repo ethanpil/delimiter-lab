@@ -531,7 +531,8 @@
     sourceOptions.sheet = ''; // the first sheet of each file
     var many = files.length > 1;
     var wfName = U.safeFileName((wf.name || '').trim() || 'workflow');
-    var baseName = many ? wfName : U.baseName(files[0].name) + '-' + wfName;
+    var stamp = DL.formatDate(Date.now(), 'YYYY-MM-DD-HH-mm');
+    var baseName = (many ? wfName : U.baseName(files[0].name)) + '-processed-' + stamp;
     var note = DL.t('msg.quickRunNote', { name: wf.name, steps: DL.pluralize(steps.length, 'step') });
     DL.dialogs.download({ files: many ? files : null, baseName: baseName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, outName, allOptions) {
       lastFormat = options.format;
