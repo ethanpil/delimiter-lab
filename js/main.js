@@ -195,6 +195,7 @@
       previewKey = key;
       grid.show(shown.stepId, message).then(function () {
         if (searchQuery) runSearch();
+        else if (searchMatches.length) showMatches([], ''); // rows from a note belong to the old preview
         else if (shown.result && shown.stepId === sel) scrollToNewColumns(shown);
       });
     } else if (grid.diff && grid.diffSummary) {

@@ -6,7 +6,7 @@
 - Add: Pivot and Unpivot operations (b4d0f1b).
 - Add: column profile on a click on a column name (61287f4).
 - Add: "Changes" view that marks the cells a step changed (61287f4).
-- Add: a click on a Verify result shows the rows that failed the rule.
+- Add: a click on a Verify result shows the rows that failed the rule (dcc533d).
 
 ## 1.2.0
 

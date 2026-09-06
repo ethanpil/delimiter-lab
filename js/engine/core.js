@@ -891,7 +891,8 @@
    *   params: [ field definitions ],
    *   outputColumns(inputColumns, params) -> string[] | null   (null = not known before the step runs),
    *   validate(params, cols) -> string[]                        (optional cross-field checks),
-   *   apply(table, params) -> { table, notes, status }
+   *   apply(table, params) -> { table, notes, status }         (a note is a text or { text, rows }),
+   *   findRows(inputTable, params, rows, limit) -> { matches: [[row, col]], total, removed }  (optional, for notes with rows)
    * }
    */
   DL.registerOp = function (def) {
@@ -992,7 +993,6 @@
     return op.outputColumns(inputColumns.slice(), params);
   };
 
-  // Runs one operation. Gives { table, notes, status }.
   // Gives the text of a result note. A note is a text, or an object { text, rows } when the
   // operation can show the rows that the note is about.
   DL.noteText = function (note) {
@@ -1007,6 +1007,7 @@
     return op.findRows(inputTable, params, lookup, limit || 2000);
   };
 
+  // Runs one operation. Gives { table, notes, status }.
   DL.runOp = function (opId, params, table) {
     var op = DL.getOp(opId);
     if (!op) throw new Error('Unknown operation "' + opId + '".');

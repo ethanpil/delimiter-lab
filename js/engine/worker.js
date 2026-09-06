@@ -617,7 +617,7 @@ function findRows(msg) {
   var input = inputFor(msg.stepId);
   var step = null;
   for (var i = 0; i < state.steps.length; i++) if (state.steps[i].id === msg.stepId) step = state.steps[i];
-  if (!input || !step || !tableFor(msg.stepId)) return { matches: [], total: 0 };
+  if (!input || !step) return { matches: [], total: 0 };
   return DL.findRows(step.opId, step.params, input, msg.lookup, msg.limit);
 }
 
