@@ -10,7 +10,7 @@
     return idxs.map(function (i) {
       var col = DL.col(table, i);
       if (trim || ignoreCase) {
-        col = DL.mapColumns(DL.makeTable(['k'], [col], col.length), [0], function (v) { return DL.normalizeKey(v, trim, ignoreCase); }).cols[0];
+        col = DL.mapValues(col, col.length, function (v) { return DL.normalizeKey(v, trim, ignoreCase); });
       }
       return function (r) { return col[r]; };
     });
@@ -289,7 +289,7 @@
     ],
     summary: function (p) { return p.action + ' outliers in "' + p.column + '" (' + p.method + ')'; },
     outputColumns: function (cols, p) {
-      return p.action === 'flag' ? cols.concat([DL.uniqueName(cols, DL.cleanName(p.flagColumn, OUTLIER))]) : cols;
+      return p.action === 'flag' ? cols.concat([DL.newColumnName(cols, p.flagColumn, OUTLIER)]) : cols;
     },
     apply: function (table, p) {
       var col = DL.col(table, DL.requireCol(table, p.column));
@@ -342,7 +342,7 @@
         else if (isOut === keepOut) keep.push(i);
       }
       var out = flags
-        ? DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.flagColumn, OUTLIER)), flags)
+        ? DL.addColumn(table, DL.newColumnName(table.columns, p.flagColumn, OUTLIER), flags)
         : DL.selectRows(table, keep);
       notes.unshift('Found ' + DL.pluralize(count, 'outlier') + '.');
       return { table: out, notes: notes };

@@ -577,6 +577,46 @@ test('verify findRows gives the failing rows of one rule', () => {
   assert.deepStrictEqual(DL.findRows('case', {}, people, {}, 10), { matches: [], total: 0 });
 });
 
+test('date math handles years 0 to 99, the year range, and YYYYMMDD', () => {
+  const t = T(['A'], [['0001-01-01'], ['9999-12-31'], ['20240131']]);
+  const doy = run('dateMath', { column: 'A', mode: 'part', part: 'dayOfYear', output: 'R' }, t);
+  assert.deepStrictEqual(rowsOf(doy.table).map((r) => r[1]), ['1', '365', '31']);
+  const wk = run('dateMath', { column: 'A', mode: 'part', part: 'week', output: 'R' }, t);
+  assert.strictEqual(rowsOf(wk.table)[0][1], '1');
+  const add = run('dateMath', { column: 'A', mode: 'add', amount: 1, unit: 'days', output: 'R' }, t);
+  assert.deepStrictEqual(rowsOf(add.table).map((r) => r[1]), ['0001-01-02', '', '2024-02-01']);
+  assert.ok(add.notes[0].indexOf('1 value') === 0, 'out of range counted');
+  assert.strictEqual(DL.formatDate(DL.localDate(50, 1, 28).getTime(), 'YYYY-MM-DD [at] H'), '0050-02-28 at 0');
+});
+
+test('pivot keeps the total column for an empty input and names blank keys first', () => {
+  const empty = run('pivot', { rows: ['R'], columnKey: '', value: 'V', aggregate: 'sum' }, T(['R', 'V'], []));
+  assert.deepStrictEqual(empty.table.columns, ['R', 'sum of V']);
+  const t = T(['R', 'K', 'V'], [['a', '(empty)', '1'], ['a', '', '2'], ['a', '  ', '3']]);
+  const r = run('pivot', { rows: ['R'], columnKey: 'K', value: 'V', aggregate: 'sum', decimals: 0 }, t);
+  assert.deepStrictEqual(r.table.columns, ['R', '(empty) 2', '(empty)', '(blank)']);
+  assert.deepStrictEqual(rowsOf(r.table), [['a', '1', '2', '3']]);
+});
+
+test('clean text keeps other scripts, decodes entities safely and collapses line breaks', () => {
+  const t = T(['A'], [['\u0439\u0451 \ud55c\uae00 \u00e9'], ['&#12abc; &#0; a<?xml x?>b'], ['a\nb\t\tc']]);
+  const acc = run('textClean', { steps: ['accents'] }, t);
+  assert.strictEqual(rowsOf(acc.table)[0][0], '\u0439\u0451 \ud55c\uae00 e');
+  const html = run('textClean', { steps: ['html'] }, t);
+  assert.strictEqual(rowsOf(html.table)[1][0], '&#12abc; &#0; ab');
+  const sp = run('textClean', { steps: ['spaces'] }, t);
+  assert.strictEqual(rowsOf(sp.table)[2][0], 'a b c');
+  const ex = run('extract', { column: 'A', pattern: '\\d*', all: true, joiner: '|', output: 'N' }, T(['A'], [['a1b22']]));
+  assert.strictEqual(rowsOf(ex.table)[0][1], '1|22');
+});
+
+test('fill counts every changed cell and unescapes the fixed value', () => {
+  const t = T(['A'], [['  '], ['x'], ['']]);
+  const r = run('fill', { columns: ['A'], mode: 'value', value: '\\t' }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((x) => x[0]), ['\t', 'x', '\t']);
+  assert.ok(r.notes[0].indexOf('2 cells') > 0);
+});
+
 /* ---- performance smoke ---- */
 test('performance on 200k rows', () => {
   const rows = new Array(200000);

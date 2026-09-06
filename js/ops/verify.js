@@ -115,7 +115,7 @@
     ],
     summary: function (p) { return DL.pluralize(p.rules.length, 'rule') + ', ' + p.action; },
     outputColumns: function (cols, p) {
-      return p.action === 'flag' ? cols.concat([DL.uniqueName(cols, DL.cleanName(p.flagColumn, PROBLEMS))]) : cols;
+      return p.action === 'flag' ? cols.concat([DL.newColumnName(cols, p.flagColumn, PROBLEMS)]) : cols;
     },
     apply: function (table, p) {
       var n = table.length;
@@ -139,7 +139,7 @@
         else if (wantFailed ? !!problems : !problems) keep.push(i);
       }
       var out = flag
-        ? DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.flagColumn, PROBLEMS)), flags)
+        ? DL.addColumn(table, DL.newColumnName(table.columns, p.flagColumn, PROBLEMS), flags)
         : DL.selectRows(table, keep);
       var notes = [];
       if (failedRows === 0) notes.push('All ' + DL.pluralize(n, 'row') + ' passed.');
@@ -152,22 +152,24 @@
     // Finds the rows of the output that failed one rule (lookup.rule). See DL.findRows.
     findRows: function (table, p, lookup, limit) {
       var n = table.length;
-      var rules = p.rules.map(function (r) { return DL.buildVerifyRule(table, r); });
-      var k = lookup.rule;
-      if (!rules[k]) return { matches: [], total: 0 };
+      var k = lookup ? Number(lookup.rule) : -1;
+      if (!p.rules[k]) return { matches: [], total: 0 };
       if (p.action === 'passed') return { matches: [], total: 0, removed: true };
+      var rule = DL.buildVerifyRule(table, p.rules[k]);
+      // With "keep only rows with problems", the output row of a row depends on the other rules too.
+      var others = p.action === 'failed' ? p.rules.filter(function (r, j) { return j !== k; }).map(function (r) { return DL.buildVerifyRule(table, r); }) : [];
       var col = DL.requireCol(table, p.rules[k].column);
       var matches = [];
       var total = 0;
       var outRow = 0;
       for (var i = 0; i < n; i++) {
-        var failed = !rules[k].test(i);
+        var failed = !rule.test(i);
         if (failed) {
           total++;
           if (matches.length < limit) matches.push([outRow, col]);
         }
-        if (p.action === 'flag') outRow++;
-        else if (failed || rules.some(function (r) { return !r.test(i); })) outRow++;
+        if (p.action === 'flag' || failed) { outRow++; continue; }
+        for (var j = 0; j < others.length; j++) if (!others[j].test(i)) { outRow++; break; }
       }
       return { matches: matches, total: total };
     }

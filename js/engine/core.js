@@ -281,6 +281,11 @@
 
   /* ---------- Names ---------- */
 
+  // Makes the name of a new column: the wanted name, or the fallback when it is empty, made unique.
+  DL.newColumnName = function (columns, wanted, fallback) {
+    return DL.uniqueName(columns, DL.cleanName(wanted, fallback));
+  };
+
   // Makes a column name that does not collide with existing names.
   DL.uniqueName = function (columns, wanted) {
     var name = wanted;
@@ -375,6 +380,7 @@
   };
 
   var isoRe = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\s*(Z|[+-]\d{2}:?\d{2})?)?$/;
+  var compactRe = /^(\d{4})(\d{2})(\d{2})$/; // 20240131
   var slashRe = /^(\d{1,4})[\/.\-](\d{1,2})[\/.\-](\d{1,4})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?$/;
 
   function daysInMonth(y, m) {
@@ -414,6 +420,8 @@
       if (m[8]) return makeZonedDate(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0), +((m[7] || '0') + '00').slice(0, 3), m[8]);
       return makeDate(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
     }
+    m = compactRe.exec(s);
+    if (m) return makeDate(+m[1], +m[2], +m[3], 0, 0, 0);
     m = slashRe.exec(s);
     if (m) {
       var a = +m[1], b = +m[2], c = +m[3];
@@ -443,9 +451,11 @@
     return year >= 1000 && year <= 9999 ? t : NaN;
   };
 
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
   DL.formatDateISO = function (ts) {
     var d = new Date(ts);
-    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var pad = pad2;
     var out = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
     if (d.getHours() || d.getMinutes() || d.getSeconds()) {
       out += ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
@@ -458,35 +468,65 @@
 
   var TOKEN_RE = /\[[^\]]*\]|YYYY|YY|MMMM|MMM|MM|M|DDDD|DDD|DD|D|HH|H|mm|ss|A|a/g;
 
-  // Writes a local timestamp with a pattern such as "YYYY-MM-DD" or "D MMM YYYY HH:mm".
-  // Tokens: YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A a.
-  // Text in square brackets is written without change. All other characters are written without change.
-  DL.formatDate = function (ts, pattern) {
-    var d = new Date(ts);
-    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-    var h = d.getHours();
-    return pattern.replace(TOKEN_RE, function (t) {
-      if (t.charAt(0) === '[') return t.slice(1, -1);
-      switch (t) {
-        case 'YYYY': return ('000' + d.getFullYear()).slice(-4);
-        case 'YY': return pad(d.getFullYear() % 100);
-        case 'MMMM': return DL.MONTH_NAMES[d.getMonth()];
-        case 'MMM': return DL.MONTH_NAMES[d.getMonth()].slice(0, 3);
-        case 'MM': return pad(d.getMonth() + 1);
-        case 'M': return String(d.getMonth() + 1);
-        case 'DDDD': return DL.DAY_NAMES[d.getDay()];
-        case 'DDD': return DL.DAY_NAMES[d.getDay()].slice(0, 3);
-        case 'DD': return pad(d.getDate());
-        case 'D': return String(d.getDate());
-        case 'HH': return pad(h);
-        case 'H': return String(h);
-        case 'mm': return pad(d.getMinutes());
-        case 'ss': return pad(d.getSeconds());
-        case 'A': return h < 12 ? 'AM' : 'PM';
-        case 'a': return h < 12 ? 'am' : 'pm';
-        default: return t;
-      }
+  // One function per token. Each function reads a Date object.
+  var TOKENS = {
+    YYYY: function (d) { return ('000' + d.getFullYear()).slice(-4); },
+    YY: function (d) { return pad2(d.getFullYear() % 100); },
+    MMMM: function (d) { return DL.MONTH_NAMES[d.getMonth()]; },
+    MMM: function (d) { return DL.MONTH_NAMES[d.getMonth()].slice(0, 3); },
+    MM: function (d) { return pad2(d.getMonth() + 1); },
+    M: function (d) { return String(d.getMonth() + 1); },
+    DDDD: function (d) { return DL.DAY_NAMES[d.getDay()]; },
+    DDD: function (d) { return DL.DAY_NAMES[d.getDay()].slice(0, 3); },
+    DD: function (d) { return pad2(d.getDate()); },
+    D: function (d) { return String(d.getDate()); },
+    HH: function (d) { return pad2(d.getHours()); },
+    H: function (d) { return String(d.getHours()); },
+    mm: function (d) { return pad2(d.getMinutes()); },
+    ss: function (d) { return pad2(d.getSeconds()); },
+    A: function (d) { return d.getHours() < 12 ? 'AM' : 'PM'; },
+    a: function (d) { return d.getHours() < 12 ? 'am' : 'pm'; }
+  };
+
+  // Turns a pattern such as "YYYY-MM-DD" or "D MMM YYYY HH:mm" into a function(timestamp) -> text.
+  // Tokens: YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A a. Text in square brackets and all
+  // other characters go into the result without change.
+  DL.compileDateFormat = function (pattern) {
+    var parts = [];
+    var last = 0;
+    pattern.replace(TOKEN_RE, function (t, at) {
+      if (at > last) parts.push(pattern.slice(last, at));
+      parts.push(t.charAt(0) === '[' ? t.slice(1, -1) : TOKENS[t]);
+      last = at + t.length;
     });
+    if (last < pattern.length) parts.push(pattern.slice(last));
+    return function (ts) {
+      var d = new Date(ts);
+      var out = '';
+      for (var i = 0; i < parts.length; i++) out += typeof parts[i] === 'string' ? parts[i] : parts[i](d);
+      return out;
+    };
+  };
+
+  var compiledFormats = {};
+  var compiledCount = 0;
+
+  // Writes a local timestamp with a pattern. The compiled patterns are kept, so repeated calls are quick.
+  DL.formatDate = function (ts, pattern) {
+    var f = compiledFormats[pattern];
+    if (!f) {
+      if (compiledCount > 100) { compiledFormats = {}; compiledCount = 0; }
+      f = compiledFormats[pattern] = DL.compileDateFormat(pattern);
+      compiledCount++;
+    }
+    return f(ts);
+  };
+
+  // Makes a local date for any year, also for the years 0 to 99 that the Date constructor moves to 1900.
+  DL.localDate = function (year, month, day) {
+    var d = new Date(2000, 0, 1);
+    d.setFullYear(year, month, day);
+    return d;
   };
 
   /* ---------- Number formatting ---------- */
@@ -892,7 +932,8 @@
    *   outputColumns(inputColumns, params) -> string[] | null   (null = not known before the step runs),
    *   validate(params, cols) -> string[]                        (optional cross-field checks),
    *   apply(table, params) -> { table, notes, status }         (a note is a text or { text, rows }),
-   *   findRows(inputTable, params, rows, limit) -> { matches: [[row, col]], total, removed }  (optional, for notes with rows)
+   *   findRows(inputTable, params, rows, limit) -> { matches: [[row, col]], total, removed }  (optional, for notes with rows),
+   *   hashExtra(params) -> string   (optional: text that must change the cached result, for example today's date)
    * }
    */
   DL.registerOp = function (def) {

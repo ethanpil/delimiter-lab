@@ -3,7 +3,7 @@
   'use strict';
   var DL = root.DL;
 
-  var DAY_FIRST = { key: 'dayFirst', label: 'Read 01/02/2024 as 1 February', type: 'boolean', default: false, help: 'Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly.' };
+  var DAY_FIRST = { key: 'dayFirst', label: 'Read 01/02/2024 as 1 February', type: 'boolean', default: false, help: 'Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly. A value with a time zone, such as 2024-01-01T00:00:00Z, is converted to the local time of this computer.' };
 
   var OUTPUT_FORMATS = [
     { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (2024-01-31)' },
@@ -79,8 +79,15 @@
     var day = d.getDate();
     d.setDate(1);
     d.setMonth(d.getMonth() + n);
-    var last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    var last = DL.localDate(d.getFullYear(), d.getMonth() + 1, 0).getDate();
     d.setDate(Math.min(day, last));
+  }
+
+  // True when a timestamp is a date that the application can write (years 0 to 9999).
+  function inRange(ts) {
+    if (ts !== ts) return false;
+    var y = new Date(ts).getFullYear();
+    return y >= 0 && y <= 9999;
   }
 
   function startOfDay(ts) {
@@ -106,7 +113,7 @@
     var d = new Date(ts);
     d.setHours(0, 0, 0, 0);
     d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7)); // Move d to the Thursday of the same week.
-    var firstThursday = new Date(d.getFullYear(), 0, 4);
+    var firstThursday = DL.localDate(d.getFullYear(), 0, 4);
     return 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getDay() + 6) % 7)) / 7);
   }
 
@@ -121,7 +128,7 @@
       case 'weekdayNumber': return String((d.getDay() + 6) % 7 + 1);
       case 'week': return String(isoWeek(ts));
       case 'quarter': return String(Math.floor(d.getMonth() / 3) + 1);
-      case 'dayOfYear': return String(Math.round((startOfDay(ts) - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000) + 1);
+      case 'dayOfYear': return String(Math.round((startOfDay(ts) - DL.localDate(d.getFullYear(), 0, 1).getTime()) / 86400000) + 1);
       case 'hour': return String(d.getHours());
       case 'minute': return String(d.getMinutes());
       default: return '';
@@ -146,7 +153,7 @@
           { value: 'diff', label: 'Time between two dates' },
           { value: 'part', label: 'A part of the date' }
         ] },
-      { key: 'amount', label: 'Amount (negative to subtract)', type: 'number', default: 1, required: true, integer: true, showIf: function (p) { return p.mode === 'add'; } },
+      { key: 'amount', label: 'Amount (negative to subtract)', type: 'number', default: 1, required: true, integer: true, min: -1000000, max: 1000000, showIf: function (p) { return p.mode === 'add'; } },
       { key: 'unit', label: 'Unit', type: 'select', default: 'days', options: UNITS, showIf: function (p) { return p.mode !== 'part'; } },
       { key: 'otherKind', label: 'Second date', type: 'select', default: 'column', showIf: function (p) { return p.mode === 'diff'; },
         options: [{ value: 'column', label: 'Another column' }, { value: 'today', label: 'Today' }, { value: 'fixed', label: 'A fixed date' }] },
@@ -165,14 +172,16 @@
       if (p.mode === 'diff' && p.otherKind === 'fixed' && isNaN(DL.toDate(p.fixedDate, p.dayFirst))) return ['Enter a date such as 2024-12-31 for "Fixed date".'];
       return [];
     },
-    outputColumns: function (cols, p) { return cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, RESULT))]); },
+    outputColumns: function (cols, p) { return cols.concat([DL.newColumnName(cols, p.output, RESULT)]); },
+    // "Today" changes with the day, so the cached result must change too.
+    hashExtra: function (p) { return p.mode === 'diff' && p.otherKind === 'today' ? DL.formatDateISO(startOfDay(Date.now())) : ''; },
     apply: function (table, p) {
       var col = DL.col(table, DL.requireCol(table, p.column));
       var dayFirst = !!p.dayFirst;
       var n = table.length;
       var stats = {};
       var values;
-      // A cell that is not empty and not a date is tagged, so the note can count it.
+      // The parse function tags a cell that is not empty and not a date, so the note can count it.
       var parse = function (v, ctx) {
         var t = DL.toDate(v, dayFirst);
         if (t !== t && v.trim() !== '') ctx.tag();
@@ -182,20 +191,20 @@
         var amount = Number(p.amount);
         values = DL.mapValues(col, n, function (v, ctx) {
           var t = parse(v, ctx);
-          return t !== t ? '' : DL.formatDate(addUnits(t, amount, p.unit), p.format);
+          if (t !== t) return '';
+          var r = addUnits(t, amount, p.unit);
+          if (!inRange(r)) { ctx.tag(); return ''; }
+          return DL.formatDate(r, p.format);
         }, stats);
       } else if (p.mode === 'diff' && p.otherKind === 'column') {
+        // Each column is parsed once per different value; the two timestamp arrays are then combined.
         var otherCol = DL.col(table, DL.requireCol(table, p.other));
-        var ctx = { tagged: false, tag: function () { this.tagged = true; } };
+        var statsB = {};
+        var ta = DL.mapValues(col, n, parse, stats);
+        var tb = DL.mapValues(otherCol, n, parse, statsB);
+        stats.tagged += statsB.tagged;
         values = new Array(n);
-        stats.tagged = 0;
-        for (var i = 0; i < n; i++) {
-          ctx.tagged = false;
-          var t = parse(col[i], ctx);
-          var u = parse(otherCol[i], ctx);
-          if (ctx.tagged) stats.tagged++;
-          values[i] = t !== t || u !== u ? '' : String(diffUnits(t, u, p.unit));
-        }
+        for (var i = 0; i < n; i++) values[i] = ta[i] !== ta[i] || tb[i] !== tb[i] ? '' : String(diffUnits(ta[i], tb[i], p.unit));
       } else if (p.mode === 'diff') {
         var fixed = p.otherKind === 'today' ? startOfDay(Date.now()) : DL.toDate(p.fixedDate, dayFirst);
         values = DL.mapValues(col, n, function (v, ctx) {
@@ -208,8 +217,8 @@
           return t !== t ? '' : datePart(t, p.part);
         }, stats);
       }
-      var notes = stats.tagged ? [DL.pluralize(stats.tagged, 'value') + ' could not be read as a date.'] : [];
-      return { table: DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, RESULT)), values), notes: notes };
+      var notes = stats.tagged ? [DL.pluralize(stats.tagged, 'value') + (p.mode === 'add' ? ' could not be read as a date, or the result is outside the years 0 to 9999.' : ' could not be read as a date.')] : [];
+      return { table: DL.addColumn(table, DL.newColumnName(table.columns, p.output, RESULT), values), notes: notes };
     }
   });
 })(typeof self !== 'undefined' ? self : this);

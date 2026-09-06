@@ -136,11 +136,13 @@
     ],
     summary: function (p) { return '"' + p.name + '"' + (p.kind === 'value' ? ' = "' + p.value + '"' : ' (' + p.kind + ')'); },
     outputColumns: function (cols, p) {
-      var n = DL.uniqueName(cols, DL.cleanName(p.name, NEW_COLUMN));
+      var n = DL.newColumnName(cols, p.name, NEW_COLUMN);
       return p.position === 'start' ? [n].concat(cols) : cols.concat([n]);
     },
+    // "Today" changes with the day, so the cached result must change too.
+    hashExtra: function (p) { return p.kind === 'today' ? DL.formatDateISO(new Date().setHours(0, 0, 0, 0)) : ''; },
     apply: function (table, p) {
-      var name = DL.uniqueName(table.columns, DL.cleanName(p.name, NEW_COLUMN));
+      var name = DL.newColumnName(table.columns, p.name, NEW_COLUMN);
       var n = table.length;
       var values = new Array(n);
       var i;
@@ -194,10 +196,10 @@
           var start = p.mode === 'above' ? 0 : n - 1, step = p.mode === 'above' ? 1 : -1;
           for (i = start; i >= 0 && i < n; i += step) {
             v = src[i];
-            if (isEmpty(v)) { out[i] = last; if (last !== '') filled++; } else { out[i] = v; last = v; }
+            if (isEmpty(v)) { out[i] = last; if (last !== v) filled++; } else { out[i] = v; last = v; }
           }
         } else {
-          var fillValue = p.value;
+          var fillValue = DL.unescapeText(p.value);
           if (p.mode === 'average') {
             var sum = 0, count = 0;
             for (i = 0; i < n; i++) { var x = DL.toNumber(src[i]); if (x === x) { sum += x; count++; } }
@@ -210,12 +212,12 @@
           }
           for (i = 0; i < n; i++) {
             v = src[i];
-            if (isEmpty(v)) { out[i] = fillValue; if (fillValue !== '') filled++; } else out[i] = v;
+            if (isEmpty(v)) { out[i] = fillValue; if (fillValue !== v) filled++; } else out[i] = v;
           }
         }
         cols[c] = out;
       });
-      return { table: DL.makeTable(table.columns, cols, n), notes: ['Filled ' + DL.pluralize(filled, 'cell') + '.'] };
+      return { table: DL.makeTable(table.columns, cols, n), notes: ['Changed ' + DL.pluralize(filled, 'cell') + '.'] };
     }
   });
 
@@ -254,7 +256,7 @@
         options: [{ value: 'blank', label: 'Leave the result empty' }, { value: 'zero', label: 'Treat it as 0' }, { value: 'text', label: 'Write "error"' }] }
     ],
     summary: function (p) { return p.output + ' = ' + p.left + ' ' + p.operator + ' ' + (p.rightKind === 'number' ? p.rightNumber : p.right); },
-    outputColumns: function (cols, p) { return cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, RESULT))]); },
+    outputColumns: function (cols, p) { return cols.concat([DL.newColumnName(cols, p.output, RESULT)]); },
     apply: function (table, p) {
       var useNum = p.rightKind === 'number';
       var left = DL.col(table, DL.requireCol(table, p.left));
@@ -280,7 +282,7 @@
         else values[i] = dec >= 0 ? DL.formatFixed(v, dec) : DL.numberText(v);
       }
       var notes = bad ? [DL.pluralize(bad, 'row') + ' could not be calculated.'] : [];
-      return { table: DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, RESULT)), values), notes: notes };
+      return { table: DL.addColumn(table, DL.newColumnName(table.columns, p.output, RESULT), values), notes: notes };
     }
   });
 
@@ -348,7 +350,7 @@
       try { new Function('row', 'index', 'num', 'date', p.code); } catch (e) { return ['The code has a syntax error: ' + e.message]; }
       return [];
     },
-    outputColumns: function (cols, p) { return p.replaceColumn ? cols : cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, RESULT))]); },
+    outputColumns: function (cols, p) { return p.replaceColumn ? cols : cols.concat([DL.newColumnName(cols, p.output, RESULT)]); },
     apply: function (table, p) {
       var fn = new Function('row', 'index', 'num', 'date', p.code);
       var cols = table.columns;
@@ -378,7 +380,7 @@
         var newCols = table.cols.slice();
         newCols[target] = values;
         out = DL.makeTable(cols, newCols, n);
-      } else out = DL.addColumn(table, DL.uniqueName(cols, DL.cleanName(p.output, 'Result')), values);
+      } else out = DL.addColumn(table, DL.newColumnName(cols, p.output, 'Result'), values);
       return { table: out, notes: notes };
     }
   });

@@ -106,12 +106,16 @@
       var keySlot = Object.create(null);
       var cells = []; // cells[group][key]
       var ignored = 0;
+      if (!keyGetter) { keySlot[''] = 0; keyNames.push(''); } // the one total column exists also for an empty input
       for (i = 0; i < n; i++) {
         var key = keyGetter ? keyGetter(i) : '';
         var ks = keySlot[key];
         if (ks === undefined) {
           if (keyNames.length >= MAX_PIVOT_COLUMNS) {
             throw new Error('"' + p.columnKey + '" has more than ' + MAX_PIVOT_COLUMNS + ' different values. Choose a column with fewer values.');
+          }
+          if ((keyNames.length + 1 + rowIdxs.length) * groupOrder.length > DL.maxCells) {
+            throw new Error('The result would have more than ' + DL.pluralize(DL.maxCells, 'cell') + ', which is too many for the browser. Choose fewer group columns or a key column with fewer values.');
           }
           ks = keySlot[key] = keyNames.length;
           keyNames.push(key);
@@ -131,9 +135,16 @@
         for (g = 0; g < groupOrder.length; g++) out[g] = rowGetters[k](groupOrder[g]);
         cols.push(out);
       }
-      var headers = keyGetter ? keyNames.map(function (name) { return DL.cleanName(name, '(empty)'); }) : [valueName];
+      // The empty key gets "(empty)" first, so a real "(empty)" value cannot take that name.
+      var headers = keyGetter ? keyNames.map(function (name) { return name === '' ? '(empty)' : DL.cleanName(name, '(blank)'); }) : [valueName];
+      var names = new Array(keyNames.length);
+      var emptyAt = keyGetter ? keyNames.indexOf('') : -1;
+      if (emptyAt >= 0) names[emptyAt] = DL.uniqueName(columns, '(empty)');
       for (k = 0; k < keyNames.length; k++) {
-        var name = DL.uniqueName(columns, headers[k]);
+        if (k !== emptyAt) names[k] = DL.uniqueName(columns.concat(names.filter(Boolean)), headers[k]);
+      }
+      for (k = 0; k < keyNames.length; k++) {
+        var name = names[k];
         columns.push(name);
         var col = new Array(groupOrder.length);
         for (g = 0; g < groupOrder.length; g++) col[g] = cellText(cells[g][k], agg, decimals);
@@ -165,9 +176,9 @@
     summary: function (p) { return p.columns.join(', ') + ' → ' + p.nameColumn + ' / ' + p.valueColumn; },
     outputColumns: function (cols, p) {
       var kept = cols.filter(function (c) { return p.columns.indexOf(c) < 0; });
-      var nameCol = DL.uniqueName(kept, DL.cleanName(p.nameColumn, NAME));
+      var nameCol = DL.newColumnName(kept, p.nameColumn, NAME);
       kept.push(nameCol);
-      kept.push(DL.uniqueName(kept, DL.cleanName(p.valueColumn, VALUE)));
+      kept.push(DL.newColumnName(kept, p.valueColumn, VALUE));
       return kept;
     },
     apply: function (table, p) {

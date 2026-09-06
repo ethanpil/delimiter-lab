@@ -52,7 +52,7 @@
     summary: function (p) { return p.columns.join(' + ') + ' → ' + p.output; },
     outputColumns: function (cols, p) {
       var out = p.removeSource ? cols.filter(function (c) { return p.columns.indexOf(c) < 0; }) : cols;
-      return out.concat([DL.uniqueName(out, DL.cleanName(p.output, COMBINED))]);
+      return out.concat([DL.newColumnName(out, p.output, COMBINED)]);
     },
     apply: function (table, p) {
       var idxs = DL.colIndexes(table, p.columns);
@@ -73,7 +73,7 @@
         values[i] = out;
       }
       var base = p.removeSource ? DL.dropColumns(table, idxs) : table;
-      return { table: DL.addColumn(base, DL.uniqueName(base.columns, DL.cleanName(p.output, COMBINED)), values) };
+      return { table: DL.addColumn(base, DL.newColumnName(base.columns, p.output, COMBINED), values) };
     }
   });
 
@@ -462,7 +462,7 @@
       if (Number(p.group) > groups) return ['The pattern has only ' + DL.pluralize(groups, 'group') + '. Choose a smaller group number.'];
       return [];
     },
-    outputColumns: function (cols, p) { return cols.concat([DL.uniqueName(cols, DL.cleanName(p.output, EXTRACTED))]); },
+    outputColumns: function (cols, p) { return cols.concat([DL.newColumnName(cols, p.output, EXTRACTED)]); },
     apply: function (table, p) {
       var idx = DL.requireCol(table, p.column);
       var re = new RegExp(p.pattern, (p.matchCase ? '' : 'i') + 'gu');
@@ -476,47 +476,44 @@
         var parts = [];
         var hit;
         while ((hit = re.exec(v)) !== null) {
+          // An empty match does not count and does not move lastIndex: move it past the next character.
+          if (hit[0].length === 0) { re.lastIndex += v.codePointAt(re.lastIndex) > 0xFFFF ? 2 : 1; continue; }
           parts.push(hit[group] == null ? '' : hit[group]);
           if (!all) break;
-          // An empty match does not move lastIndex. Move it past the next character (two units for a surrogate pair).
-          if (hit[0].length === 0) re.lastIndex += isSurrogatePair(v, re.lastIndex) ? 2 : 1;
         }
         if (!parts.length) { ctx.tag(); return keep ? v : ''; }
         return parts.join(joiner);
       }, stats);
-      var out = DL.addColumn(table, DL.uniqueName(table.columns, DL.cleanName(p.output, EXTRACTED)), values);
+      var out = DL.addColumn(table, DL.newColumnName(table.columns, p.output, EXTRACTED), values);
       return { table: out, notes: stats.tagged ? [DL.pluralize(stats.tagged, 'value') + ' had no match.'] : [] };
     }
   });
-
-  function isSurrogatePair(s, i) {
-    var a = s.charCodeAt(i), b = s.charCodeAt(i + 1);
-    return a >= 0xD800 && a <= 0xDBFF && b >= 0xDC00 && b <= 0xDFFF;
-  }
 
   /* ---------- Text clean ---------- */
   var HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', copy: '\u00a9', reg: '\u00ae', euro: '\u20ac', pound: '\u00a3' };
 
   function stripHtml(s) {
     if (s.indexOf('<') < 0 && s.indexOf('&') < 0) return s;
-    return s.replace(/<br\s*\/?>/gi, ' ').replace(/<\/?[a-z!][^>]*>/gi, '').replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (m, code) {
+    return s.replace(/<br\s*\/?>/gi, ' ').replace(/<\/?[a-z!?][^>]*>/gi, '').replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, function (m, code) {
       var c = code.toLowerCase();
       if (c.charAt(0) === '#') {
         var n = c.charAt(1) === 'x' ? parseInt(c.slice(2), 16) : parseInt(c.slice(1), 10);
-        return n >= 0 && n <= 0x10FFFF && (n < 0xD800 || n > 0xDFFF) ? String.fromCodePoint(n) : m;
+        return n > 0 && n <= 0x10FFFF && (n < 0xD800 || n > 0xDFFF) ? String.fromCodePoint(n) : m;
       }
       return HTML_ENTITIES[c] !== undefined ? HTML_ENTITIES[c] : m;
     });
   }
 
-  var CLEAN_STEPS = {
-    accents: function (s) { return s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); },
-    html: stripHtml,
-    control: function (s) { return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u200C\uFEFF]/g, ''); },
-    quotes: function (s) { return s.replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...'); },
-    spaces: function (s) { return s.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ').replace(/\s{2,}/g, ' ').trim(); },
-    unicode: function (s) { return s.normalize('NFC'); }
-  };
+  // The clean steps, in the order in which they run. The options of the operation come from this list.
+  var CLEAN_STEPS = [
+    { value: 'html', label: 'Remove HTML tags and decode &amp;, &lt;, …', fn: stripHtml },
+    { value: 'control', label: 'Remove hidden control characters', fn: function (s) { return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B\u200C\uFEFF]/g, ''); } },
+    { value: 'quotes', label: 'Make curly quotes and dashes plain', fn: function (s) { return s.replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...'); } },
+    // Only Latin letters lose their marks. Other scripts, such as Cyrillic, keep their letters.
+    { value: 'accents', label: 'Remove accents from Latin letters (é → e)', fn: function (s) { return s.normalize('NFD').replace(/([A-Za-z])[\u0300-\u036f]+/g, '$1').normalize('NFC'); } },
+    { value: 'unicode', label: 'Normalize Unicode (same letter, one code)', fn: function (s) { return s.normalize('NFC'); } },
+    { value: 'spaces', label: 'Replace odd spaces and line breaks with one space, trim', fn: function (s) { return s.replace(/\s+/g, ' ').trim(); } }
+  ];
 
   DL.registerOp({
     id: 'textClean',
@@ -528,21 +525,13 @@
     params: [
       { key: 'columns', label: 'Columns', type: 'columns', required: false, help: 'Leave empty to clean all columns.' },
       { key: 'steps', label: 'Clean', type: 'checkboxes', default: ['html', 'control', 'spaces', 'unicode'],
-        options: [
-          { value: 'html', label: 'Remove HTML tags and decode &amp;, &lt;, …' },
-          { value: 'control', label: 'Remove hidden control characters' },
-          { value: 'spaces', label: 'Replace odd spaces, collapse repeated spaces, trim' },
-          { value: 'quotes', label: 'Make curly quotes and dashes plain' },
-          { value: 'accents', label: 'Remove accents (é → e)' },
-          { value: 'unicode', label: 'Normalize Unicode (same letter, one code)' }
-        ] }
+        options: CLEAN_STEPS.map(function (s) { return { value: s.value, label: s.label }; }) }
     ],
     summary: function (p) { return p.steps.join(', ') + ': ' + (p.columns.length ? p.columns.join(', ') : 'all columns'); },
     validate: function (p) { return p.steps.length ? [] : ['Choose at least one clean step.']; },
     apply: function (table, p) {
       var idxs = DL.colIndexesOrAll(table, p.columns);
-      var order = ['html', 'control', 'quotes', 'accents', 'unicode', 'spaces'].filter(function (k) { return p.steps.indexOf(k) >= 0; });
-      var fns = order.map(function (k) { return CLEAN_STEPS[k]; });
+      var fns = CLEAN_STEPS.filter(function (s) { return p.steps.indexOf(s.value) >= 0; }).map(function (s) { return s.fn; });
       var stats = {};
       var out = DL.mapColumns(table, idxs, function (v, ctx) {
         if (v === '') return v;
