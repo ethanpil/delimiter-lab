@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.0
+
+- Add: the workspace comes back after a reload. The steps stay in localStorage and the file stays in IndexedDB. A manual save is still necessary to keep a workflow.
+- Add: a logo, from the "Process Line" icon of Iconpark Duotone Icons.
+- Add: the help gives the address of the project and the names that the icon licence asks for.
+- Change: the New button closes the file as well as the steps.
+- Change: "Run a file" names the output [file]-processed-YYYY-MM-DD-HH-mm.
+
 ## 1.6.0
 
 - Add: a New button in the header removes the steps and starts a new workflow. It asks two times.
