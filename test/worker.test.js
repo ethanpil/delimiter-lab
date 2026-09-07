@@ -83,6 +83,36 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     });
   })();
 
+  test('load stacks many files into one source', () => {
+    const one = new FakeFile('name,city\nAda,London\nAlan,Cambridge\n', 'one.csv');
+    const two = new FakeFile('name,city\nGrace,New York\n', 'two.csv');
+    const three = new FakeFile('name,age\nKay,31\n', 'three.csv');
+
+    let r = send({ type: 'load', files: [one, two], options: {} });
+    assert.strictEqual(r.info.rowCount, 3);
+    assert.deepStrictEqual(r.info.columns, ['name', 'city']);
+    assert.deepStrictEqual(r.info.files.map((f) => f.name), ['one.csv', 'two.csv']);
+    assert.deepStrictEqual(r.info.files.map((f) => f.rowCount), [2, 1]);
+    assert.strictEqual(r.info.fileName, 'one.csv');
+    let got = rows(send({ type: 'slice', stepId: 'source', start: 0, count: 10 }).data);
+    assert.deepStrictEqual(got, [['Ada', 'London'], ['Alan', 'Cambridge'], ['Grace', 'New York']]);
+
+    // A file with another column widens the result, and a note names each file that lacks one.
+    r = send({ type: 'load', files: [one, three], options: {} });
+    assert.deepStrictEqual(r.info.columns, ['name', 'city', 'age']);
+    assert.strictEqual(r.info.rowCount, 3);
+    got = rows(send({ type: 'slice', stepId: 'source', start: 0, count: 10 }).data);
+    assert.deepStrictEqual(got, [['Ada', 'London', ''], ['Alan', 'Cambridge', ''], ['Kay', '', '31']]);
+    assert.strictEqual(r.info.notes.filter((n) => n.indexOf('does not have') > 0).length, 2);
+
+    // One file in the list behaves as one file on its own, and the older message still works.
+    r = send({ type: 'load', files: [two], options: {} });
+    assert.strictEqual(r.info.rowCount, 1);
+    assert.deepStrictEqual(r.info.files.map((f) => f.name), ['two.csv']);
+    r = send({ type: 'load', file: two, options: {} });
+    assert.strictEqual(r.info.rowCount, 1);
+  });
+
   test('a blank line kept on request is not a ragged row', () => {
     const r = send({ type: 'load', file: new FakeFile('a,b\n1,2\n\n3,4\n', 'blank.csv'), options: { skipEmptyLines: false } });
     assert.strictEqual(r.info.rowCount, 3);

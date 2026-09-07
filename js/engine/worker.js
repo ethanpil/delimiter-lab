@@ -295,31 +295,56 @@ function RAGGED_NOTE(count) {
 }
 
 function loadFile(msg, reply) {
-  var file = msg.file;
+  var files = msg.files || (msg.file ? [msg.file] : []);
   var opts = msg.options || {};
-  var format = DL.inputFormatFor(file.name);
   state.cache.clear();
   state.source = null;
   state.sourceInfo = null;
   state.cancelledFrom = -1;
   var started = Date.now();
-  var result = readers[format.id](file, opts);
-  var table = result.table;
-  var notes = result.notes;
+  var tables = [];
+  var names = [];
+  var each = [];
+  var notes = [];
+  var ragged = 0;
+  var meta = {};
+  var cells = 0;
+  var key = 'src:';
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    if (files.length > 1) progress('Reading ' + file.name + ' (' + (i + 1) + ' of ' + files.length + ')', Math.round(90 * i / files.length));
+    var result = readers[DL.inputFormatFor(file.name).id](file, opts);
+    // Each file adds to the cells that the browser must hold, so the limit is on the total.
+    cells += result.table.length * Math.max(1, result.table.columns.length);
+    if (cells > DL.maxCells) throw tooLarge(cells);
+    tables.push(result.table);
+    names.push(file.name);
+    each.push({ name: file.name, size: file.size, rowCount: result.table.length });
+    ragged += result.ragged || 0;
+    for (var n = 0; n < result.notes.length; n++) {
+      notes.push(files.length > 1 ? '"' + file.name + '": ' + result.notes[n] : result.notes[n]);
+    }
+    if (i === 0) meta = result.meta || {};
+    key += file.name + ':' + file.size + ':' + file.lastModified + ':';
+  }
+  var stacked = DL.stackTables(tables, names);
+  var table = stacked.table;
+  for (var m = 0; m < stacked.notes.length; m++) notes.push(stacked.notes[m]);
   var skip = Math.max(0, Number(opts.skipRows) || 0);
-  if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + '.');
-  if (result.ragged) notes.push(RAGGED_NOTE(result.ragged));
+  if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + (files.length > 1 ? ' of each file.' : '.'));
+  if (ragged) notes.push(RAGGED_NOTE(ragged));
   state.source = table;
-  state.sourceKey = 'src:' + file.name + ':' + file.size + ':' + file.lastModified + ':' + JSON.stringify(opts);
+  state.sourceKey = key + JSON.stringify(opts);
   state.sourceInfo = {
-    fileName: file.name,
-    fileSize: file.size,
+    fileName: files.length ? files[0].name : '',
+    fileSize: files.length ? files[0].size : 0,
+    files: each,
     rowCount: table.length,
     columns: table.columns,
     notes: notes,
-    encoding: result.meta.encoding || null,
-    delimiter: result.meta.delimiter || null,
-    sheet: result.meta.sheet || null,
+    encoding: meta.encoding || null,
+    delimiter: meta.delimiter || null,
+    sheet: meta.sheet || null,
     ms: Date.now() - started
   };
   reply({ type: 'loaded', info: state.sourceInfo });

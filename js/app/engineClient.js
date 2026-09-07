@@ -69,7 +69,7 @@
 
   EngineClient.prototype.configure = function (maxCells) { this.maxCells = maxCells; return this.send({ type: 'config', maxCells: maxCells }); };
   EngineClient.prototype.listSheets = function (file) { return this.send({ type: 'sheets', file: file }); };
-  EngineClient.prototype.load = function (file, options) { return this.send({ type: 'load', file: file, options: options }); };
+  EngineClient.prototype.load = function (files, options) { return this.send({ type: 'load', files: [].concat(files), options: options }); };
   EngineClient.prototype.run = function (steps, protect) { return this.send({ type: 'run', steps: steps, protect: protect }); };
   // Asks the worker to stop the active run before its next step. The run replies with the results so far.
   EngineClient.prototype.cancel = function () { return this.send({ type: 'cancel' }); };
