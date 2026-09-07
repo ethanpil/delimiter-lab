@@ -346,10 +346,14 @@ DL.toNumber = function (v) {
   var s = typeof v === 'string' ? v : String(v);
   if (s === '') return NaN;
   var n;
-  if (isPlainNumber(s)) { n = +s; return isFinite(n) ? n : NaN; }
+  // In a file that writes 1.234,56 a lone dot separates groups of three, so "1.000" is one
+  // thousand. The quick path would read it as one, so such a value goes to the rules below.
+  var style = DL.numberStyle;
+  var quick = !(style === 'comma' && s.indexOf('.') >= 0);
+  if (quick && isPlainNumber(s)) { n = +s; return isFinite(n) ? n : NaN; }
   s = s.trim();
   if (s === '') return NaN;
-  if (isPlainNumber(s)) { n = +s; return isFinite(n) ? n : NaN; }
+  if (quick && isPlainNumber(s)) { n = +s; return isFinite(n) ? n : NaN; }
   var neg = false;
   if (s.charAt(0) === '(' && s.charAt(s.length - 1) === ')') {
     neg = true;
@@ -372,14 +376,20 @@ DL.toNumber = function (v) {
   } else if (lastComma >= 0) {
     var commas = s.split(',').length - 1;
     var after = s.length - lastComma - 1;
-    // One comma with exactly 3 digits after it is a thousands separator ("1,234").
-    // Other single commas are decimal separators ("1,5"). Many commas must all separate groups of 3.
-    if (commas === 1 && after !== 3) s = s.replace(',', '.');
+    // When the file says which separator it uses, that answer holds for every value in it.
+    // Without it: one comma with exactly 3 digits after it separates groups ("1,234"), another
+    // single comma is a decimal separator ("1,5"), and many commas must all separate groups of 3.
+    if (style === 'dot') { if (groupsOf3(s, ',')) s = s.replace(/,/g, ''); else return NaN; }
+    else if (style === 'comma' && commas === 1) s = s.replace(',', '.');
+    else if (commas === 1 && after !== 3) s = s.replace(',', '.');
     else if (groupsOf3(s, ',')) s = s.replace(/,/g, '');
     else return NaN;
-  } else if (lastDot >= 0 && s.indexOf('.') !== lastDot) {
-    if (!groupsOf3(s, '.')) return NaN; // 1.234.567
-    s = s.replace(/\./g, '');
+  } else if (lastDot >= 0) {
+    if (style === 'comma') { if (groupsOf3(s, '.')) s = s.replace(/\./g, ''); else return NaN; }
+    else if (s.indexOf('.') !== lastDot) {
+      if (!groupsOf3(s, '.')) return NaN; // 1.234.567
+      s = s.replace(/\./g, '');
+    }
   }
   n = Number(s);
   if (!isFinite(n)) return NaN;
@@ -430,6 +440,40 @@ var YEAR_RE = /\b\d{4}\b/;
 // Parses common date formats. Gives a timestamp (ms) or NaN.
 // dayFirst: read "01/02/2024" as 1 February (true) or 2 January (false).
 // Operations that read dates share this setting, so that one column is never read by two rules.
+// Which separator the numbers of the open file use: 'dot' for 1,234.56, 'comma' for 1.234,56, or
+// '' when the file gives no sign. DL.readSource sets it from the file, so that one column is never
+// read at two scales. It belongs to the file, as DL.maxCells belongs to the machine.
+DL.numberStyle = '';
+
+// Reads the answer out of the values themselves. Only a value that can be decided counts as a
+// vote: 1.234,56 and 1,234.56 say which separator comes last, and a single separator with a group
+// of digits that is not three long is a decimal separator. A file with no votes keeps ''.
+DL.detectNumberStyle = function (table, sampleSize) {
+  var dot = 0, comma = 0;
+  var rows = Math.min(table.length, sampleSize || 200);
+  for (var c = 0; c < table.columns.length; c++) {
+    var col = DL.col(table, c);
+    for (var i = 0; i < rows; i++) {
+      var v = col[i];
+      if (!v || v.length > 40) continue;
+      var lc = v.lastIndexOf(','), ld = v.lastIndexOf('.');
+      if (lc < 0 && ld < 0) continue;
+      if (!/\d/.test(v)) continue;
+      if (lc >= 0 && ld >= 0) { if (lc > ld) comma++; else dot++; continue; }
+      var at = lc >= 0 ? lc : ld;
+      var run = v.length - at - 1;
+      if (run === 3 || run === 0) continue;           // 1,234 and "end." say nothing
+      if (!/^\d+$/.test(v.slice(at + 1))) continue;    // not a group of digits
+      if (lc >= 0) comma++; else dot++;
+    }
+  }
+  // A clear majority only. Two conventions in one file mean that neither can be trusted.
+  if (comma + dot < 3) return '';
+  if (comma > dot * 3) return 'comma';
+  if (dot > comma * 3) return 'dot';
+  return '';
+};
+
 DL.DAY_FIRST = { key: 'dayFirst', label: 'Read 01/02/2024 as 1 February', type: 'boolean', default: false, help: 'Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly. A value with a time zone, such as 2024-01-01T00:00:00Z, is converted to the local time of this computer.' };
 
 DL.toDate = function (v, dayFirst) {
@@ -817,12 +861,15 @@ DL.TableBuilder = function (opts) {
 
 DL.TableBuilder.prototype.add = function (row) {
   if (this.toSkip > 0) { this.toSkip--; return; }
-  if (this.dropEmpty && DL.isBlankRow(row)) return;
+  // The header row comes first, even when it is empty. To drop it would make the first row of
+  // data the header: one row of the file would go, and every column would take a value as a name.
+  // DL.cleanHeaders gives a name to each column that the header row does not name.
   if (this.columns === null && this.headers) {
     this.columns = row.map(DL.cellText);
     this.expected = row.length;
     return;
   }
+  if (this.dropEmpty && DL.isBlankRow(row)) return;
   // A blank line that the user keeps is a row of empty values, not a ragged row.
   if (row.length === 1 && row[0] === '' && this.expected > 1) row = [];
   if (this.expected < 0) this.expected = row.length;

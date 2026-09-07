@@ -297,6 +297,44 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
   });
   await flushTimers();
 
+  // The header row comes before the drop of empty rows. Before, an empty header row went, the
+  // first row of data became the header, and one row of the file was lost.
+  test('an empty header row does not take the first row of data', () => {
+    const r = send({ type: 'load', file: new FakeFile(',,\nAda,30,London\nAlan,41,Cambridge\n', 'h.csv'), options: {} });
+    assert.strictEqual(r.type, 'loaded');
+    assert.deepStrictEqual(r.info.columns, ['Column 1', 'Column 2', 'Column 3']);
+    assert.strictEqual(r.info.rowCount, 2);
+  });
+
+  // A "\r" at the end of the last value is only left over when the parser took "\n" as the line
+  // ending. With "\r\n" it is part of the value, and to remove it takes a character out of the data.
+  test('a CR inside a quoted value at the end of a row is kept', () => {
+    const r = send({ type: 'load', file: new FakeFile('a,b\r\n1,"ends with CR\r"\r\n', 'cr.csv'), options: {} });
+    assert.strictEqual(r.type, 'loaded');
+    const s = send({ type: 'slice', stepId: 'source', start: 0, count: 1 });
+    assert.strictEqual(s.data.rows[0][1], 'ends with CR\r');
+  });
+
+  // Excel holds a number as a number, but a value that does not write back the same, such as 007,
+  // must stay text or it loses its characters.
+  test('the Excel writer keeps numbers as numbers and 007 as text', () => {
+    const t = DL.fromRows(['Item', 'Price', 'Code'], [['Widget', '1234.5', '007']]);
+    const out = DL.writeBytes(t, Object.assign(DL.defaultFormatOptions(DL.outputFormatById('xlsx')), { format: 'xlsx' }));
+    const bytes = Buffer.concat(out.chunks.map((c) => Buffer.from(c)));
+    const ws = XLSX.read(bytes, { type: 'buffer' }).Sheets.Data;
+    assert.strictEqual(ws.B2.t, 'n');
+    assert.strictEqual(ws.B2.v, 1234.5);
+    assert.strictEqual(ws.C2.t, 's');
+    assert.strictEqual(ws.C2.v, '007');
+  });
+
+  // Quotes keep one character apart from the data. Two characters cannot be kept apart: the file
+  // would read back with more columns than it was written with.
+  test('a separator of more than one character is refused', () => {
+    assert.throws(() => DL.writeBytes(DL.fromRows(['a', 'b'], [['x|', '|y']]), { format: 'delimited', delimiter: '||' }),
+      /one character/);
+  });
+
   test('a batch beyond 4 GB is refused before any file is read', () => {
     let read = 0;
     const big = { name: 'a.csv', blob: { size: 5 * 1024 * 1024 * 1024, slice() { read++; return null; } } };

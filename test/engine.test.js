@@ -158,6 +158,24 @@ test('splitName keeps the last name when only a suffix follows the comma', () =>
   assert.strictEqual(b.first, 'John');
 });
 
+// One file, one rule for its numbers. Without this, 1.234,56 read as 1234.56 while 1.000 in the
+// same column read as 1, and a sum came out 2.7 times too large.
+test('the style of the numbers of a file holds for every value in it', () => {
+  const german = ['1.234,56', '1,50', '1.000', '12,345', '3.500,00'];
+  const us = ['1,234.56', '1.50', '1000', '12.345', '3500.00'];
+  assert.strictEqual(DL.detectNumberStyle(T(['P'], german.map((v) => [v]))), 'comma');
+  assert.strictEqual(DL.detectNumberStyle(T(['P'], us.map((v) => [v]))), 'dot');
+  // Two conventions in one file mean that neither can be trusted.
+  assert.strictEqual(DL.detectNumberStyle(T(['P'], german.concat(us).map((v) => [v]))), '');
+
+  try {
+    DL.numberStyle = 'comma';
+    assert.deepStrictEqual(german.map(DL.toNumber), [1234.56, 1.5, 1000, 12.345, 3500]);
+  } finally { DL.numberStyle = ''; }
+  // A file with no sign keeps the answers it always gave.
+  assert.deepStrictEqual(us.map(DL.toNumber), [1234.56, 1.5, 1000, 12.345, 3500]);
+});
+
 /* ---- row ops ---- */
 test('dedupe op', () => {
   const r = run('dedupe', { columns: ['First', 'Last'], ignoreCase: true }, people);

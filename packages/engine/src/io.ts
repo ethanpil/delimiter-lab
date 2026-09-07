@@ -147,11 +147,16 @@ readers.delimited = function (file, opts) {
     skipEmptyLines: false,
     chunk: function (results, parser) {
       var data = results.data;
+      // A file with mixed line endings leaves "\r" on the last value, but only when the parser
+      // took "\n" as the line ending. When the parser took "\r\n", a "\r" at the end of the last
+      // value is part of the value, and to remove it would take a character out of the data.
+      var strayCR = results.meta && results.meta.linebreak === '\n';
       for (var i = 0; i < data.length; i++) {
         var row = data[i];
-        // A file with mixed line endings leaves "\r" on the last value when the parser guessed "\n".
-        var lastCell = row[row.length - 1];
-        if (typeof lastCell === 'string' && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
+        if (strayCR) {
+          var lastCell = row[row.length - 1];
+          if (typeof lastCell === 'string' && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
+        }
         builder.add(row);
       }
       var errs = results.errors;
@@ -381,6 +386,10 @@ writers.tsv = function (table, o, format) { return writeDelimited(table, o, '\t'
 writers.delimited = function (table, o, format) {
   var d = DL.unescapeText(o.delimiter) || ';';
   if (d.indexOf('"') >= 0 || d.indexOf('\n') >= 0 || d.indexOf('\r') >= 0) throw new Error('The separator cannot be a quote or a line break.');
+  // Quotes keep one character apart from the data. With two, a value that ends with the first
+  // character next to a value that starts with the second makes a separator that nobody wrote,
+  // and the file then reads back with more columns than it was written with.
+  if (Array.from(d).length > 1) throw new Error('The separator must be one character.');
   return writeDelimited(table, o, d, format.mime);
 };
 
@@ -396,12 +405,27 @@ writers.xlsx = function (table, o, format) {
   }
   // The Excel writer needs several copies of the data in memory.
   if (n * table.columns.length > DL.maxCells / 4) throw new Error('This table is too large for an Excel file. Use CSV for this data.');
+  // Excel holds a number as a number. The table keeps only text, so a value that reads as a
+  // number and writes back exactly the same becomes a number here. A value such as 007 or
+  // 1,234.50 does not write back the same, so it stays text and keeps every character.
+  var numeric = function (v) {
+    if (v === '' || v.length > 20) return v;
+    var c = v.charCodeAt(0);
+    if (!(c >= 48 && c <= 57) && c !== 45 && c !== 46) return v; // must start with a digit, - or .
+    var x = Number(v);
+    return (isFinite(x) && String(x) === v) ? x : v;
+  };
   var BLOCK = 20000;
   var ws = DL.platform.xlsx().utils.aoa_to_sheet(o.header !== false ? [table.columns] : [], { dense: true });
   var at = o.header !== false ? 1 : 0;
   for (var start = 0; start < n; start += BLOCK) {
     var end = Math.min(n, start + BLOCK);
-    DL.platform.xlsx().utils.sheet_add_aoa(ws, DL.rowsSlice(table, start, end), { origin: at + start });
+    var block = DL.rowsSlice(table, start, end);
+    for (var r = 0; r < block.length; r++) {
+      var row = block[r];
+      for (var cc = 0; cc < row.length; cc++) row[cc] = numeric(row[cc]);
+    }
+    DL.platform.xlsx().utils.sheet_add_aoa(ws, block, { origin: at + start });
     DL.platform.progress('Building Excel file', Math.round(60 * end / n));
   }
   var wb = DL.platform.xlsx().utils.book_new();
@@ -508,6 +532,10 @@ DL.readSource = function (files, opts) {
   var skip = Math.max(0, Number(opts.skipRows) || 0);
   if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + (files.length > 1 ? ' of each file.' : '.'));
   if (ragged) notes.push(DL.raggedNote(ragged));
+  // The numbers of this file decide how every value in it is read. Without this the same column
+  // could be read at two scales: 1.234,56 as one thousand and 1.000 as one.
+  DL.numberStyle = DL.detectNumberStyle(table);
+  if (DL.numberStyle === 'comma') notes.push('The numbers in this file write 1.234,56, so a comma is the decimal separator.');
   return {
     table: table,
     key: key + JSON.stringify(opts),

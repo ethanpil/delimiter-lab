@@ -297,13 +297,15 @@
     var s = typeof v === "string" ? v : String(v);
     if (s === "") return NaN;
     var n;
-    if (isPlainNumber(s)) {
+    var style = DL.numberStyle;
+    var quick = !(style === "comma" && s.indexOf(".") >= 0);
+    if (quick && isPlainNumber(s)) {
       n = +s;
       return isFinite(n) ? n : NaN;
     }
     s = s.trim();
     if (s === "") return NaN;
-    if (isPlainNumber(s)) {
+    if (quick && isPlainNumber(s)) {
       n = +s;
       return isFinite(n) ? n : NaN;
     }
@@ -328,12 +330,21 @@
     } else if (lastComma >= 0) {
       var commas = s.split(",").length - 1;
       var after = s.length - lastComma - 1;
-      if (commas === 1 && after !== 3) s = s.replace(",", ".");
+      if (style === "dot") {
+        if (groupsOf3(s, ",")) s = s.replace(/,/g, "");
+        else return NaN;
+      } else if (style === "comma" && commas === 1) s = s.replace(",", ".");
+      else if (commas === 1 && after !== 3) s = s.replace(",", ".");
       else if (groupsOf3(s, ",")) s = s.replace(/,/g, "");
       else return NaN;
-    } else if (lastDot >= 0 && s.indexOf(".") !== lastDot) {
-      if (!groupsOf3(s, ".")) return NaN;
-      s = s.replace(/\./g, "");
+    } else if (lastDot >= 0) {
+      if (style === "comma") {
+        if (groupsOf3(s, ".")) s = s.replace(/\./g, "");
+        else return NaN;
+      } else if (s.indexOf(".") !== lastDot) {
+        if (!groupsOf3(s, ".")) return NaN;
+        s = s.replace(/\./g, "");
+      }
     }
     n = Number(s);
     if (!isFinite(n)) return NaN;
@@ -371,6 +382,36 @@
   }
   var MONTH_RE = /\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t|tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\b\.?/i;
   var YEAR_RE = /\b\d{4}\b/;
+  DL.numberStyle = "";
+  DL.detectNumberStyle = function(table, sampleSize) {
+    var dot = 0, comma = 0;
+    var rows = Math.min(table.length, sampleSize || 200);
+    for (var c = 0; c < table.columns.length; c++) {
+      var col = DL.col(table, c);
+      for (var i = 0; i < rows; i++) {
+        var v = col[i];
+        if (!v || v.length > 40) continue;
+        var lc = v.lastIndexOf(","), ld = v.lastIndexOf(".");
+        if (lc < 0 && ld < 0) continue;
+        if (!/\d/.test(v)) continue;
+        if (lc >= 0 && ld >= 0) {
+          if (lc > ld) comma++;
+          else dot++;
+          continue;
+        }
+        var at = lc >= 0 ? lc : ld;
+        var run = v.length - at - 1;
+        if (run === 3 || run === 0) continue;
+        if (!/^\d+$/.test(v.slice(at + 1))) continue;
+        if (lc >= 0) comma++;
+        else dot++;
+      }
+    }
+    if (comma + dot < 3) return "";
+    if (comma > dot * 3) return "comma";
+    if (dot > comma * 3) return "dot";
+    return "";
+  };
   DL.DAY_FIRST = { key: "dayFirst", label: "Read 01/02/2024 as 1 February", type: "boolean", default: false, help: "Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly. A value with a time zone, such as 2024-01-01T00:00:00Z, is converted to the local time of this computer." };
   DL.toDate = function(v, dayFirst) {
     if (v == null) return NaN;
@@ -735,12 +776,12 @@
       this.toSkip--;
       return;
     }
-    if (this.dropEmpty && DL.isBlankRow(row)) return;
     if (this.columns === null && this.headers) {
       this.columns = row.map(DL.cellText);
       this.expected = row.length;
       return;
     }
+    if (this.dropEmpty && DL.isBlankRow(row)) return;
     if (row.length === 1 && row[0] === "" && this.expected > 1) row = [];
     if (this.expected < 0) this.expected = row.length;
     else if (row.length !== this.expected && row.length !== 0) this.ragged++;
@@ -1596,10 +1637,13 @@
       skipEmptyLines: false,
       chunk: function(results, parser) {
         var data = results.data;
+        var strayCR = results.meta && results.meta.linebreak === "\n";
         for (var i = 0; i < data.length; i++) {
           var row = data[i];
-          var lastCell = row[row.length - 1];
-          if (typeof lastCell === "string" && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
+          if (strayCR) {
+            var lastCell = row[row.length - 1];
+            if (typeof lastCell === "string" && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
+          }
           builder.add(row);
         }
         var errs = results.errors;
@@ -1806,6 +1850,7 @@
   writers.delimited = function(table, o, format) {
     var d = DL.unescapeText(o.delimiter) || ";";
     if (d.indexOf('"') >= 0 || d.indexOf("\n") >= 0 || d.indexOf("\r") >= 0) throw new Error("The separator cannot be a quote or a line break.");
+    if (Array.from(d).length > 1) throw new Error("The separator must be one character.");
     return writeDelimited(table, o, d, format.mime);
   };
   writers.xlsx = function(table, o, format) {
@@ -1819,12 +1864,24 @@
       }
     }
     if (n * table.columns.length > DL.maxCells / 4) throw new Error("This table is too large for an Excel file. Use CSV for this data.");
+    var numeric = function(v) {
+      if (v === "" || v.length > 20) return v;
+      var c2 = v.charCodeAt(0);
+      if (!(c2 >= 48 && c2 <= 57) && c2 !== 45 && c2 !== 46) return v;
+      var x = Number(v);
+      return isFinite(x) && String(x) === v ? x : v;
+    };
     var BLOCK = 2e4;
     var ws = DL.platform.xlsx().utils.aoa_to_sheet(o.header !== false ? [table.columns] : [], { dense: true });
     var at = o.header !== false ? 1 : 0;
     for (var start = 0; start < n; start += BLOCK) {
       var end = Math.min(n, start + BLOCK);
-      DL.platform.xlsx().utils.sheet_add_aoa(ws, DL.rowsSlice(table, start, end), { origin: at + start });
+      var block = DL.rowsSlice(table, start, end);
+      for (var r = 0; r < block.length; r++) {
+        var row = block[r];
+        for (var cc = 0; cc < row.length; cc++) row[cc] = numeric(row[cc]);
+      }
+      DL.platform.xlsx().utils.sheet_add_aoa(ws, block, { origin: at + start });
       DL.platform.progress("Building Excel file", Math.round(60 * end / n));
     }
     var wb = DL.platform.xlsx().utils.book_new();
@@ -1916,6 +1973,8 @@
     var skip = Math.max(0, Number(opts.skipRows) || 0);
     if (skip) notes.push("Skipped the first " + DL.pluralize(skip, "row") + (files.length > 1 ? " of each file." : "."));
     if (ragged) notes.push(DL.raggedNote(ragged));
+    DL.numberStyle = DL.detectNumberStyle(table);
+    if (DL.numberStyle === "comma") notes.push("The numbers in this file write 1.234,56, so a comma is the decimal separator.");
     return {
       table,
       key: key + JSON.stringify(opts),
