@@ -770,6 +770,15 @@
     return n.toLocaleString() + ' ' + (n === 1 ? one : one + 's');
   };
 
+  // A step that takes longer than this is worth a word on its card.
+  DL.SLOW_STEP_MS = 400;
+
+  // A time for a person to read: milliseconds below a second, then seconds.
+  DL.formatMs = function (ms) {
+    if (ms == null) return '';
+    return ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s';
+  };
+
   DL.rowsAndColumns = function (rows, columns) {
     return DL.pluralize(rows, 'row') + ' · ' + DL.pluralize(columns, 'column');
   };

@@ -112,7 +112,14 @@
       U.el('div', { class: 'step-body' }, [
         U.el('div', { class: 'step-title' }, [U.el('i', { class: 'bi ' + (op ? op.icon : 'bi-question') }), op ? op.name : step.opId]),
         U.el('div', { class: 'step-summary', text: summary, title: summary }),
-        U.el('div', { class: 'step-meta' }, [U.el('span', { class: 'status-dot status-' + status }), statusText])
+        U.el('div', { class: 'step-meta' }, [
+          U.el('span', { class: 'status-dot status-' + status }),
+          statusText,
+          // Only a step that takes time says how long. The others would be noise.
+          (res && res.ms >= DL.SLOW_STEP_MS && !disabled)
+            ? U.el('span', { class: 'step-time', title: DL.t('chain.tookTime'), text: DL.formatMs(res.ms) })
+            : null
+        ])
       ]),
       U.el('div', { class: 'step-actions btn-group-vertical' }, [
         U.el('button', { type: 'button', class: 'btn btn-link btn-sm text-secondary no-tip', title: DL.t(disabled ? 'chain.turnOn' : 'chain.turnOff'), dataset: { action: 'toggle' } }, [U.el('i', { class: 'bi ' + (disabled ? 'bi-toggle-off' : 'bi-toggle-on') })]),
