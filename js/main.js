@@ -92,31 +92,55 @@
     batchApply(files);
   }
 
-  // Adds files to the source that is open, and reads them all again.
-  function addSourceFiles(files) {
+  // Sorts files into the ones that a data source can read and the ones that it cannot.
+  function splitDataFiles(files) {
     var accepted = DL.acceptedExtensions();
     var good = [];
-    var refused = 0;
-    files.forEach(function (f) {
-      if (accepted.indexOf('.' + DL.fileExtension(f.name)) < 0) { refused++; return; }
-      if (f.size > MAX_FILE_BYTES) { refused++; return; }
-      good.push(f);
+    var skipped = [];
+    [].concat(files || []).forEach(function (f) {
+      if (accepted.indexOf('.' + DL.fileExtension(f.name)) < 0) skipped.push({ name: f.name, error: DL.t('msg.notDataFile') });
+      else if (f.size > MAX_FILE_BYTES) skipped.push({ name: f.name, error: DL.t('msg.fileTooBig') });
+      else good.push(f);
     });
-    if (refused) U.toast(DL.t('msg.someFilesRefused', { n: DL.pluralize(refused, 'file'), types: accepted.join(', ') }), 'warning');
+    return { good: good, skipped: skipped, accepted: accepted };
+  }
+
+  // Adds files to the source that is open, and reads them all again. Every file of one source must
+  // have the same format, because one set of settings reads all of them.
+  function addSourceFiles(files) {
+    var split = splitDataFiles(files);
+    var good = split.good;
+    var refused = split.skipped.length;
+    var first = store.state.source.files[0] || good[0];
+    var wanted = first ? DL.inputFormatFor(first.name) : null;
+    var mixed = 0;
+    if (wanted) {
+      good = good.filter(function (f) {
+        if (DL.inputFormatFor(f.name).id === wanted.id) return true;
+        mixed++;
+        return false;
+      });
+    }
+    if (refused) U.toast(DL.t('msg.someFilesRefused', { n: DL.pluralize(refused, 'file'), types: split.accepted.join(', ') }), 'warning');
+    if (mixed) U.toast(DL.t('msg.mixedFormats', { n: DL.pluralize(mixed, 'file'), format: wanted.label }), 'warning');
     if (!good.length) return;
     if (!store.state.source.files.length) { openFile(good[0], { extra: good.slice(1) }); return; }
     var added = store.addSourceFiles(good);
     if (!added) { U.toast(DL.t('msg.filesAlreadyThere'), 'info'); return; }
     U.toast(DL.t('msg.filesAdded', { n: DL.pluralize(added, 'file') }), 'success');
     keepWorkspace();
-    loadSource();
+    startLoad();
   }
 
   function removeSourceFile(index) {
     store.removeSourceFile(index);
     keepWorkspace();
-    if (store.state.source.files.length) loadSource();
-    else { previewKey = null; grid.show(null, DL.t('preview.openFile')); }
+    if (store.state.source.files.length) { startLoad(); return; }
+    loadToken++; // a load that is on its way must not make an empty source ready
+    disarmStop();
+    hideProgress();
+    previewKey = null;
+    grid.show(null, DL.t('preview.openFile'));
   }
 
   // Writes the files of the source to the workspace store, and says when it cannot keep them.
@@ -127,8 +151,10 @@
       if (kept || store.state.source.files !== files) return; // a later list took the place of this one
       var bytes = 0;
       files.forEach(function (f) { bytes += f.size; });
-      U.toast(DL.t(bytes > DL.fileStore.MAX_BYTES ? 'msg.workspaceTooBig' : 'msg.workspaceNotKept',
-        { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
+      var key = bytes > DL.fileStore.MAX_BYTES
+        ? (files.length > 1 ? 'msg.workspaceTooBigMany' : 'msg.workspaceTooBig')
+        : 'msg.workspaceNotKept';
+      U.toast(DL.t(key, { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
     });
   }
 
@@ -139,32 +165,37 @@
   // opts.extra holds more files for the same source.
   function openFile(file, opts) {
     if (!file) return;
-    if (file.size > MAX_FILE_BYTES) {
-      U.toast(DL.t('msg.fileTooBig'), 'danger');
-      return;
-    }
     opts = opts || {};
+    var all = [file].concat(opts.extra || []);
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].size > MAX_FILE_BYTES) { U.toast(DL.t('msg.fileTooBig'), 'danger'); return; }
+    }
     restoredLoad = opts.fromStore === true;
-    store.setSourceFiles([file].concat(opts.extra || []));
+    store.setSourceFiles(all);
     if (opts.sheet) store.setSourceOptions({ sheet: opts.sheet });
     if (!opts.fromStore) keepWorkspace();
-    if (DL.inputFormatFor(file.name).hasSheets) {
-      var token = ++loadToken;
-      showProgress(DL.t('progress.readingWorkbook'), 5);
-      engine.listSheets(file).then(function (msg) {
-        if (token !== loadToken) return;
-        store.setSheets(msg.sheets);
-        loadSource();
-      }).catch(function (err) {
-        if (token !== loadToken) return;
-        hideProgress();
-        store.setSourceError(err.message);
-        U.toast(err.message, 'danger');
-        forgetIfRestored(); // a file that does not open must not come back at the next reload
-      });
-    } else {
+    startLoad();
+  }
+
+  // Reads the sheet names when the source is a workbook, then reads the data. Every change of the
+  // list of files goes through here, because setSourceFiles() drops the sheet names.
+  function startLoad() {
+    var files = store.state.source.files;
+    if (!files.length) return;
+    if (!DL.inputFormatFor(files[0].name).hasSheets) { loadSource(); return; }
+    var token = ++loadToken;
+    showProgress(DL.t('progress.readingWorkbook'), 5);
+    engine.listSheets(files[0]).then(function (msg) {
+      if (token !== loadToken) return;
+      store.setSheets(msg.sheets);
       loadSource();
-    }
+    }).catch(function (err) {
+      if (token !== loadToken) return;
+      hideProgress();
+      store.setSourceError(err.message);
+      U.toast(err.message, 'danger');
+      forgetIfRestored(); // a file that does not open must not come back at the next reload
+    });
   }
 
   // True while the first read of a file that came out of the workspace store runs.
@@ -273,8 +304,8 @@
   function resultKey(stepId) {
     var st = store.state;
     if (stepId === 'source') {
-      var f = st.source.file;
-      return 'source:' + (f ? f.name + f.size + f.lastModified : '') + ':' + (st.source.info ? st.source.info.rowCount + '/' + st.source.info.columns.join('|') : '');
+      var names = st.source.files.map(function (f) { return f.name + f.size + f.lastModified; }).join(',');
+      return 'source:' + names + ':' + (st.source.info ? st.source.info.rowCount + '/' + st.source.info.columns.join('|') : '');
     }
     var r = st.results[stepId];
     return stepId + ':' + (r ? r.hash : 'none');
@@ -568,7 +599,9 @@
     if (!st.workflow.steps.length && !st.workflow.name && !st.source.file) { U.toast(DL.t('msg.newEmpty'), 'info'); return; }
     U.confirm({
       title: DL.t('msg.newTitle'),
-      message: st.source.file ? DL.t('msg.newMessageFile', { name: st.source.file.name }) : DL.t('msg.newMessage'),
+      message: !st.source.files.length ? DL.t('msg.newMessage')
+        : st.source.files.length > 1 ? DL.t('msg.newMessageFiles', { n: DL.pluralize(st.source.files.length, 'file') })
+        : DL.t('msg.newMessageFile', { name: st.source.file.name }),
       yes: DL.t('msg.newYes')
     }, function () {
       U.confirm({ title: DL.t('msg.newSureTitle'), message: DL.t('msg.newSureMessage'), yes: DL.t('msg.newSureYes'), danger: true }, function () {
@@ -600,10 +633,9 @@
     if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
     var steps = (wf.steps || []).map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
     if (!steps.length) { U.toast(DL.t('msg.quickRunNoSteps'), 'info'); return; }
-    var accepted = DL.acceptedExtensions();
-    var skipped = files.filter(function (f) { return accepted.indexOf('.' + DL.fileExtension(f.name)) < 0 || f.size > MAX_FILE_BYTES; });
-    files = files.filter(function (f) { return skipped.indexOf(f) < 0; });
-    if (!files.length) { U.toast(DL.t('msg.noDataFiles', { types: accepted.join(', ') }), 'warning'); return; }
+    var split = splitDataFiles(files);
+    files = split.good;
+    if (!files.length) { U.toast(DL.t('msg.noDataFiles', { types: split.accepted.join(', ') }), 'warning'); return; }
     var sourceOptions = DL.cleanSourceOptions(wf.sourceOptions || store.state.source.options);
     sourceOptions.sheet = ''; // the first sheet of each file
     var many = files.length > 1;
@@ -615,7 +647,7 @@
       lastFormat = options.format;
       lastFormatOptions = allOptions;
       if (wf.id) DL.workflows.touch(wf.id);
-      runBatch(files, steps, options, outName, skipped.map(function (f) { return { name: f.name, error: DL.t(f.size > MAX_FILE_BYTES ? 'msg.fileTooBig' : 'msg.notDataFile') }; }), sourceOptions);
+      runBatch(files, steps, options, outName, split.skipped, sourceOptions);
     });
   }
 
@@ -631,6 +663,7 @@
       if (wf.sourceOptions && store.state.source.file) {
         var wanted = DL.cleanSourceOptions(wf.sourceOptions);
         wanted.sheet = store.state.source.options.sheet;
+        wanted.multiFile = store.state.source.options.multiFile; // a habit of the user, not of the data
         if (JSON.stringify(wanted) !== JSON.stringify(store.state.source.options)) {
           store.setSourceOptions(wanted);
           loadSource();
@@ -777,10 +810,9 @@
 
   function batchApply(files) {
     if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
-    var accepted = DL.acceptedExtensions();
-    var skipped = files.filter(function (f) { return accepted.indexOf('.' + DL.fileExtension(f.name)) < 0 || f.size > MAX_FILE_BYTES; });
-    files = files.filter(function (f) { return skipped.indexOf(f) < 0; });
-    if (!files.length) { U.toast(DL.t('msg.noDataFiles', { types: accepted.join(', ') }), 'warning'); return; }
+    var split = splitDataFiles(files);
+    files = split.good;
+    if (!files.length) { U.toast(DL.t('msg.noDataFiles', { types: split.accepted.join(', ') }), 'warning'); return; }
     var st = store.state;
     var steps = JSON.parse(JSON.stringify(workerSteps())); // a copy: edits during the batch do not change it
     var wfName = U.safeFileName((st.workflow.name || '').trim() || 'workflow');
@@ -790,7 +822,7 @@
       lastFormatOptions = allOptions;
       var batchOptions = JSON.parse(JSON.stringify(store.state.source.options));
       if (!store.state.source.file) batchOptions.sheet = ''; // the sheet of a file that is not open says nothing
-      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: DL.t(f.size > MAX_FILE_BYTES ? 'msg.fileTooBig' : 'msg.notDataFile') }; }), batchOptions);
+      runBatch(files, steps, options, zipName, split.skipped, batchOptions);
     });
   }
 

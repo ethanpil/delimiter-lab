@@ -319,8 +319,9 @@
 
   /* ---------- Source ---------- */
 
-  // Puts a list of files in the source. The first of them names the source.
-  Store.prototype.setSourceFiles = function (files) {
+  // Puts a list of files in the source. The first of them names the source. keepSheet keeps the
+  // sheet of the settings, for a change of the list that does not change the workbook.
+  Store.prototype.setSourceFiles = function (files, keepSheet) {
     files = files ? [].concat(files) : [];
     this.state.source.files = files;
     this.state.source.file = files[0] || null;
@@ -328,13 +329,10 @@
     this.state.source.sheets = null;
     this.state.source.error = null;
     this.state.source.status = files.length ? 'loading' : 'empty';
-    this.state.source.options.sheet = '';
+    // Before the event: a listener writes the session, and an empty sheet there would go to the disk.
+    if (!keepSheet || !files.length) this.state.source.options.sheet = '';
     this.invalidateResultsFrom(0);
     this.emit('source');
-  };
-
-  Store.prototype.setSourceFile = function (file) {
-    this.setSourceFiles(file ? [file] : []);
   };
 
   // Adds files at the end of the list. A file that is there already does not come a second time.
@@ -351,9 +349,7 @@
       added++;
     });
     if (!added) return 0;
-    var sheet = this.state.source.options.sheet;
-    this.setSourceFiles(kept);
-    this.state.source.options.sheet = sheet; // the sheet belongs to the settings, not to one file
+    this.setSourceFiles(kept, true);
     return added;
   };
 
@@ -361,9 +357,7 @@
     var files = this.state.source.files.slice();
     if (index < 0 || index >= files.length) return;
     files.splice(index, 1);
-    var sheet = this.state.source.options.sheet;
-    this.setSourceFiles(files);
-    if (files.length) this.state.source.options.sheet = sheet;
+    this.setSourceFiles(files, true);
   };
 
   Store.prototype.setSourceOptions = function (patch) {
