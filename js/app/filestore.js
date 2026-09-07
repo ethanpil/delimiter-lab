@@ -42,7 +42,9 @@
   F.put = function (file) {
     if (!file || file.size > MAX_BYTES) return F.clear();
     return run('readwrite', function (s) { return s.put({ file: file, name: file.name, at: Date.now() }, KEY); })
-      .catch(function () { /* private mode or no space: the workspace comes back without the file */ });
+      // A write that fails leaves the file of the last time. That file does not belong to the steps
+      // on the screen, so it must go.
+      .catch(function () { return F.clear(); });
   };
 
   // Gives the file back, or null.
