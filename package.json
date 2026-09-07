@@ -1,0 +1,17 @@
+{
+  "name": "delimiter-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Transform CSV, TSV and Excel files through a chain of steps.",
+  "license": "MIT",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/engine.test.js && node test/worker.test.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

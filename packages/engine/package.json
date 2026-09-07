@@ -1,0 +1,10 @@
+{
+  "name": "@delimiter-lab/engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The transform engine: tables, operations, readers and writers. One source for every platform.",
+  "license": "MIT",
+  "type": "module",
+  "main": "../../dist/engine.mjs",
+  "types": "src/index.ts"
+}

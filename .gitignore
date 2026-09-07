@@ -1,3 +1,10 @@
 node_modules/
+*.tsbuildinfo
+
+# The build output. dist/engine.global.js is committed, because GitHub Pages serves the files
+# of the repository and has no build step of its own. The other outputs are made when needed.
+dist/*
+!dist/engine.global.js
+
+# Large files that test/make-data.js generates when they are needed
 test/data/big*.csv
-.DS_Store

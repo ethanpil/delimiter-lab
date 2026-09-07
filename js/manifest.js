@@ -13,8 +13,10 @@
   // Languages with a file in js/i18n/. English is always loaded; the page adds the language of the user.
   DL.LOCALES = ['en'];
   DL.FILES = {
-    engine: ['js/engine/core.js'],
-    ops: ['js/ops/text.js', 'js/ops/rows.js', 'js/ops/columns.js', 'js/ops/dates.js', 'js/ops/reshape.js', 'js/ops/verify.js'],
+    // The engine is built from packages/engine/src by scripts/build.mjs. The page, the worker and
+    // the command line all read that one build, so no platform has its own copy of the engine.
+    engine: ['dist/engine.global.js'],
+    ops: [],
     app: ['js/app/i18n.js', 'js/i18n/en.js', 'js/app/util.js', 'js/app/store.js', 'js/app/engineClient.js', 'js/app/workflows.js', 'js/app/filestore.js'],
     ui: ['js/ui/fields.js', 'js/ui/chain.js', 'js/ui/source.js', 'js/ui/config.js', 'js/ui/grid.js', 'js/ui/dialogs.js', 'js/ui/perf.js'],
     main: ['js/main.js']
