@@ -318,6 +318,13 @@ function loadFile(msg, reply) {
     cells += result.table.length * Math.max(1, result.table.columns.length);
     if (cells > DL.maxCells) throw tooLarge(cells);
     tables.push(result.table);
+    // The columns of all the files together make the table wider than any one file. Count the cells
+    // of that table before the memory for it is necessary.
+    if (tables.length > 1) {
+      var shape = DL.stackedShape(tables);
+      var stackedCells = shape.rows * Math.max(1, shape.columns.length);
+      if (stackedCells > DL.maxCells) throw tooLarge(stackedCells);
+    }
     names.push(file.name);
     each.push({ name: file.name, size: file.size, rowCount: result.table.length });
     ragged += result.ragged || 0;

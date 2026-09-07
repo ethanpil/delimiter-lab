@@ -846,6 +846,22 @@
     return DL.makeTable(DL.cleanHeaders(names), this.cols, n);
   };
 
+  // The names of the columns that stackTables() will make, and the number of rows. The caller can
+  // count the cells with this before the memory for them is necessary.
+  DL.stackedShape = function (tables) {
+    var columns = [];
+    var seen = Object.create(null);
+    var rows = 0;
+    for (var i = 0; i < tables.length; i++) {
+      rows += tables[i].length;
+      for (var c = 0; c < tables[i].columns.length; c++) {
+        var name = tables[i].columns[c];
+        if (!(name in seen)) { seen[name] = true; columns.push(name); }
+      }
+    }
+    return { columns: columns, rows: rows };
+  };
+
   // Puts tables one after the other into one table. A column goes to the column of the same name.
   // A column that a table does not have is empty for the rows of that table. names[i] is the name of
   // the file that gave tables[i]; it goes into the notes.
@@ -863,32 +879,33 @@
         if (!(name in indexOf)) { indexOf[name] = columns.length; columns.push(name); }
       }
     }
-    var cols = new Array(columns.length);
-    for (c = 0; c < columns.length; c++) cols[c] = new Array(total);
+    // One list of pieces for each column, then one native join. concat copies faster than a loop.
+    var parts = new Array(columns.length);
+    for (c = 0; c < columns.length; c++) parts[c] = [];
     var notes = [];
-    var at = 0;
     for (i = 0; i < tables.length; i++) {
       var t = tables[i];
       var have = Object.create(null);
       for (c = 0; c < t.columns.length; c++) have[t.columns[c]] = c;
+      var blank = null;
       var missing = [];
       for (c = 0; c < columns.length; c++) {
         var from = have[columns[c]];
-        var out = cols[c];
         if (from === undefined) {
           missing.push(columns[c]);
-          for (r = 0; r < t.length; r++) out[at + r] = '';
+          if (!blank) { blank = new Array(t.length); for (r = 0; r < t.length; r++) blank[r] = ''; }
+          parts[c].push(blank);
         } else {
-          var src = DL.col(t, from);
-          for (r = 0; r < t.length; r++) out[at + r] = src[r];
+          parts[c].push(DL.col(t, from));
         }
       }
       if (missing.length) {
         notes.push('"' + (names && names[i] ? names[i] : 'File ' + (i + 1)) + '" does not have ' +
           DL.pluralize(missing.length, 'column') + ': ' + missing.join(', ') + '. Those values are empty.');
       }
-      at += t.length;
     }
+    var cols = new Array(columns.length);
+    for (c = 0; c < columns.length; c++) cols[c] = parts[c].length === 1 ? parts[c][0] : Array.prototype.concat.apply([], parts[c]);
     return { table: DL.makeTable(columns, cols, total), notes: notes };
   };
 

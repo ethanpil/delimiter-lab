@@ -83,6 +83,32 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     });
   })();
 
+  test('the cell limit counts the table that stacking makes, not the files on their own', () => {
+    // Two files, each small on its own, whose columns have no name in common. The stacked table is
+    // twice as wide as either file, so it holds twice the cells that the two files hold.
+    const rows = 300;
+    const make = (h1, h2, name) => {
+      let text = h1 + ',' + h2 + "\n";
+      for (let i = 0; i < rows; i++) text += 'x,y\n';
+      return new FakeFile(text, name);
+    };
+    const a = make('a1', 'a2', 'a.csv');
+    const b = make('b1', 'b2', 'b.csv');
+
+    send({ type: 'config', maxCells: 1500 });
+    // Each file is 600 cells, so the sum is 1200 and passes. The stacked table is 600 x 4 = 2400.
+    const r = send({ type: 'load', files: [a, b], options: {} });
+    assert.strictEqual(r.type, 'error', 'a stacked table above the limit must be refused');
+    assert.ok(r.tooLarge, 'the refusal must say that the table is too large');
+
+    // The same two files pass when the limit has room for the stacked table.
+    send({ type: 'config', maxCells: 8e6 });
+    const ok = send({ type: 'load', files: [a, b], options: {} });
+    assert.strictEqual(ok.type, 'loaded');
+    assert.deepStrictEqual(ok.info.columns, ['a1', 'a2', 'b1', 'b2']);
+    assert.strictEqual(ok.info.rowCount, rows * 2);
+  });
+
   test('load stacks many files into one source', () => {
     const one = new FakeFile('name,city\nAda,London\nAlan,Cambridge\n', 'one.csv');
     const two = new FakeFile('name,city\nGrace,New York\n', 'two.csv');
