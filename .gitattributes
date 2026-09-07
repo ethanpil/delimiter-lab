@@ -3,3 +3,7 @@
 *.xlsx binary
 *.woff binary
 *.woff2 binary
+
+# The test data keeps its bytes. contacts.csv is written with CRLF on purpose, and euro-1252.csv
+# is not UTF-8. To normalize them takes away the very thing they test.
+test/data/* -text

@@ -20,7 +20,9 @@
     addFiles: addSourceFiles,
     removeFile: removeSourceFile,
     moveFile: moveSourceFile,
-    reload: loadSource,
+    // A read that follows a change of the settings says nothing about the file itself. Without
+    // this, a read that fails on a new delimiter takes the file out of the workspace.
+    reload: function () { restoredLoad = false; loadSource(); },
     loadSample: function () { openFile(DL.SourceView.sampleFile()); }
   });
   var configView = new DL.ConfigView($('config'), store, {
