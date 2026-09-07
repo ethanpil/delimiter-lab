@@ -61,7 +61,9 @@ function handle(msg) {
     switch (msg.type) {
       case 'config': DL.maxCells = msg.maxCells; state.cacheBudgetCells = msg.maxCells * 3; reply({ type: 'ok' }); break;
       case 'sheets': reply({ type: 'sheets', sheets: sheetNames(msg.file) }); break;
-      case 'load': loadFile(msg, reply); break;
+      case 'load':
+        try { loadFile(msg, reply); } finally { progressScope = null; } // a throw must not leave the label
+        break;
       case 'run':
         busy = true;
         runChain(msg, function (results, cancelled, err) {
@@ -88,8 +90,16 @@ function handle(msg) {
   }
 }
 
+// While this holds { label, from, to }, every message of a reader carries the label and its percent
+// stays between from and to. One file of a list then owns one part of the bar.
+var progressScope = null;
+
 function progress(phase, percent) {
-  self.postMessage({ type: 'progress', phase: phase, percent: percent });
+  if (progressScope) {
+    phase = phase ? progressScope.label + ' \u00b7 ' + phase : progressScope.label;
+    percent = progressScope.from + (progressScope.to - progressScope.from) * (Math.max(0, Math.min(100, percent)) / 100);
+  }
+  self.postMessage({ type: 'progress', phase: phase, percent: Math.round(percent) });
 }
 
 function humanNumber(n) {
@@ -278,7 +288,7 @@ readers.spreadsheet = function (file, opts) {
   var sheetName = found ? opts.sheet || wb.SheetNames[0] : wb.SheetNames[0];
   var notes = found ? [] : ['Sheet "' + opts.sheet + '" is not in this workbook. The first sheet "' + sheetName + '" was read.'];
   var ws = wb.Sheets[sheetName];
-  progress('Reading sheet "' + sheetName + '"', 50);
+  progress('Reading sheet "' + sheetName + '"', 40);
   var raw = ws ? XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: true }) : [];
   wb = null;
   var builder = new DL.TableBuilder(opts);
@@ -287,6 +297,7 @@ readers.spreadsheet = function (file, opts) {
     raw[i] = null;
     if (builder.cells > DL.maxCells) throw tooLarge(builder.cells * (raw.length / (i + 1)));
   }
+  progress('Reading sheet "' + sheetName + '"', 95);
   return { table: builder.finish(), notes: notes, ragged: 0, meta: { sheet: sheetName } };
 };
 
@@ -310,21 +321,21 @@ function loadFile(msg, reply) {
   var meta = {};
   var cells = 0;
   var key = 'src:';
+  // The column of the file name belongs to a source that puts files together.
+  var stackOpts = { fileColumn: (opts.fileNameColumn && opts.multiFile === 'stack') ? 'Source file' : null };
+  var many = files.length > 1;
+  var share = many ? 90 / files.length : 0;
   for (var i = 0; i < files.length; i++) {
     var file = files[i];
-    if (files.length > 1) progress('Reading ' + file.name + ' (' + (i + 1) + ' of ' + files.length + ')', Math.round(90 * i / files.length));
+    if (many) {
+      progressScope = { label: file.name + ' (' + (i + 1) + ' of ' + files.length + ')', from: share * i, to: share * (i + 1) };
+      progress('', 0); // the name of the file, before the reader says what it does
+    }
     var result = readers[DL.inputFormatFor(file.name).id](file, opts);
     // Each file adds to the cells that the browser must hold, so the limit is on the total.
     cells += result.table.length * Math.max(1, result.table.columns.length);
     if (cells > DL.maxCells) throw tooLarge(cells);
     tables.push(result.table);
-    // The columns of all the files together make the table wider than any one file. Count the cells
-    // of that table before the memory for it is necessary.
-    if (tables.length > 1) {
-      var shape = DL.stackedShape(tables);
-      var stackedCells = shape.rows * Math.max(1, shape.columns.length);
-      if (stackedCells > DL.maxCells) throw tooLarge(stackedCells);
-    }
     names.push(file.name);
     each.push({ name: file.name, size: file.size, rowCount: result.table.length });
     ragged += result.ragged || 0;
@@ -334,7 +345,16 @@ function loadFile(msg, reply) {
     if (i === 0) meta = result.meta || {};
     key += file.name + ':' + file.size + ':' + file.lastModified + ':';
   }
-  var stacked = DL.stackTables(tables, names);
+  progressScope = null;
+  // The columns of all the files together make the table wider than any one file, and the column of
+  // the file name adds one more. Count the cells of that table before the memory for it is necessary.
+  if (tables.length > 1 || stackOpts.fileColumn) {
+    var shape = DL.stackedShape(tables, stackOpts);
+    var stackedCells = shape.rows * Math.max(1, shape.columns.length);
+    if (stackedCells > DL.maxCells) throw tooLarge(stackedCells);
+  }
+  if (many) progress('Putting the files together', 92);
+  var stacked = DL.stackTables(tables, names, stackOpts);
   var table = stacked.table;
   for (var m = 0; m < stacked.notes.length; m++) notes.push(stacked.notes[m]);
   var skip = Math.max(0, Number(opts.skipRows) || 0);

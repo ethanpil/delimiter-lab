@@ -160,8 +160,10 @@
       patch[key] = value;
       self.store.setSourceOptions(patch);
       DL.fields.updateVisibility(params, self.store.state.source.options, rendered.els);
-      // This one says what a new file does. It does not change how the bytes are read.
-      if (key === 'multiFile') { self.render(); return; }
+      // This one says what a new file does, and it does not change how the bytes are read. But the
+      // column with the name of the file belongs to a source that stacks, so with that setting on,
+      // the change does change the data.
+      if (key === 'multiFile' && !self.store.state.source.options.fileNameColumn) { self.render(); return; }
       if (opts && opts.merge) apply();
       else { apply.cancel(); self.actions.reload(); }
     });
