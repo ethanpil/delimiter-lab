@@ -846,51 +846,139 @@
     return DL.makeTable(DL.cleanHeaders(names), this.cols, n);
   };
 
-  // The names of the columns that stackTables() will make, and the number of rows. The caller can
-  // count the cells with this before the memory for them is necessary.
-  DL.stackedShape = function (tables) {
-    var columns = [];
-    var seen = Object.create(null);
+  // The key of a column name for stacking. "First Name", "first name" and " FIRST NAME " are one
+  // column, because a file that comes from another program often writes the name in another way.
+  function stackKey(name) {
+    var out = String(name).replace(/\s+/g, ' ').trim().toLowerCase();
+    // One letter can come as one character, or as a letter and a mark. Give both one shape.
+    return out.normalize ? out.normalize('NFC') : out;
+  }
+
+  // The keys of the columns of one table, in order. Two columns of ONE table that give the same key
+  // stay two columns: the file itself says that they are different. The keys of a table do not
+  // change, so they are kept for the next call.
+  var keyCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+
+  function tableKeys(table) {
+    var got = keyCache && keyCache.get(table);
+    if (got) return got;
+    var keys = new Array(table.columns.length);
+    var used = Object.create(null);
+    for (var c = 0; c < table.columns.length; c++) {
+      var k = stackKey(table.columns[c]);
+      var n = used[k] = (used[k] || 0) + 1;
+      // The second column with one key answers to the second such column of every file.
+      if (n > 1) k = k + '\u0000#' + n;
+      keys[c] = k;
+    }
+    if (keyCache) keyCache.set(table, keys);
+    return keys;
+  }
+
+  // The columns that stacking makes: one entry for each key, with the name that the files give it.
+  // The name does not depend on the order of the files, so a workflow keeps its column names.
+  // opts.fileColumn asks for a first column with the name of the file.
+  DL.unionColumns = function (tables, opts) {
+    var keys = [];
+    var indexOf = Object.create(null);
+    var spelling = [];
     var rows = 0;
-    for (var i = 0; i < tables.length; i++) {
+    var i, c;
+    for (i = 0; i < tables.length; i++) {
       rows += tables[i].length;
-      for (var c = 0; c < tables[i].columns.length; c++) {
+      var mine = tableKeys(tables[i]);
+      for (c = 0; c < mine.length; c++) {
+        var key = mine[c];
         var name = tables[i].columns[c];
-        if (!(name in seen)) { seen[name] = true; columns.push(name); }
+        if (!(key in indexOf)) { indexOf[key] = keys.length; keys.push(key); spelling.push([name]); }
+        else spelling[indexOf[key]].push(name); // every file counts, so the common spelling wins
       }
     }
-    return { columns: columns, rows: rows };
+    // The name of a column: the spelling that the most files give it. Two spellings that are equally
+    // common take the one that comes first in order, so that the answer never depends on the files.
+    var columns = spelling.map(function (list) {
+      var count = Object.create(null);
+      list.forEach(function (n) { var t = String(n).trim(); count[t] = (count[t] || 0) + 1; });
+      return Object.keys(count).sort(function (a, b) {
+        return count[b] - count[a] || (a < b ? -1 : a > b ? 1 : 0);
+      })[0];
+    });
+    var notes = [];
+    var varied = [];
+    for (c = 0; c < spelling.length; c++) {
+      // Spellings that differ only in the spaces are not worth a word to the user.
+      var shapes = Object.create(null);
+      spelling[c].forEach(function (n) { shapes[String(n).trim()] = true; });
+      if (Object.keys(shapes).length > 1) varied.push(columns[c]);
+    }
+    if (varied.length) {
+      notes.push('The files write ' + DL.pluralize(varied.length, 'column name') +
+        ' in more than one way, for example ' + varied.slice(0, 3).join(', ') +
+        '. Each of them is one column.');
+    }
+    // Two columns must never have one name: a step finds a column by its name.
+    var seen = Object.create(null);
+    for (c = 0; c < columns.length; c++) {
+      var base = columns[c];
+      var name2 = base;
+      for (var n = 2; seen[name2]; n++) name2 = base + ' ' + n;
+      seen[name2] = true;
+      columns[c] = name2;
+    }
+    if (opts && opts.fileColumn && tables.length) {
+      var given = opts.fileColumn;
+      var fileName = given;
+      for (var m = 2; seen[fileName]; m++) fileName = given + ' ' + m;
+      if (fileName !== given) {
+        notes.push('A column of the data is called "' + given + '", so the column with the name of the file is called "' + fileName + '".');
+      }
+      columns.unshift(fileName);
+      keys.unshift(null); // the column of the file name comes from no file
+    }
+    return { columns: columns, keys: keys, rows: rows, notes: notes };
   };
 
-  // Puts tables one after the other into one table. A column goes to the column of the same name.
-  // A column that a table does not have is empty for the rows of that table. names[i] is the name of
-  // the file that gave tables[i]; it goes into the notes.
-  DL.stackTables = function (tables, names) {
+  // The names of the columns that stackTables() will make, and the number of rows. The caller can
+  // count the cells with this before the memory for them is necessary.
+  DL.stackedShape = function (tables, opts) {
+    var u = DL.unionColumns(tables, opts);
+    return { columns: u.columns, rows: u.rows };
+  };
+
+  // Puts tables one after the other into one table. A column goes to the column with the same name;
+  // other capital letters or other spaces are still the same name. A column that a table does not
+  // have is empty for the rows of that table. names[i] is the name of the file that gave tables[i];
+  // it goes into the notes. opts.fileColumn adds a first column with that name in every row.
+  DL.stackTables = function (tables, names, opts) {
+    opts = opts || {};
     if (!tables.length) return { table: DL.makeTable([], [], 0), notes: [] };
-    if (tables.length === 1) return { table: tables[0], notes: [] };
-    var columns = [];
-    var indexOf = Object.create(null);
-    var total = 0;
+    if (tables.length === 1 && !opts.fileColumn) return { table: tables[0], notes: [] };
+    var u = DL.unionColumns(tables, opts);
+    var columns = u.columns;
+    var keys = u.keys;
+    var total = u.rows;
+    var notes = u.notes.slice();
     var i, c, r;
-    for (i = 0; i < tables.length; i++) {
-      total += tables[i].length;
-      for (c = 0; c < tables[i].columns.length; c++) {
-        var name = tables[i].columns[c];
-        if (!(name in indexOf)) { indexOf[name] = columns.length; columns.push(name); }
-      }
-    }
     // One list of pieces for each column, then one native join. concat copies faster than a loop.
     var parts = new Array(columns.length);
     for (c = 0; c < columns.length; c++) parts[c] = [];
-    var notes = [];
+    var fileOf = function (i) { return (names && names[i]) ? names[i] : 'File ' + (i + 1); };
     for (i = 0; i < tables.length; i++) {
       var t = tables[i];
+      var mine = tableKeys(t);
       var have = Object.create(null);
-      for (c = 0; c < t.columns.length; c++) have[t.columns[c]] = c;
+      for (c = 0; c < mine.length; c++) have[mine[c]] = c;
       var blank = null;
       var missing = [];
       for (c = 0; c < columns.length; c++) {
-        var from = have[columns[c]];
+        if (keys[c] === null) { // the column with the name of the file
+          var label = fileOf(i);
+          var mineCol = new Array(t.length);
+          for (r = 0; r < t.length; r++) mineCol[r] = label;
+          parts[c].push(mineCol);
+          continue;
+        }
+        var from = have[keys[c]];
         if (from === undefined) {
           missing.push(columns[c]);
           if (!blank) { blank = new Array(t.length); for (r = 0; r < t.length; r++) blank[r] = ''; }
@@ -900,8 +988,8 @@
         }
       }
       if (missing.length) {
-        notes.push('"' + (names && names[i] ? names[i] : 'File ' + (i + 1)) + '" does not have ' +
-          DL.pluralize(missing.length, 'column') + ': ' + missing.join(', ') + '. Those values are empty.');
+        notes.push('"' + fileOf(i) + '" does not have ' + DL.pluralize(missing.length, 'column') +
+          ': ' + missing.slice(0, 5).join(', ') + (missing.length > 5 ? ', …' : '') + '. Those values are empty.');
       }
     }
     var cols = new Array(columns.length);
@@ -1286,6 +1374,9 @@
   var multiFileOption = { key: 'multiFile', label: 'Many files', type: 'select', default: 'batch',
     help: 'Batch: each file goes through the steps on its own and the results download together. Stack: the files become one Data Source, one after the other.',
     options: [{ value: 'batch', label: 'Work on each file on its own (batch)' }, { value: 'stack', label: 'Put the files together (stack)' }] };
+  var fileColumnOption = { key: 'fileNameColumn', label: 'Add a column with the name of the file', type: 'boolean', default: false,
+    help: 'The first column then holds the name of the file that gave each row. Use it to keep the source of the rows after the files are together.',
+    showIf: function (o) { return o.multiFile === 'stack'; } };
   var skipRowsOption = { key: 'skipRows', label: 'Skip rows at the top', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file starts with notes or a title before the real header row.' };
   var skipRowsBottomOption = { key: 'skipRowsBottom', label: 'Skip rows at the bottom', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file ends with totals, notes or an empty block. The last rows go away.' };
 
@@ -1297,6 +1388,7 @@
       extensions: DL.DELIMITED_EXTENSIONS,
       options: [
         multiFileOption,
+        fileColumnOption,
         headerOption,
         skipRowsOption,
         skipRowsBottomOption,
@@ -1317,6 +1409,7 @@
       hasSheets: true,
       options: [
         multiFileOption,
+        fileColumnOption,
         headerOption,
         skipRowsOption,
         skipRowsBottomOption,

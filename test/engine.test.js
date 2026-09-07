@@ -363,6 +363,67 @@ test('stackTables puts tables one after the other and matches columns by name', 
   assert.strictEqual(DL.stackTables([a, empty], ['a', 'e']).table.length, 2);
 });
 
+test('stackTables joins names that differ only in case or spaces', () => {
+  const mk = (columns, rows) => DL.makeTable(columns, columns.map((_, c) => rows.map((r) => r[c])), rows.length);
+  const a = mk(['Name', 'City'], [['Ada', 'London'], ['Alan', 'Cambridge']]);
+  const b = mk(['name', ' CITY '], [['Grace', 'New York']]);
+  const r = DL.stackTables([a, b], ['a.csv', 'b.csv']);
+  assert.strictEqual(r.table.columns.length, 2, 'one column for each name');
+  assert.deepStrictEqual(rowsOf(r.table), [['Ada', 'London'], ['Alan', 'Cambridge'], ['Grace', 'New York']]);
+  assert.strictEqual(r.notes.filter((n) => n.indexOf('more than one way') > 0).length, 1, 'one note, not one for each column');
+
+  // The names do not depend on the order of the files. A workflow keeps its column names when the
+  // files arrive in another order.
+  const back = DL.stackTables([b, a], ['b.csv', 'a.csv']);
+  assert.deepStrictEqual(back.table.columns, r.table.columns);
+  // The spaces at the ends never reach the name.
+  r.table.columns.forEach((n) => assert.strictEqual(n, n.trim()));
+
+  // The spelling that the most files write wins, whatever the order.
+  const c1 = mk(['City'], [['x']]);
+  const c2 = mk(['City'], [['y']]);
+  const c3 = mk(['CITY'], [['z']]);
+  assert.deepStrictEqual(DL.stackTables([c3, c1, c2], ['3', '1', '2']).table.columns, ['City']);
+
+  // A letter and its mark join the one character that means the same.
+  const nfc = mk(['Caf\u00e9'], [['x']]);
+  const nfd = mk(['Cafe\u0301'], [['y']]);
+  const joined = DL.stackTables([nfc, nfd], ['nfc.csv', 'nfd.csv']);
+  assert.strictEqual(joined.table.columns.length, 1);
+  assert.deepStrictEqual(rowsOf(joined.table), [['x'], ['y']]);
+
+  // Two columns of ONE file that differ only in case stay two columns, and they line up with the
+  // same pair in another file whatever the order inside that file.
+  const dup = mk(['Email', 'email'], [['A', 'B']]);
+  const swapped = mk(['email', 'Email'], [['C', 'D']]);
+  const d = DL.stackTables([dup, swapped], ['d.csv', 'e.csv']);
+  assert.strictEqual(d.table.columns.length, 2);
+  assert.strictEqual(d.table.columns[0], d.table.columns[0].trim());
+  assert.notStrictEqual(d.table.columns[0], d.table.columns[1], 'two columns never take one name');
+  assert.deepStrictEqual(rowsOf(d.table), [['A', 'B'], ['C', 'D']]);
+});
+
+test('stackTables can add a column with the name of the file', () => {
+  const mk = (columns, rows) => DL.makeTable(columns, columns.map((_, c) => rows.map((r) => r[c])), rows.length);
+  const a = mk(['name'], [['Ada'], ['Alan']]);
+  const b = mk(['name'], [['Grace']]);
+  const r = DL.stackTables([a, b], ['jan.csv', 'feb.csv'], { fileColumn: 'Source file' });
+  assert.deepStrictEqual(r.table.columns, ['Source file', 'name']);
+  assert.deepStrictEqual(rowsOf(r.table), [['jan.csv', 'Ada'], ['jan.csv', 'Alan'], ['feb.csv', 'Grace']]);
+
+  // One file also gets the column, and the shape agrees with the table that comes out.
+  const one = DL.stackTables([a], ['jan.csv'], { fileColumn: 'Source file' });
+  assert.deepStrictEqual(one.table.columns, ['Source file', 'name']);
+  assert.deepStrictEqual(rowsOf(one.table), [['jan.csv', 'Ada'], ['jan.csv', 'Alan']]);
+  assert.deepStrictEqual(DL.stackedShape([a, b], { fileColumn: 'Source file' }).columns, ['Source file', 'name']);
+
+  // A data column of that name keeps its place; the new column takes another name.
+  const clash = mk(['Source file', 'v'], [['x', '1']]);
+  const c = DL.stackTables([clash, mk(['v'], [['2']])], ['one.csv', 'two.csv'], { fileColumn: 'Source file' });
+  assert.deepStrictEqual(c.table.columns, ['Source file 2', 'Source file', 'v']);
+  assert.deepStrictEqual(rowsOf(c.table), [['one.csv', 'x', '1'], ['two.csv', '', '2']]);
+});
+
 test('TableBuilder skips rows at the bottom', () => {
   const rows = [['a', 'b'], ['1', 'x'], ['2', 'y'], ['3', 'z'], ['total', '-']];
   const build = (opts) => { const b = new DL.TableBuilder(opts); rows.forEach((r) => b.add(r)); return b.finish(); };
