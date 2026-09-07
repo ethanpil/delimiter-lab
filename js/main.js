@@ -510,7 +510,7 @@
     if (!st.workflow.steps.length && !st.workflow.name && !st.source.file) { U.toast(DL.t('msg.newEmpty'), 'info'); return; }
     U.confirm({
       title: DL.t('msg.newTitle'),
-      message: DL.t('msg.newMessage', { steps: DL.pluralize(st.workflow.steps.length, 'step') }),
+      message: DL.t('msg.newMessage'),
       yes: DL.t('msg.newYes')
     }, function () {
       U.confirm({ title: DL.t('msg.newSureTitle'), message: DL.t('msg.newSureMessage'), yes: DL.t('msg.newSureYes'), danger: true }, function () {
