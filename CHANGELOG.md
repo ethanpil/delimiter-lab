@@ -5,6 +5,18 @@ history of the development before that.
 
 ## 1.0 (in development)
 
+- Add: "Many files" in the source settings. With the answer stack, a file
+  goes into the source that is open, and the files become one Data Source.
+  With batch, which stays the answer at the start, each file goes through the
+  steps on its own (02b9d92, c2736f4, d02e4bc).
+- Add: the source panel lists its files, and it can add one or take one out
+  (615ad5a).
+- Add: "Skip rows at the bottom" in the source settings (843e481).
+- Add: the width of a column changes with a drag on the right of its name.
+  Two clicks on that place fit the column to its text. With space left over,
+  the columns fill the view (c3c20de).
+- Change: the first step is now called Source Data (db6c6cd).
+
 - Fix: a download of many files gave the error "zipName is not defined" in place of the message (4410533).
 - Fix: a workbook opens again at the same sheet. Before, it opened at the first sheet, and the steps ran on the wrong data (b898ff5).
 - Fix: a write that fails no longer leaves the file of the last time in the workspace (f6bfc55).

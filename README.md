@@ -15,6 +15,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Shows the rows that failed a Verify rule when you click the rule in the result.
 - Saves workflows in the browser and as files, so you can apply them again to new files. Autosave writes each change of the steps to the open workflow.
 - Runs a saved workflow on a file from the workflow list, and downloads the result. You do not need to build the steps again.
+- Reads many files as one Data Source. Put "Many files" at stack, then add files at any time. The columns go by name, and a column that a file does not have is empty for the rows of that file.
 - Keeps the workspace in the browser. After a reload, or after the power goes off, the steps are there again, and the file too when it is smaller than 100 MB.
 - Applies the steps to many files at once. Drop the files and choose the output format. The result is a zip file.
 - Undo and redo of every change to the steps.
