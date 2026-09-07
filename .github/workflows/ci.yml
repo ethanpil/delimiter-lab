@@ -35,6 +35,11 @@ jobs:
       - name: Tests
         run: npm test
 
+      # The tests hold the engine to its word. This holds the command to its word: it must read a
+      # file, run the steps and write the right answer, the way a person uses it.
+      - name: The dl command reads, runs and writes
+        run: bash .github/smoke.sh node dist/dl.mjs
+
       # GitHub Pages serves the files of the repository and has no build step, so
       # dist/engine.global.js is committed. It must match the sources at this commit.
       - name: The committed engine matches its source

@@ -11,8 +11,10 @@ on:
         description: 'The tag to build, for example v1.0'
         required: true
 
+# Only the job that publishes needs the right to write. The jobs that build get no more than
+# the right to read, because that is where code from other people runs.
 permissions:
-  contents: write
+  contents: read
 
 # Two tags pushed together would write the same release, so one run waits for the other.
 concurrency:
@@ -28,6 +30,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -60,7 +64,7 @@ jobs:
       # Bun puts its runtime inside the binary. A version below 1.2.4 does not sign a macOS
       # binary again after it adds that runtime, and an unsigned binary does not start on an
       # Apple silicon machine.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: '1.2.4'
 
@@ -99,6 +103,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -141,6 +147,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -163,6 +171,8 @@ jobs:
       VERSION: ${{ needs.binaries.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -179,6 +189,7 @@ jobs:
           set -euo pipefail
           curl -sSfL -o /tmp/nfpm.tar.gz \
             https://github.com/goreleaser/nfpm/releases/download/v2.41.1/nfpm_2.41.1_Linux_x86_64.tar.gz
+          echo "b3cf95aa6dabed836d09ad7f0c190a13c74c5b1304db60846f0f702ee407f430  /tmp/nfpm.tar.gz" | sha256sum -c -
           tar -xzf /tmp/nfpm.tar.gz -C /tmp nfpm
           sudo install /tmp/nfpm /usr/local/bin/nfpm
           nfpm --version
@@ -216,13 +227,16 @@ jobs:
           cd ..
           ls -la release
 
-      # Only the files, so that a directory cannot stop the step half way.
+      # Only the files, so that a directory cannot stop the step half way. The list of checksums
+      # is left out of itself: the shell makes that file empty before find looks, so a line for it
+      # would hold the checksum of nothing and sha256sum -c would always say FAILED.
       - name: Write the checksums
         run: |
           set -euo pipefail
           cd release
-          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt | sort | xargs sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -236,6 +250,8 @@ jobs:
     name: Publish the release
     needs: [binaries, packages]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       VERSION: ${{ needs.binaries.outputs.version }}
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -340,7 +356,7 @@ jobs:
 
       # tag_name is given, because a run started by hand has a branch and not a tag.
       - name: Publish
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.TAG }}
           name: Delimiter Lab ${{ env.VERSION }}

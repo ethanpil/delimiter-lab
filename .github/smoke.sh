@@ -9,6 +9,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 printf 'name,city,amount\n ada ,London,1234.5\nGRACE,Paris,20\n' > "$work/in.csv"
+printf 'name,city,amount\n bob ,Rome,7\nEVE,Berlin,8\n' > "$work/in2.csv"
 cat > "$work/wf.json" <<'JSON'
 {
   "format": "delimiter-lab-workflow",
@@ -28,14 +29,27 @@ JSON
 grep -q 'Ada,London,"1,234.50"' "$work/out.csv" || {
   echo "::error::the binary gave the wrong answer"; cat "$work/out.csv"; exit 1; }
 
-# Without -o the answer goes to standard output, and nothing else may go there.
-"${dl[@]}" "$work/wf.json" "$work/in.csv" --quiet > "$work/piped.csv"
+# Without -o the answer goes to standard output. Nothing that the command says about its work
+# may go there, so this runs without --quiet and keeps only standard output.
+"${dl[@]}" "$work/wf.json" "$work/in.csv" > "$work/piped.csv" 2> "$work/said.txt"
 cmp "$work/out.csv" "$work/piped.csv" || {
-  echo "::error::the file and the piped output are not the same"; exit 1; }
+  echo "::error::the file and the piped output are not the same"; cat "$work/said.txt"; exit 1; }
+test -s "$work/said.txt" || { echo "::error::the command said nothing on standard error"; exit 1; }
 
-# A workbook goes through the other library.
+# Many files make one source, one file after the other. Two files of two rows make four rows.
+"${dl[@]}" "$work/wf.json" "$work/in.csv" "$work/in2.csv" -o "$work/both.csv" --quiet
+lines=$(grep -c '' < "$work/both.csv")
+if [ "$lines" != "5" ]; then
+  echo "::error::two files of two rows must make four rows and a heading, not $lines lines"
+  cat "$work/both.csv"; exit 1
+fi
+
+# A workbook goes through the other library. An xlsx file is a zip, so it starts with PK.
 "${dl[@]}" "$work/wf.json" "$work/in.csv" -o "$work/out.xlsx" --quiet
 test -s "$work/out.xlsx" || { echo "::error::the workbook is empty"; exit 1; }
+if [ "$(head -c 2 "$work/out.xlsx")" != "PK" ]; then
+  echo "::error::the workbook is not a zip, so no program can open it"; exit 1
+fi
 
 # The checks that write nothing.
 "${dl[@]}" "$work/wf.json" "$work/in.csv" --validate --quiet
