@@ -17,6 +17,8 @@
   var sourceView = new DL.SourceView($('config'), store, {
     openFile: openFile,
     openFiles: openFiles,
+    addFiles: addSourceFiles,
+    removeFile: removeSourceFile,
     reload: loadSource,
     loadSample: function () { openFile(DL.SourceView.sampleFile()); }
   });
@@ -73,10 +75,14 @@
   /* ---------- Source loading ---------- */
   var loadToken = 0;
 
-  // One file opens as the source. Many files go through the workflow one by one (batch).
+  // "Many files" in the source settings says what a second file means: another run of the steps
+  // (batch), or more rows in the same source (stack).
+  function stacking() { return store.state.source.options.multiFile === 'stack'; }
+
   function openFiles(files) {
     if (!files || !files.length) return;
     if (files.length === 1 && DL.fileExtension(files[0].name) === 'json') { importWorkflowFile(files[0]); return; }
+    if (stacking()) { addSourceFiles(files); return; }
     if (files.length === 1) { openFile(files[0]); return; }
     if (!store.state.workflow.steps.length) {
       U.toast(DL.t('msg.addStepsFirst'), 'info');
@@ -86,10 +92,51 @@
     batchApply(files);
   }
 
+  // Adds files to the source that is open, and reads them all again.
+  function addSourceFiles(files) {
+    var accepted = DL.acceptedExtensions();
+    var good = [];
+    var refused = 0;
+    files.forEach(function (f) {
+      if (accepted.indexOf('.' + DL.fileExtension(f.name)) < 0) { refused++; return; }
+      if (f.size > MAX_FILE_BYTES) { refused++; return; }
+      good.push(f);
+    });
+    if (refused) U.toast(DL.t('msg.someFilesRefused', { n: DL.pluralize(refused, 'file'), types: accepted.join(', ') }), 'warning');
+    if (!good.length) return;
+    if (!store.state.source.files.length) { openFile(good[0], { extra: good.slice(1) }); return; }
+    var added = store.addSourceFiles(good);
+    if (!added) { U.toast(DL.t('msg.filesAlreadyThere'), 'info'); return; }
+    U.toast(DL.t('msg.filesAdded', { n: DL.pluralize(added, 'file') }), 'success');
+    keepWorkspace();
+    loadSource();
+  }
+
+  function removeSourceFile(index) {
+    store.removeSourceFile(index);
+    keepWorkspace();
+    if (store.state.source.files.length) loadSource();
+    else { previewKey = null; grid.show(null, DL.t('preview.openFile')); }
+  }
+
+  // Writes the files of the source to the workspace store, and says when it cannot keep them.
+  function keepWorkspace() {
+    var files = store.state.source.files;
+    if (!files.length) { DL.fileStore.clear(); return; }
+    DL.fileStore.put(files).then(function (kept) {
+      if (kept || store.state.source.files !== files) return; // a later list took the place of this one
+      var bytes = 0;
+      files.forEach(function (f) { bytes += f.size; });
+      U.toast(DL.t(bytes > DL.fileStore.MAX_BYTES ? 'msg.workspaceTooBig' : 'msg.workspaceNotKept',
+        { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
+    });
+  }
+
   var MAX_FILE_BYTES = 1.5 * 1024 * 1024 * 1024; // browsers cannot read a larger file into memory
 
-  // opts.sheet opens a workbook at that sheet. setSourceFile() empties the sheet, so it goes back after.
-  // opts.fromStore says that the file came out of the workspace store: it does not go back in.
+  // opts.sheet opens a workbook at that sheet. setSourceFiles() empties the sheet, so it goes back after.
+  // opts.fromStore says that the files came out of the workspace store: they do not go back in.
+  // opts.extra holds more files for the same source.
   function openFile(file, opts) {
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
@@ -98,15 +145,9 @@
     }
     opts = opts || {};
     restoredLoad = opts.fromStore === true;
-    store.setSourceFile(file);
+    store.setSourceFiles([file].concat(opts.extra || []));
     if (opts.sheet) store.setSourceOptions({ sheet: opts.sheet });
-    if (!opts.fromStore) {
-      DL.fileStore.put(file).then(function (kept) {
-        if (kept || store.state.source.file !== file) return; // a later file took the place of this one
-        U.toast(DL.t(file.size > DL.fileStore.MAX_BYTES ? 'msg.workspaceTooBig' : 'msg.workspaceNotKept',
-          { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
-      });
-    }
+    if (!opts.fromStore) keepWorkspace();
     if (DL.inputFormatFor(file.name).hasSheets) {
       var token = ++loadToken;
       showProgress(DL.t('progress.readingWorkbook'), 5);
@@ -140,13 +181,13 @@
 
   function loadSource() {
     var src = store.state.source;
-    if (!src.file) return;
+    if (!src.files.length) return;
     var token = ++loadToken;
     src.status = 'loading';
     store.emit('source');
     showProgress(DL.t('progress.readingFile'), 2);
     armStop();
-    engine.load(src.file, src.options).then(function (msg) {
+    engine.load(src.files, src.options).then(function (msg) {
       if (token !== loadToken) return;
       disarmStop();
       hideProgress();
@@ -540,7 +581,7 @@
         searchToken++;
         exportToken++;
         exporting = false;
-        store.setSourceFile(null);
+        store.setSourceFiles([]);
         store.setSourceOptions(DL.defaultSourceOptions());
         DL.fileStore.clear();
         engine.restart(); // the worker holds the table of the old file
@@ -966,13 +1007,16 @@
   $('workflowName').value = store.state.workflow.name || '';
   if (store.droppedSteps) U.toast(DL.t('msg.stepsDropped', { n: DL.pluralize(store.droppedSteps, 'step') }), 'warning');
   // The steps come from localStorage. The file comes from IndexedDB, which answers later.
-  DL.fileStore.get().then(function (file) {
+  DL.fileStore.get().then(function (files) {
     // The two stores are written one after the other, and every tab of this browser writes the same
-    // two. A file with a different name does not belong to these steps, so it stays closed.
-    var mine = file && store.restoredSourceName === file.name;
-    if (mine && !store.state.source.file) {
-      U.toast(DL.t('msg.workspaceBack', { name: file.name }), 'info');
-      openFile(file, { sheet: store.state.source.options.sheet, fromStore: true });
+    // two. Files with other names do not belong to these steps, so they stay closed.
+    var names = store.restoredSourceNames || [];
+    var mine = files.length === names.length && files.every(function (f, i) { return f.name === names[i]; });
+    if (mine && files.length && !store.state.source.files.length) {
+      U.toast(files.length > 1
+        ? DL.t('msg.workspaceBackMany', { n: DL.pluralize(files.length, 'file') })
+        : DL.t('msg.workspaceBack', { name: files[0].name }), 'info');
+      openFile(files[0], { extra: files.slice(1), sheet: store.state.source.options.sheet, fromStore: true });
     } else if (store.restoredSourceName && store.state.workflow.steps.length) {
       U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
     }
