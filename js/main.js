@@ -503,6 +503,7 @@
   // Empties the steps so that the user can start again. The file that is open stays open.
   function newWorkflow() {
     grid.closeProfile();
+    if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
     var st = store.state;
     if (!st.workflow.steps.length && !st.workflow.name && !st.source.file) { U.toast(DL.t('msg.newEmpty'), 'info'); return; }
     U.confirm({
@@ -515,6 +516,7 @@
         autosaveNow(); // a change that waits goes to the old record before the steps go away
         store.replaceWorkflow({ id: null, name: '', steps: [] });
         loadToken++; // a load that is on its way must not put its file on the empty screen
+        batchToken++; // and a batch that is on its way must not go on with the new worker
         store.setSourceFile(null);
         store.setSourceOptions(DL.defaultSourceOptions());
         DL.fileStore.clear();
