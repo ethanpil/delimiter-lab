@@ -359,3 +359,22 @@ kbd { font-size: 11px; }
   #saveState { display: none; }
   .app-header .btn-label { display: none; }
 }
+
+/* A narrow screen, such as a telephone. The header needs about 720px on one line. With less than
+   that, and with a body that does not scroll, Download and the buttons beside it went off the
+   screen: a person could open a file and then had no way to take the answer. The header takes two
+   lines here, and the name of the workflow gives its width to the buttons. */
+@media (max-width: 760px) {
+  :root { --dl-sidebar-w: 180px; }
+  .app-header {
+    height: auto;
+    min-height: var(--dl-header-h);
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .workflow-name { width: 100%; order: 10; }
+  .app-progress { top: auto; }
+  .preview-search { width: 120px; }
+}

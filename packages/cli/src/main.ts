@@ -20,6 +20,7 @@ interface Args {
   quiet: boolean;
   help: boolean;
   version: boolean;
+  allowCode: boolean;
 }
 
 const USAGE = [
@@ -34,6 +35,8 @@ const USAGE = [
   '                        format comes from the name of the output file, or csv.',
   '      --dry-run         Run every step but write nothing. Says what the result would hold.',
   '      --validate        Check the workflow and the files, then stop. Runs no step.',
+  '      --allow-code      Let a Custom JavaScript step run. Such a step is code from the',
+  '                        workflow file, and it runs with the rights of this command.',
   '  -q, --quiet           Say nothing on standard error except errors.',
   '  -h, --help            Show this text.',
   '  -v, --version         Show the version.',
@@ -61,7 +64,7 @@ function value(given: string | undefined, option: string, what: string): string 
 function parseArgs(argv: string[]): Args {
   const a: Args = {
     workflow: null, inputs: [], output: null, format: null,
-    dryRun: false, validate: false, quiet: false, help: false, version: false
+    dryRun: false, validate: false, quiet: false, help: false, version: false, allowCode: false
   };
   let onlyFiles = false;
   for (let i = 0; i < argv.length; i++) {
@@ -73,6 +76,7 @@ function parseArgs(argv: string[]): Args {
     if (arg === '-q' || arg === '--quiet') { a.quiet = true; continue; }
     if (arg === '--dry-run') { a.dryRun = true; continue; }
     if (arg === '--validate') { a.validate = true; continue; }
+    if (arg === '--allow-code') { a.allowCode = true; continue; }
     if (arg === '-o' || arg === '--output') { a.output = value(argv[++i], '--output', 'a file name'); continue; }
     if (arg.indexOf('--output=') === 0) { a.output = value(arg.slice(9), '--output', 'a file name'); continue; }
     if (arg === '--format') { a.format = value(argv[++i], '--format', 'a name'); continue; }
@@ -141,6 +145,16 @@ export async function main(argv: string[]): Promise<void> {
     if (fs.statSync(name).isDirectory()) return fail('"' + name + '" is a directory, not a file.');
     try { files.push(openFile(name)); }
     catch (e: any) { return fail('The file "' + name + '" could not be read: ' + e.message); }
+  }
+
+  // A workflow file travels from person to person. A Custom JavaScript step in one is code, and
+  // it runs here with every right this command has: the files of the machine and the network. The
+  // page asks before it runs such a step; a terminal has nobody to ask, so it refuses and names
+  // the answer that allows it.
+  const code = (workflow.steps || []).filter(function (st: any) { return st && st.opId === 'javascript' && st.enabled !== false; });
+  if (code.length && !a.allowCode) {
+    return fail('This workflow holds ' + DL.pluralize(code.length, 'Custom JavaScript step') +
+      ', which is code from the file "' + a.workflow + '". Read it first. To run it: --allow-code');
   }
 
   // The settings of the workflow read every file. More than one file is one source, one file
