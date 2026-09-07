@@ -527,7 +527,7 @@
     if (!st.workflow.steps.length && !st.workflow.name && !st.source.file) { U.toast(DL.t('msg.newEmpty'), 'info'); return; }
     U.confirm({
       title: DL.t('msg.newTitle'),
-      message: DL.t('msg.newMessage'),
+      message: st.source.file ? DL.t('msg.newMessageFile', { name: st.source.file.name }) : DL.t('msg.newMessage'),
       yes: DL.t('msg.newYes')
     }, function () {
       U.confirm({ title: DL.t('msg.newSureTitle'), message: DL.t('msg.newSureMessage'), yes: DL.t('msg.newSureYes'), danger: true }, function () {
@@ -747,7 +747,9 @@
     DL.dialogs.download({ files: files, baseName: wfName, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, zipName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
-      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: DL.t(f.size > MAX_FILE_BYTES ? 'msg.fileTooBig' : 'msg.notDataFile') }; }), JSON.parse(JSON.stringify(store.state.source.options)));
+      var batchOptions = JSON.parse(JSON.stringify(store.state.source.options));
+      if (!store.state.source.file) batchOptions.sheet = ''; // the sheet of a file that is not open says nothing
+      runBatch(files, steps, options, zipName, skipped.map(function (f) { return { name: f.name, error: DL.t(f.size > MAX_FILE_BYTES ? 'msg.fileTooBig' : 'msg.notDataFile') }; }), batchOptions);
     });
   }
 
@@ -967,7 +969,7 @@
   DL.fileStore.get().then(function (file) {
     // The two stores are written one after the other, and every tab of this browser writes the same
     // two. A file with a different name does not belong to these steps, so it stays closed.
-    var mine = file && (!store.restoredSourceName || file.name === store.restoredSourceName);
+    var mine = file && store.restoredSourceName === file.name;
     if (mine && !store.state.source.file) {
       U.toast(DL.t('msg.workspaceBack', { name: file.name }), 'info');
       openFile(file, { sheet: store.state.source.options.sheet, fromStore: true });
