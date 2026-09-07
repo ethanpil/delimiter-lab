@@ -271,17 +271,16 @@
       return U.el('a', { href: href, target: '_blank', rel: 'noopener noreferrer', text: text });
     }
     var about = U.el('p', { class: 'text-secondary small mb-1' }, [
-      DL.t('help.project') + ' ', link('https://github.com/ethanpil/delimiter-lab', 'github.com/ethanpil/delimiter-lab'), '.'
+      U.el('span', { text: DL.t('help.project') }), ' ',
+      link('https://github.com/ethanpil/delimiter-lab', 'github.com/ethanpil/delimiter-lab')
     ]);
-    // The icon of the application comes from another author. The licence asks for these names.
+    // The icon of the application comes from another author. The licence asks for these names, which
+    // stay in one sentence, so that another language can put them in its own order.
     var credit = U.el('p', { class: 'text-secondary small mb-0' }, [
-      DL.t('help.iconFrom') + ' ',
-      link('https://www.svgrepo.com/collection/iconpark-duotone-icons/', 'Iconpark Duotone Icons'),
-      ', ' + DL.t('help.iconBy') + ' ',
-      link('https://www.svgrepo.com/author/bytedance/', 'bytedance'),
-      ', ' + DL.t('help.iconLicence') + ' ',
-      link('https://www.svgrepo.com/page/licensing/#Apache', 'Apache License'),
-      '.'
+      U.el('span', { text: DL.t('help.iconCredit') }), ' ',
+      link('https://www.svgrepo.com/collection/iconpark-duotone-icons/', DL.t('help.iconCollectionLink')), ' · ',
+      link('https://www.svgrepo.com/author/bytedance/', DL.t('help.iconAuthorLink')), ' · ',
+      link('https://www.svgrepo.com/page/licensing/#Apache', DL.t('help.iconLicenceLink'))
     ]);
     var body = U.el('div', {}, [
       U.el('div', { class: 'row g-4' }, [left, right]),
