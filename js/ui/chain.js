@@ -10,7 +10,7 @@
     this.store = store;
     this.actions = actions;
     var self = this;
-    DL.fields.sortable(container, '.step-card[data-step]', function (from, to) {
+    DL.fields.sortable(container, '.step-card[draggable]', function (from, to) {
       var steps = store.state.workflow.steps;
       if (steps[from]) store.moveStep(steps[from].id, to);
     });

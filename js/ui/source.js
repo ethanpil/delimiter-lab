@@ -26,8 +26,11 @@
     var src = st.source;
     var self = this;
     // While the user types in an option, the reload must not rebuild the form under the cursor.
+    // A tick is not typing: it takes its answer at once, and to wait for the blur leaves the panel
+    // showing the counts of the read before it, or hides the message of a read that failed.
     var active = document.activeElement;
-    if (active && this.el.contains(active) && active.tagName.toLowerCase() === 'input' && src.file) {
+    var typing = active && active.tagName.toLowerCase() === 'input' && active.type !== 'checkbox';
+    if (typing && this.el.contains(active) && src.file) {
       this.pendingRender = true;
       var onBlur = function () { active.removeEventListener('blur', onBlur); if (self.pendingRender) { self.pendingRender = false; self.render(); } };
       active.addEventListener('blur', onBlur);

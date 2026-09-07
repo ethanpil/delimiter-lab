@@ -5,6 +5,17 @@
   var U = DL.util;
   var D = DL.dialogs = {};
 
+  // True when the name already ends with an extension that this application writes. A generic
+  // test for a short tail after a dot takes the "2" of "Q4 report v1.2" for an extension, and the
+  // file then goes out with no extension at all.
+  function hasKnownExtension(name) {
+    var lower = name.toLowerCase();
+    return DL.outputFormats.some(function (f) {
+      return f.extension && lower.slice(-f.extension.length) === f.extension;
+    });
+  }
+
+
   var CATEGORY_ORDER = ['Text', 'Dates', 'Rows', 'Columns', 'Quality', 'Advanced', 'Other'];
 
   /* ---------- Operation picker ---------- */
@@ -106,7 +117,7 @@
           if (problems.length) { U.toast(problems[0], 'warning'); return; }
           m.close();
           var fileName = U.safeFileName(name.value);
-          if (!many && !/\.[a-z0-9]{1,8}$/i.test(fileName)) fileName += current.extension;
+          if (!many && !hasKnownExtension(fileName)) fileName += current.extension;
           if (many && !/\.zip$/i.test(fileName)) fileName += '.zip';
           onDownload(Object.assign({ format: current.id }, values[current.id]), fileName, values);
         } }, [U.el('i', { class: 'bi bi-download' }), ' ' + DL.t(many ? 'dialog.applyDownload' : 'dialog.download')])
