@@ -12,7 +12,7 @@ The engine is already separate from the user interface:
 
 | Layer | Files | Depends on |
 | --- | --- | --- |
-| Engine | `js/engine/core.js`, `js/ops/*.js` | Nothing (pure JavaScript, runs in browsers and in Node) |
+| Engine | `packages/engine/src/` (TypeScript), built to `dist/engine.global.js` and `dist/engine.mjs` | Nothing (runs in browsers and in Node) |
 | Readers and writers | `js/engine/worker.js` | PapaParse (CSV), SheetJS (Excel), the browser `FileReaderSync` |
 | User interface | `js/app/*.js`, `js/i18n/*.js`, `js/ui/*.js`, `js/main.js` | Bootstrap, the DOM |
 
@@ -29,7 +29,7 @@ delimiterlab (CLI)     run, validate, describe; packaged as a single binary     
 
 ### 1. Engine package
 
-- Build the engine files into one ESM module and one UMD file with esbuild. The web app keeps loading the source files.
+- Done: the engine is TypeScript in `packages/engine/src`, and `scripts/build.mjs` builds it to one IIFE file for the page and one ESM file for Node. The page loads the build, not the source.
 - Add `DL.runWorkflow(table, workflow, options)` to the core. It validates each step against the real input columns, runs the steps in order, and gives `{ table, results }`. The worker uses the same function without its cache.
 - Publish a JSON Schema for the workflow file. Keep the format version in the file. Add a migration hook per operation for future setting changes.
 - Make the results the same in each environment. Put a fixed collator locale in the workflow (default `en`). Make the day-first option for dates explicit. Do not let text case changes depend on the machine locale.

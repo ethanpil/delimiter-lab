@@ -80,9 +80,10 @@ Read `CONTEXT.md` before you change the code. It explains the design, the conven
 index.html          Page shell. Loads the files from the manifest.
 js/manifest.js      Version and the list of application files
 css/app.css         Styles
-js/engine/core.js   Table model, value parsing, field types, operation and format registries
+packages/engine/src/core.ts   Table model, value parsing, field types, operation and format registries
 js/engine/worker.js Web Worker: reads files, runs the chain, makes downloads
-js/ops/*.js         Operations (text, rows, columns, dates, reshape, verify)
+packages/engine/src/ops/*.ts  Operations (text, rows, columns, dates, reshape, verify)
+dist/engine.global.js         The build that the page and the worker load as self.DL
 js/app/*.js         State store, worker client, saved workflows, texts, helpers
 js/i18n/*.js        Texts of the user interface, one file per language
 js/ui/*.js          Views: steps list, source panel, step form, data grid, dialogs, timing panel
@@ -93,13 +94,13 @@ test/               Tests, benchmark and test data
 
 ## Add an operation
 
-1. Make a new file in `js/ops/` or add to an existing file.
+1. Make a new file in `packages/engine/src/ops/` or add to an existing file. A new file goes into the list in `packages/engine/src/index.ts`.
 2. Call `DL.registerOp` with an `id`, `name`, `category`, `icon`, `description`, `params` and `apply`.
 3. Add a new file to the `ops` list in `js/manifest.js`.
 
-The `params` list makes the form. The field types are `text`, `number`, `code`, `boolean`, `select`, `checkboxes`, `column`, `columns`, `columnOrder`, `renameMap`, `mapping`, `conditions`, `rules` and `sortKeys`. Each type checks and repairs its value. To add a type, register it with `DL.registerParamType` in `core.js`. Then add a renderer for it in `js/ui/fields.js`.
+The `params` list makes the form. The field types are `text`, `number`, `code`, `boolean`, `select`, `checkboxes`, `column`, `columns`, `columnOrder`, `renameMap`, `mapping`, `conditions`, `rules` and `sortKeys`. Each type checks and repairs its value. To add a type, register it with `DL.registerParamType` in `packages/engine/src/core.ts`. Then add a renderer for it in `js/ui/fields.js`.
 
-`apply(table, params)` gets a table `{ columns, cols, length }` and returns `{ table, notes }`. Use the helpers in `core.js`: `DL.col`, `DL.mapColumns`, `DL.addColumn`, `DL.selectRows`, `DL.pickColumns`, `DL.dropColumns`, `DL.groupRows`. Never change the input table.
+`apply(table, params)` gets a table `{ columns, cols, length }` and returns `{ table, notes }`. Use the helpers in `core.ts`: `DL.col`, `DL.mapColumns`, `DL.addColumn`, `DL.selectRows`, `DL.pickColumns`, `DL.dropColumns`, `DL.groupRows`. Never change the input table.
 
 Add `outputColumns(columns, params)` when the operation changes the columns. Return `null` when the step must run before the columns are known. The user interface uses this to show the correct column names in the steps that follow.
 
@@ -111,7 +112,7 @@ A result note can be an object `{ text, rows }` instead of a text. The user can 
 
 ## Add an input or output format
 
-`DL.inputFormats` (`core.js`) lists the input formats with their file extensions and options. The worker has a reader for each format id in `readers` (`worker.js`). `DL.outputFormats` lists the output formats with their options. The worker has a writer for each format id in `writers`.
+`DL.inputFormats` (`core.ts`) lists the input formats with their file extensions and options. The worker has a reader for each format id in `readers` (`worker.js`). `DL.outputFormats` lists the output formats with their options. The worker has a writer for each format id in `writers`.
 
 ## Add a language
 

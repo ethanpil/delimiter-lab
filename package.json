@@ -8,10 +8,10 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node test/engine.test.js && node test/worker.test.js"
+    "test": "npm run build && node test/engine.test.js && node test/worker.test.js && node test/bundle.test.js"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
-    "typescript": "^5.7.0"
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
   }
 }

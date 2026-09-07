@@ -30,9 +30,9 @@ Run both test files before every commit. There is no test runner; each file coun
 ```
 index.html            Page shell, theme script, loader (reads the manifest, loads the files in order)
 js/manifest.js        DL.VERSION, DL.LOCALES, DL.FILES (the ordered file lists)
-js/engine/core.js     Pure engine: table model, parsing, formatting, param types, registries, TableBuilder
+packages/engine/src/   The engine, in TypeScript. core.ts and ops/*.ts. One source for every platform.
 js/engine/worker.js   Web Worker: readers, chain runner with cache, slices, diff, profile, search, writers, batch, zip
-js/ops/*.js           Operations by group: text, rows, columns, dates, reshape, verify
+dist/engine.global.js  The build of that source. The page and the worker load it as self.DL.
 js/app/i18n.js        DL.t, DL.registerLocale, DL.setLocale, DL.applyI18n
 js/i18n/en.js         Every user interface text (the only locale today)
 js/app/util.js        DOM helpers, modal, toast, tooltips, debounce, file helpers, cell budget
@@ -50,7 +50,7 @@ docs/embedding.md     Plan for a library and a command line tool (not built)
 
 The loader in `index.html` reads `DL.FILES` and appends `<script>` tags with `async = false`, so the files run in manifest order. The worker calls `importScripts` with the same `engine` and `ops` lists. A new file must go into the manifest, or neither the page nor the worker loads it. The worker never loads `app` or `ui`: never call `DL.t`, `U.*` or the DOM from engine or operation code.
 
-Manifest order matters: `js/app/i18n.js` and `js/i18n/en.js` come before `util.js`; `core.js` before the operations; the locale file of the user (when `DL.LOCALES` has it) loads between `app` and `ui`. A module must not call `DL.t` while it loads, only inside functions.
+Manifest order matters: `js/app/i18n.js` and `js/i18n/en.js` come before `util.js`; the engine build before the application files; the locale file of the user (when `DL.LOCALES` has it) loads between `app` and `ui`. A module must not call `DL.t` while it loads, only inside functions.
 
 ## 4. The data model
 
@@ -68,7 +68,7 @@ Why: row objects caused heavy garbage collection on million-row files; `Set` and
 
 ## 5. Parsing and formatting rules
 
-These functions in `core.js` hold the product decisions about data. Change them only with negative tests.
+These functions in `packages/engine/src/core.ts` hold the product decisions about data. Change them only with negative tests.
 
 - `DL.toNumber`: accepts `1,234.56`, `1.234,56`, `1.234.567` (groups of three), `$1,000`, `(12)` as negative, `12%`, exponents. Rejects `1e400` (infinite), `1,234,56` (bad groups), `(-5)`, text. `isPlainNumber` is the fast path.
 - `DL.toDate(v, dayFirst)`: ISO with optional time and zone; `YYYYMMDD` only for years 1900 to 2099 (other 8-digit values are identifiers); slash dates with `/`, `.` or `-` as one consistent separator, and with `.` or `-` the year needs four digits (so `1.5.3` is not a date); two-digit years pivot at 70 (`1/2/69` is 2069; Excel pivots at 30); `a > 12` means day first; AM/PM with an hour above 12 is invalid; month-name text needs a full or three-letter month name and a four-digit year (so "5 March" and "Room 12 march" are not dates). Impossible dates such as 30 February give NaN. Years 0 to 99 are real years (`setFullYear`), not 1900 to 1999. A zoned value is an instant; the formatter writes it in the local time of the computer, and the field help says so.
@@ -82,7 +82,7 @@ These functions in `core.js` hold the product decisions about data. Change them 
 
 ## 6. Operations
 
-An operation is registered with `DL.registerOp(def)`. The contract is documented above `DL.registerOp` in `core.js`:
+An operation is registered with `DL.registerOp(def)`. The contract is documented above `DL.registerOp` in `packages/engine/src/core.ts`:
 
 - `id`, `name`, `category` (Text, Dates, Rows, Columns, Quality, Advanced, Other), `icon` (a Bootstrap icon class), `description`, `keywords`, `params`.
 - `summary(params)` gives the short text on the step card.
@@ -105,7 +105,7 @@ The 27 operations and their notable decisions:
 - Dates: `dateFormat`, `dateMath` (add with amount limited to ±1,000,000 and results limited to the years 0 to 9999; differences symmetric with month ends counting as full months; parts year, month, month name, day, weekday, ISO week, quarter, day of year, hour, minute; the second date can be a column, today or a fixed date).
 - Quality: `verify` (the unique rule ignores case and spaces at the ends, and its label says so; length rules count characters; per-rule notes carry `rows` for the click-to-see-rows feature).
 
-When you add an operation: put it in a file in `js/ops/`; add the file to the manifest if it is new; add a test in `test/engine.test.js` that runs it on a plain table and on a filtered (lazy) table; add the `outputColumns` parity case in the "every op has metadata" test and update the operation count there; add it to the README table; if it has a new category, add the category to `CATEGORY_ORDER` in `js/ui/dialogs.js` (an unknown category sorts last).
+When you add an operation: put it in a file in `packages/engine/src/ops/`; add a new file to the list in `packages/engine/src/index.ts`; run `npm run build`, because the page reads the build and not the source; add a test in `test/engine.test.js` that runs it on a plain table and on a filtered (lazy) table; add the `outputColumns` parity case in the "every op has metadata" test and update the operation count there; add it to the README table; if it has a new category, add the category to `CATEGORY_ORDER` in `js/ui/dialogs.js` (an unknown category sorts last).
 
 Scope note: the built operations have options beyond the original request (Fill "below" and "most common", Date Math parts and "today", Clean Text quotes, Extract "all matches", Unpivot "skip empty"). A review flagged them as unrequested; the owner kept them.
 

@@ -1,3 +1,4 @@
+"use strict";
 (() => {
   // packages/engine/src/dl.ts
   var DL = {};
@@ -3941,9 +3942,11 @@
   });
 
   // packages/engine/src/browser.ts
-  self.DL = self.DL || {};
-  Object.keys(DL).forEach(function(key) {
-    self.DL[key] = DL[key];
-  });
+  var before = self.DL;
+  if (before) {
+    Object.keys(before).forEach(function(key) {
+      if (!(key in DL)) DL[key] = before[key];
+    });
+  }
+  self.DL = DL;
 })();
-//# sourceMappingURL=engine.global.js.map
