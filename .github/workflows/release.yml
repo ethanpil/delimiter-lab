@@ -14,6 +14,11 @@ on:
 permissions:
   contents: write
 
+# Two tags pushed together would write the same release, so one run waits for the other.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   # ---------------------------------------------------------------- one build for every platform
   binaries:
@@ -37,28 +42,32 @@ jobs:
       - name: Tests
         run: npm test
 
+      # The name of the tag never reaches the shell as text, so nothing in it can run.
       - name: The version of the tag and the version of the application must agree
         id: version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          set -eu
+          set -euo pipefail
           version=$(sed -n "s/.*DL\.VERSION = '\([^']*\)'.*/\1/p" js/manifest.js)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          tag="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
-          if [ "$tag" != "v$version" ]; then
-            echo "::error::The tag is $tag but js/manifest.js says $version. They must agree."
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::The tag is $TAG but js/manifest.js says $version. They must agree."
             exit 1
           fi
           echo "Building version $version"
 
+      # Bun puts its runtime inside the binary. A version below 1.2.4 does not sign a macOS
+      # binary again after it adds that runtime, and an unsigned binary does not start on an
+      # Apple silicon machine.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.1.38'
+          bun-version: '1.2.4'
 
-      # One machine builds every target. The binary carries its own runtime, so a person who
-      # downloads it needs nothing else.
+      # One machine builds every target, so every platform comes from one source and one build.
       - name: Build
         run: |
-          set -eu
+          set -euo pipefail
           mkdir -p out
           for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do
             name="dl-$target"
@@ -68,28 +77,20 @@ jobs:
           done
           ls -la out
 
-      - name: Check that the Linux binary runs
+      - name: Check that the Linux binary reads, runs and writes
         run: |
-          set -eu
+          set -euo pipefail
           chmod +x out/dl-linux-x64
           ./out/dl-linux-x64 --version
           ./out/dl-linux-x64 --help > /dev/null
-          printf 'name,city\n ada ,London\n' > /tmp/in.csv
-          cat > /tmp/wf.json <<'JSON'
-          { "format": "delimiter-lab-workflow", "version": 1, "name": "Check", "columns": [],
-            "sourceOptions": null,
-            "steps": [ { "id": "s1", "opId": "padTrim", "params": { "columns": ["name"], "trim": "both" }, "enabled": true },
-                       { "id": "s2", "opId": "case", "params": { "columns": ["name"], "mode": "title" }, "enabled": true } ] }
-          JSON
-          ./out/dl-linux-x64 /tmp/wf.json /tmp/in.csv -o /tmp/out.csv --quiet
-          grep -q 'Ada,London' /tmp/out.csv || { echo "::error::the binary gave the wrong answer"; cat /tmp/out.csv; exit 1; }
-          echo "the binary reads, runs and writes"
+          bash .github/smoke.sh ./out/dl-linux-x64
 
       - uses: actions/upload-artifact@v4
         with:
           name: raw-binaries
           path: out/*
-          retention-days: 1
+          retention-days: 7
+          overwrite: true
 
   # ---------------------------------------------------------------- one file for both Mac chips
   macos:
@@ -97,32 +98,66 @@ jobs:
     needs: binaries
     runs-on: macos-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: raw-binaries
           path: out
 
+      # An artifact does not carry the right to run, so the right comes back here.
       # lipo puts the Intel build and the Apple silicon build in one file, so one download runs
       # on either kind of Mac.
-      - name: Join
+      - name: Join and check
         run: |
-          set -eu
+          set -euo pipefail
           chmod +x out/dl-darwin-x64 out/dl-darwin-arm64
           lipo -create -output out/dl-macos-universal out/dl-darwin-x64 out/dl-darwin-arm64
-          lipo -info out/dl-macos-universal
           chmod +x out/dl-macos-universal
+          lipo -info out/dl-macos-universal
           ./out/dl-macos-universal --version
+          bash .github/smoke.sh ./out/dl-macos-universal
+          # The runner has an Apple silicon chip. When it can also run Intel code, the Intel half
+          # is checked too, so that the file is known to work on both kinds of Mac.
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "--- the Intel half"
+            arch -x86_64 ./out/dl-macos-universal --version
+            arch -x86_64 bash .github/smoke.sh ./out/dl-macos-universal
+          else
+            echo "::warning::This runner cannot run Intel code, so only the Apple silicon half was checked."
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos-universal
           path: out/dl-macos-universal
-          retention-days: 1
+          retention-days: 7
+          overwrite: true
+
+  # ---------------------------------------------------------------- the Windows binary
+  windows:
+    name: Check the Windows binary
+    needs: binaries
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: raw-binaries
+          path: out
+
+      - name: Check that it reads, runs and writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./out/dl-windows-x64.exe --version
+          bash .github/smoke.sh ./out/dl-windows-x64.exe
 
   # ---------------------------------------------------------------- the packages
   packages:
     name: Make the packages
-    needs: [binaries, macos]
+    needs: [binaries, macos, windows]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.binaries.outputs.version }}
@@ -141,7 +176,7 @@ jobs:
 
       - name: Get nfpm
         run: |
-          set -eu
+          set -euo pipefail
           curl -sSfL -o /tmp/nfpm.tar.gz \
             https://github.com/goreleaser/nfpm/releases/download/v2.41.1/nfpm_2.41.1_Linux_x86_64.tar.gz
           tar -xzf /tmp/nfpm.tar.gz -C /tmp nfpm
@@ -149,9 +184,11 @@ jobs:
           nfpm --version
 
       # One description makes the Debian, the Red Hat and the Alpine package, for both chips.
+      # nfpm looks for the file of a package beside the place where it runs, not beside its own
+      # description, so the description names packaging/dl and this step runs from the root.
       - name: Build deb, rpm and apk
         run: |
-          set -eu
+          set -euo pipefail
           mkdir -p release
           for arch in amd64 arm64; do
             case "$arch" in
@@ -169,7 +206,7 @@ jobs:
 
       - name: Pack the plain binaries
         run: |
-          set -eu
+          set -euo pipefail
           cd out
           chmod +x dl-linux-x64 dl-linux-arm64 dl-darwin-x64 dl-darwin-arm64 dl-macos-universal
           tar -czf "../release/dl-$VERSION-linux-x64.tar.gz" dl-linux-x64
@@ -179,18 +216,20 @@ jobs:
           cd ..
           ls -la release
 
+      # Only the files, so that a directory cannot stop the step half way.
       - name: Write the checksums
         run: |
-          set -eu
+          set -euo pipefail
           cd release
-          sha256sum * > SHA256SUMS.txt
+          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-files
           path: release/*
-          retention-days: 7
+          retention-days: 30
+          overwrite: true
 
   # ---------------------------------------------------------------- the release itself
   release:
@@ -199,26 +238,34 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.binaries.outputs.version }}
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           name: release-files
           path: release
 
-      # The names of the packages come from nfpm, so the instructions read the names off the
-      # files that were really built in place of guessing them.
+      # The names of the packages come from nfpm, so the instructions read the names off the files
+      # that were really built. A name that is not there stops the step, because instructions that
+      # name a file nobody can download are worse than no instructions.
       - name: Write the notes
         run: |
-          set -eu
-          base="https://github.com/${{ github.repository }}/releases/download/v$VERSION"
-          deb=$(cd release && ls *amd64.deb 2>/dev/null | head -1 || true)
-          rpm=$(cd release && ls *x86_64.rpm 2>/dev/null | head -1 || true)
-          apk=$(cd release && ls *x86_64.apk 2>/dev/null | head -1 || true)
-          mac=$(cd release && ls *macos-universal.tar.gz | head -1)
-          lin=$(cd release && ls *linux-x64.tar.gz | head -1)
-          win=$(cd release && ls *windows-x64.zip | head -1)
+          set -euo pipefail
+          base="https://github.com/${{ github.repository }}/releases/download/$TAG"
+          pick() {
+            name=$(cd release && ls $1 2>/dev/null | head -1 || true)
+            if [ -z "$name" ]; then
+              echo "::error::No file in the release matches $1" >&2
+              exit 1
+            fi
+            echo "$name"
+          }
+          deb=$(pick '*amd64.deb');      debArm=$(pick '*arm64.deb')
+          rpm=$(pick '*x86_64.rpm');     rpmArm=$(pick '*aarch64.rpm')
+          apk=$(pick '*x86_64.apk');     apkArm=$(pick '*aarch64.apk')
+          mac=$(pick '*macos-universal.tar.gz')
+          lin=$(pick '*linux-x64.tar.gz'); linArm=$(pick '*linux-arm64.tar.gz')
+          win=$(pick '*windows-x64.zip')
           {
             echo "The \`dl\` command runs a workflow on files from a terminal. It gives the same"
             echo "answer as the page at https://ethanpil.github.io/delimiter-lab/, because both run"
@@ -241,18 +288,21 @@ jobs:
             echo "curl -LO $base/$deb"
             echo "sudo dpkg -i $deb"
             echo '```'
+            echo "For a machine with an ARM chip, take \`$debArm\`."
             echo
             echo "### Fedora, Red Hat and SUSE"
             echo '```'
             echo "curl -LO $base/$rpm"
             echo "sudo rpm -i $rpm"
             echo '```'
+            echo "For a machine with an ARM chip, take \`$rpmArm\`."
             echo
             echo "### Alpine"
             echo '```'
             echo "curl -LO $base/$apk"
-            echo "sudo apk add --allow-untrusted $apk"
+            echo "apk add --allow-untrusted $apk"
             echo '```'
+            echo "For a machine with an ARM chip, take \`$apkArm\`."
             echo
             echo "### macOS"
             echo
@@ -272,8 +322,7 @@ jobs:
             echo "chmod +x dl-linux-x64"
             echo "sudo mv dl-linux-x64 /usr/local/bin/dl"
             echo '```'
-            echo
-            echo "For a machine with an ARM chip, take the file whose name says arm64."
+            echo "For a machine with an ARM chip, take \`$linArm\`."
             echo
             echo "### Windows"
             echo
@@ -286,18 +335,14 @@ jobs:
             echo '```'
             echo "sha256sum -c SHA256SUMS.txt --ignore-missing"
             echo '```'
-            echo
-            echo "## The files"
-            echo
-            echo '```'
-            (cd release && ls -1)
-            echo '```'
           } > notes.md
           cat notes.md
 
+      # tag_name is given, because a run started by hand has a branch and not a tag.
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           name: Delimiter Lab ${{ env.VERSION }}
           body_path: notes.md
           files: release/*

@@ -17,7 +17,9 @@ homepage: https://github.com/ethanpil/delimiter-lab
 license: MIT
 
 contents:
-  - src: ./dl
+  # The path is from the place where nfpm runs, which is the root of the repository, and not from
+  # the place where this file sits. The workflow puts the binary here before it calls nfpm.
+  - src: ./packaging/dl
     dst: /usr/bin/dl
     file_info:
       mode: 0755

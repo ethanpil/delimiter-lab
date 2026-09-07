@@ -6,5 +6,11 @@ node_modules/
 dist/*
 !dist/engine.global.js
 
+# What a release run makes on a machine
+out/
+release/
+notes.md
+packaging/dl
+
 # Large files that test/make-data.js generates when they are needed
 test/data/big*.csv
