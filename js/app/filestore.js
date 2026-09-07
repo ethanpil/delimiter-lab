@@ -41,8 +41,8 @@
           tx.onerror = function () { reject(tx.error); };
           tx.onabort = function () { reject(tx.error); };
         } catch (e) {
-          // The connection closes, or the store is not there. Give the connection up and close it,
-          // because no handler of the transaction can do it now.
+          // The connection closes, or the store is not there. Close it here and release it, because
+          // no handler of the transaction can do that now.
           dbp = null;
           try { db.close(); } catch (e2) { /* it is closed already */ }
           reject(e);

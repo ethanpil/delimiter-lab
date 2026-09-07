@@ -101,9 +101,11 @@
     store.setSourceFile(file);
     if (opts.sheet) store.setSourceOptions({ sheet: opts.sheet });
     if (!opts.fromStore) {
-      // The workspace comes back after a reload, but only for a file that is small enough.
-      if (file.size > DL.fileStore.MAX_BYTES) U.toast(DL.t('msg.workspaceTooBig', { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
-      DL.fileStore.put(file);
+      DL.fileStore.put(file).then(function (kept) {
+        if (kept || store.state.source.file !== file) return; // a later file took the place of this one
+        U.toast(DL.t(file.size > DL.fileStore.MAX_BYTES ? 'msg.workspaceTooBig' : 'msg.workspaceNotKept',
+          { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
+      });
     }
     if (DL.inputFormatFor(file.name).hasSheets) {
       var token = ++loadToken;

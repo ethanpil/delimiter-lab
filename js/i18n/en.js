@@ -116,6 +116,7 @@
     'msg.notDataFile': 'Not a data file.',
     'msg.cancelled': 'Cancelled.',
     'msg.workspaceTooBig': 'This file is larger than {size}, so the workspace cannot keep it. Your steps still come back after a reload.',
+    'msg.workspaceNotKept': 'The browser cannot keep this file, so only your steps come back after a reload.',
     'msg.workspaceBack': 'Your workspace is back, with "{name}".',
     'msg.stepsRestored': 'Your steps were restored. Open "{name}" again to continue.',
     'msg.batchNote': 'Each file is read with the current source options, goes through all {steps} and is written to a zip file. The open file stays as it is.',
