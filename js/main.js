@@ -539,6 +539,7 @@
         loadToken++; // a load that is on its way must not put its file on the empty screen
         searchToken++;
         exportToken++;
+        exporting = false;
         store.setSourceFile(null);
         store.setSourceOptions(DL.defaultSourceOptions());
         DL.fileStore.clear();
@@ -691,17 +692,18 @@
     DL.dialogs.download({ baseName: base + suffix, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
+      if (exporting) { U.toast(DL.t('msg.downloadRunning'), 'info'); return; }
       showProgress(DL.t('progress.preparingDownload'), 20);
       exporting = true;
       var token = ++exportToken;
       engine.exportStep(shown.stepId, options).then(function (msg) {
-        exporting = false; // before the test of the token: the bar waits for this flag
+        if (token === exportToken) exporting = false; // the last download owns the flag
         if (token !== exportToken) return;
         hideProgress();
         U.downloadBlob(msg.blob, fileName);
         U.toast(DL.t('msg.downloaded', { name: fileName, rows: DL.pluralize(msg.rowCount, 'row') }), 'success');
       }).catch(function (err) {
-        exporting = false;
+        if (token === exportToken) exporting = false;
         if (token !== exportToken) return;
         hideProgress();
         U.toast(err.message, 'danger');
