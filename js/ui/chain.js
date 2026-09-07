@@ -3,6 +3,7 @@
   'use strict';
   var DL = root.DL;
   var U = DL.util;
+  var SLOW_MS = 400; // a step that takes this long is worth a word on its card
 
   function ChainView(container, store, actions) {
     this.el = container;
@@ -116,8 +117,8 @@
           U.el('span', { class: 'status-dot status-' + status }),
           statusText,
           // Only a step that takes time says how long. The others would be noise.
-          (res && res.ms >= DL.SLOW_STEP_MS && !disabled)
-            ? U.el('span', { class: 'step-time', title: DL.t('chain.tookTime'), text: DL.formatMs(res.ms) })
+          (res && res.ms >= SLOW_MS)
+            ? U.el('span', { class: 'step-time', title: DL.t('chain.tookTime'), text: U.formatMs(res.ms) })
             : null
         ])
       ]),

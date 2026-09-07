@@ -6,7 +6,6 @@
 
   var BYTES_PER_CELL = 32; // An estimate for short text values in V8.
 
-
   function cellsText(cells) {
     return cells >= 1e6 ? (cells / 1e6).toFixed(1) + ' M' : U.fmtInt(cells);
   }
@@ -24,7 +23,7 @@
       rows.push(U.el('tr', {}, [
         U.el('td', { text: '' }),
         U.el('td', { text: DL.t('timing.source') + ' · ' + info.fileName }),
-        U.el('td', { class: 'text-end', text: DL.formatMs(info.ms) }),
+        U.el('td', { class: 'text-end', text: U.formatMs(info.ms) }),
         U.el('td', { class: 'text-end', text: U.fmtInt(info.rowCount) }),
         U.el('td', { class: 'text-end', text: cellsText(info.rowCount * info.columns.length) }),
         U.el('td', { text: '' })
@@ -40,14 +39,14 @@
       rows.push(U.el('tr', { class: step.enabled === false ? 'text-secondary' : '' }, [
         U.el('td', { text: String(i + 1) }),
         U.el('td', { text: op ? op.name : step.opId }),
-        U.el('td', { class: 'text-end', text: ran ? DL.formatMs(r.ms) : '' }),
+        U.el('td', { class: 'text-end', text: ran ? U.formatMs(r.ms) : '' }),
         U.el('td', { class: 'text-end', text: r && r.hasTable ? U.fmtInt(r.rowCount) : '' }),
         U.el('td', { class: 'text-end', text: r && r.hasTable ? cellsText(cells) : '' }),
         U.el('td', { text: status })
       ]));
     });
     rows.push(U.el('tr', { class: 'fw-semibold' }, [
-      U.el('td', {}), U.el('td', { text: DL.t('timing.total') }), U.el('td', { class: 'text-end', text: DL.formatMs(totalMs) }), U.el('td', {}), U.el('td', {}), U.el('td', {})
+      U.el('td', {}), U.el('td', { text: DL.t('timing.total') }), U.el('td', { class: 'text-end', text: U.formatMs(totalMs) }), U.el('td', {}), U.el('td', {}), U.el('td', {})
     ]));
     var memoryText = memory ? DL.t('timing.memory', {
       cells: DL.pluralize(Math.round(memory.cells), 'cell'),

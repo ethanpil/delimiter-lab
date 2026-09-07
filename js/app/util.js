@@ -25,6 +25,12 @@
     return wrapped;
   };
 
+  // A time for a person to read: milliseconds below a second, then seconds.
+  U.formatMs = function (ms) {
+    if (ms == null) return '';
+    return ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s';
+  };
+
   U.fmtInt = function (n) {
     return (n == null || isNaN(n)) ? '' : Number(n).toLocaleString();
   };
