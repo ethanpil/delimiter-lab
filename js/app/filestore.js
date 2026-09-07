@@ -38,13 +38,16 @@
     });
   }
 
-  // Keeps the file. A file that is too large, or a browser without IndexedDB, gives a quiet no.
+  F.MAX_BYTES = MAX_BYTES;
+
+  // Keeps the file. Gives true when the file is in the store, and false when it is not.
   F.put = function (file) {
-    if (!file || file.size > MAX_BYTES) return F.clear();
+    if (!file || file.size > MAX_BYTES) return F.clear().then(function () { return false; });
     return run('readwrite', function (s) { return s.put({ file: file, name: file.name, at: Date.now() }, KEY); })
+      .then(function () { return true; })
       // A write that fails leaves the file of the last time. That file does not belong to the steps
       // on the screen, so it must go.
-      .catch(function () { return F.clear(); });
+      .catch(function () { return F.clear().then(function () { return false; }); });
   };
 
   // Gives the file back, or null.

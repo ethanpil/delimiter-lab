@@ -98,7 +98,9 @@
     opts = opts || {};
     store.setSourceFile(file);
     if (opts.sheet) store.setSourceOptions({ sheet: opts.sheet });
-    DL.fileStore.put(file); // the workspace comes back after a reload
+    // The workspace comes back after a reload, but only for a file that is small enough.
+    if (file.size > DL.fileStore.MAX_BYTES) U.toast(DL.t('msg.workspaceTooBig', { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
+    DL.fileStore.put(file);
     if (DL.inputFormatFor(file.name).hasSheets) {
       var token = ++loadToken;
       showProgress(DL.t('progress.readingWorkbook'), 5);
