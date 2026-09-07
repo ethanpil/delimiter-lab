@@ -49,7 +49,7 @@
     'preview.changesTitle': 'Mark the cells that this step changed',
     'preview.compare': 'Compare',
     'preview.compareTitle': 'Show the input of this step next to its output',
-    'preview.sourceFile': 'Source file',
+    'preview.sourceFile': 'Source Data',
     'preview.step': 'Step {n}: {name}',
     'preview.noMatches': 'No matches',
     'preview.rowsMatch': '{n} match',
@@ -136,7 +136,7 @@
     'common.sure': 'Are you sure?',
     // Timing panel
     'timing.title': 'Time and memory',
-    'timing.source': 'Source file',
+    'timing.source': 'Source Data',
     'timing.step': 'Step',
     'timing.operation': 'Operation',
     'timing.time': 'Time',
