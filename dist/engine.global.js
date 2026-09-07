@@ -3,6 +3,9 @@
   // packages/engine/src/dl.ts
   var DL = {};
 
+  // packages/engine/src/version.ts
+  DL.VERSION = "1.0";
+
   // packages/engine/src/core.ts
   DL.makeTable = function(columns, cols, length) {
     return { columns, cols, length };
@@ -1462,10 +1465,15 @@
       throw new Error("DL.platform.readBuffer is not set.");
     },
     papa: null,
+    // the parser for delimited text
     xlsx: function() {
       throw new Error("DL.platform.xlsx is not set.");
     },
     progress: function(_phase, _percent) {
+    },
+    // Names the part of the work that follows, so that one file of a list owns one part of a bar.
+    // A name of null means that no part is open.
+    scope: function(_label, _from, _to) {
     }
   };
   function humanNumber(n) {
@@ -1571,6 +1579,7 @@
     if (projected > DL.maxCells * 1.3) throw tooLarge(projected);
   }
   readers.delimited = function(file, opts) {
+    if (!DL.platform.papa) throw new Error("DL.platform.papa is not set.");
     var notes = [];
     var encoding = opts.encoding && opts.encoding !== "auto" ? opts.encoding : detectEncoding(file);
     var decoder = makeDecoder(encoding, notes);
@@ -1671,13 +1680,9 @@
     }
     return t;
   })();
-  function crc32(blob) {
+  function crc32(bytes) {
     var c = -1;
-    var SLICE = 8 * 1024 * 1024;
-    for (var at = 0; at < blob.size; at += SLICE) {
-      var bytes = new Uint8Array(readBuffer(blob.slice(at, Math.min(blob.size, at + SLICE))));
-      for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 255] ^ c >>> 8;
-    }
+    for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 255] ^ c >>> 8;
     return (c ^ -1) >>> 0;
   }
   var ZIP_MAX_BYTES = 4 * 1024 * 1024 * 1024 - 1;
@@ -1688,7 +1693,7 @@
     entries.forEach(function(e) {
       var nameLen = encoder0.encode(e.name).length;
       if (nameLen > 65535) throw new Error('The file name "' + e.name.slice(0, 40) + '\u2026" is too long for a zip file.');
-      total += e.blob.size + 30 + 46 + 2 * nameLen;
+      total += e.bytes.length + 30 + 46 + 2 * nameLen;
     });
     if (entries.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) {
       throw new Error("A zip file can hold at most " + ZIP_MAX_ENTRIES + " files and 4 GB. Apply the workflow to fewer files at one time.");
@@ -1701,9 +1706,9 @@
     var central = [];
     var offset = 0;
     entries.forEach(function(e) {
-      var size = e.blob.size;
+      var size = e.bytes.length;
       var name = encoder.encode(e.name);
-      var crc = crc32(e.blob);
+      var crc = crc32(e.bytes);
       var local = new DataView(new ArrayBuffer(30));
       local.setUint32(0, 67324752, true);
       local.setUint16(4, 20, true);
@@ -1716,7 +1721,7 @@
       local.setUint32(22, size, true);
       local.setUint16(26, name.length, true);
       local.setUint16(28, 0, true);
-      parts.push(local.buffer, name, e.blob);
+      parts.push(local.buffer, name, e.bytes);
       central.push({ name, crc, size, offset });
       offset += 30 + name.length + size;
     });
@@ -1753,7 +1758,7 @@
     end.setUint32(16, centralStart, true);
     end.setUint16(20, 0, true);
     parts.push(end.buffer);
-    return new Blob(parts, { type: "application/zip" });
+    return { chunks: parts, mime: "application/zip" };
   }
   var writers = {};
   function quoteValue(v, delimiter, quoteAll) {
@@ -1784,7 +1789,7 @@
       chunks.push(lines.join(newline) + newline);
       if (n > BLOCK) DL.platform.progress("Preparing download", Math.round(100 * end / n));
     }
-    return new Blob(chunks, { type: mime });
+    return { chunks, mime };
   }
   writers.csv = function(table, o, format) {
     return writeDelimited(table, o, ",", format.mime);
@@ -1822,7 +1827,7 @@
     DL.platform.xlsx().utils.book_append_sheet(wb, ws, sheetName);
     DL.platform.progress("Building Excel file", 80);
     var out = DL.platform.xlsx().write(wb, { type: "array", bookType: "xlsx", compression: true });
-    return new Blob([out], { type: format.mime });
+    return { chunks: [out], mime: format.mime };
   };
   writers.json = function(table, o, format) {
     var n = table.length;
@@ -1841,14 +1846,18 @@
       parts.push((i ? "," : "") + obj);
     }
     parts.push((pretty ? "\n" : "") + "]");
-    return new Blob(parts, { type: format.mime });
+    return { chunks: parts, mime: format.mime };
   };
-  function writeTable(table, o) {
+  function writeBytes(table, o) {
     var format = DL.outputFormatById(o.format) || DL.outputFormats[0];
     return writers[format.id](table, o, format);
   }
+  function writeTable(table, o) {
+    var out = writeBytes(table, o);
+    return new Blob(out.chunks, { type: out.mime });
+  }
   DL.readers = readers;
-  DL.writers = writers;
+  DL.writeBytes = writeBytes;
   DL.writeTable = writeTable;
   DL.makeZip = makeZip;
   DL.tooLarge = tooLarge;
@@ -1857,6 +1866,131 @@
     return readers[DL.inputFormatFor(name).id];
   };
   DL.sheetNames = sheetNames;
+  DL.readSource = function(files, opts) {
+    files = files || [];
+    opts = opts || {};
+    var started = Date.now();
+    var tables = [];
+    var names = [];
+    var each = [];
+    var notes = [];
+    var ragged = 0;
+    var meta = {};
+    var cells = 0;
+    var key = "src:";
+    var stackOpts = { fileColumn: opts.fileNameColumn && opts.multiFile === "stack" ? "Source file" : null };
+    var many = files.length > 1;
+    var share = many ? 90 / files.length : 0;
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      if (many) DL.platform.scope(file.name + " (" + (i + 1) + " of " + files.length + ")", share * i, share * (i + 1));
+      var result = DL.readerFor(file.name)(file, opts);
+      cells += result.table.length * Math.max(1, result.table.columns.length);
+      if (cells > DL.maxCells) throw DL.tooLarge(cells);
+      tables.push(result.table);
+      names.push(file.name);
+      each.push({ name: file.name, size: file.size, rowCount: result.table.length });
+      ragged += result.ragged || 0;
+      for (var n = 0; n < result.notes.length; n++) {
+        notes.push(files.length > 1 ? '"' + file.name + '": ' + result.notes[n] : result.notes[n]);
+      }
+      if (i === 0) meta = result.meta || {};
+      key += file.name + ":" + file.size + ":" + file.lastModified + ":";
+    }
+    DL.platform.scope(null, 0, 0);
+    if (tables.length > 1 || stackOpts.fileColumn) {
+      var shape = DL.stackedShape(tables, stackOpts);
+      var stackedCells = shape.rows * Math.max(1, shape.columns.length);
+      if (stackedCells > DL.maxCells) throw DL.tooLarge(stackedCells);
+    }
+    if (many) DL.platform.progress("Putting the files together", 92);
+    var stacked = DL.stackTables(tables, names, stackOpts);
+    var table = stacked.table;
+    for (var m = 0; m < stacked.notes.length; m++) notes.push(stacked.notes[m]);
+    var skip = Math.max(0, Number(opts.skipRows) || 0);
+    if (skip) notes.push("Skipped the first " + DL.pluralize(skip, "row") + (files.length > 1 ? " of each file." : "."));
+    if (ragged) notes.push(DL.raggedNote(ragged));
+    return {
+      table,
+      key: key + JSON.stringify(opts),
+      info: {
+        fileName: files.length ? files[0].name : "",
+        fileSize: files.length ? files[0].size : 0,
+        files: each,
+        rowCount: table.length,
+        columns: table.columns,
+        notes,
+        encoding: meta.encoding || null,
+        delimiter: meta.delimiter || null,
+        sheet: meta.sheet || null,
+        ms: Date.now() - started
+      }
+    };
+  };
+
+  // packages/engine/src/workflow.ts
+  DL.WORKFLOW_FORMAT = "delimiter-lab-workflow";
+  DL.WORKFLOW_VERSION = 1;
+  DL.uid = function() {
+    return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  };
+  DL.normalizeStep = function(s, keepId) {
+    return {
+      id: keepId && s.id ? String(s.id) : DL.uid(),
+      opId: s.opId,
+      params: DL.cleanParams(s.opId, s.params),
+      enabled: s.enabled !== false
+    };
+  };
+  DL.cleanStep = function(s) {
+    return { id: s.id, opId: s.opId, params: s.params, enabled: s.enabled !== false };
+  };
+  DL.parseWorkflow = function(text) {
+    var data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error("This file is not a workflow file.");
+    }
+    if (!data || data.format !== DL.WORKFLOW_FORMAT || !Array.isArray(data.steps)) {
+      throw new Error("This file is not a Delimiter Lab workflow.");
+    }
+    if (Number(data.version) > DL.WORKFLOW_VERSION) {
+      throw new Error("This workflow file comes from a newer version of Delimiter Lab. Update the application to open it.");
+    }
+    var unknown = data.steps.filter(function(s) {
+      return !s || !DL.getOp(s.opId);
+    }).map(function(s) {
+      return s ? s.opId : "?";
+    });
+    if (unknown.length) throw new Error("The workflow uses operations this version does not know: " + unknown.join(", "));
+    return {
+      name: typeof data.name === "string" && data.name.trim() ? data.name.trim().slice(0, 80) : "Imported workflow",
+      columns: Array.isArray(data.columns) ? data.columns.filter(function(c) {
+        return typeof c === "string";
+      }) : [],
+      sourceOptions: data.sourceOptions && typeof data.sourceOptions === "object" ? DL.cleanSourceOptions(data.sourceOptions) : null,
+      steps: data.steps.map(function(s) {
+        return DL.normalizeStep(s, false);
+      })
+    };
+  };
+  DL.workflowToJSON = function(wf) {
+    return JSON.stringify({
+      format: DL.WORKFLOW_FORMAT,
+      version: DL.WORKFLOW_VERSION,
+      name: wf.name,
+      exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      columns: wf.columns || [],
+      sourceOptions: wf.sourceOptions || null,
+      steps: (wf.steps || []).map(DL.cleanStep)
+    }, null, 2);
+  };
+  DL.workerSteps = function(steps) {
+    return (steps || []).map(function(s) {
+      return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false };
+    });
+  };
 
   // packages/engine/src/ops/text.ts
   var unescapeText = DL.unescapeText;

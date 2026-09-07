@@ -4,9 +4,11 @@
  * registers itself with it.
  */
 import { DL } from './dl.js';
+import './version.js';
 import './core.js';
 import './run.js';
 import './io.js';
+import './workflow.js';
 import './ops/text.js';
 import './ops/rows.js';
 import './ops/columns.js';

@@ -17,10 +17,12 @@ global.importScripts = function () {
     if (/xlsx/.test(f)) { global.XLSX = require(path.join(root, 'vendor/xlsx.full.min.js')); continue; }
     let text = fs.readFileSync(path.join(root, f.replace(/^\.\.\/\.\.\//, '')), 'utf8');
     if (/engine\.global/.test(f)) {
-      const before = text;
-      // A small slice lets a test send a character across the edge of two slices.
+      // A small slice lets a test send a character across the edge of two slices. The name must
+      // point at one place only: a hook that lands on other code would leave the reader untested
+      // and the test would pass while proving nothing.
+      const hits = text.split('var SLICE = 8 * 1024 * 1024;').length - 1;
+      if (hits !== 1) throw new Error('The reader slice size must appear once in the engine build, not ' + hits + '.');
       text = text.replace('var SLICE = 8 * 1024 * 1024;', 'var SLICE = globalThis.SLICE_OVERRIDE || 8 * 1024 * 1024;');
-      if (text === before) throw new Error('The reader slice size was not found in the engine build.');
     }
     vm.runInThisContext(text, { filename: f });
   }

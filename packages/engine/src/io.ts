@@ -15,9 +15,12 @@ import { DL } from './dl.js';
 
 DL.platform = {
   readBuffer: function (): ArrayBuffer { throw new Error('DL.platform.readBuffer is not set.'); },
-  papa: null,
+  papa: null as any,   // the parser for delimited text
   xlsx: function (): any { throw new Error('DL.platform.xlsx is not set.'); },
-  progress: function (_phase?: string, _percent?: number) {}
+  progress: function (_phase?: string, _percent?: number) {},
+  // Names the part of the work that follows, so that one file of a list owns one part of a bar.
+  // A name of null means that no part is open.
+  scope: function (_label: string | null, _from?: number, _to?: number) {}
 };
 
 function humanNumber(n) {
@@ -127,6 +130,7 @@ function checkSize(file, decoder, delimiter, quoteChar) {
 }
 
 readers.delimited = function (file, opts) {
+  if (!DL.platform.papa) throw new Error('DL.platform.papa is not set.');
   var notes = [];
   var encoding = opts.encoding && opts.encoding !== 'auto' ? opts.encoding : detectEncoding(file);
   var decoder = makeDecoder(encoding, notes);
@@ -234,29 +238,26 @@ var CRC_TABLE = (function () {
   return t;
 })();
 
-// CRC-32 of a blob, read in slices so that the whole file is not in memory at one time.
-function crc32(blob) {
+// CRC-32 of bytes.
+function crc32(bytes) {
   var c = -1;
-  var SLICE = 8 * 1024 * 1024;
-  for (var at = 0; at < blob.size; at += SLICE) {
-    var bytes = new Uint8Array(readBuffer(blob.slice(at, Math.min(blob.size, at + SLICE))));
-    for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-  }
+  for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
   return (c ^ -1) >>> 0;
 }
 
 var ZIP_MAX_BYTES = 4 * 1024 * 1024 * 1024 - 1;
 var ZIP_MAX_ENTRIES = 65535;
 
-// Makes a zip file from [{ name, blob }]. The zip stores the files without compression, because
-// deflate needs a library or an asynchronous stream. The zip refers to the blobs, so no file is copied.
+// Makes a zip from [{ name, bytes }], where bytes is a Uint8Array. The zip stores the files without
+// compression, because deflate needs a library or a stream that answers later. The chunks point at
+// the byte arrays that came in, so no file is copied.
 function makeZip(entries) {
   var encoder0 = new TextEncoder();
   var total = 22;
   entries.forEach(function (e) {
     var nameLen = encoder0.encode(e.name).length;
     if (nameLen > 65535) throw new Error('The file name "' + e.name.slice(0, 40) + '…" is too long for a zip file.');
-    total += e.blob.size + 30 + 46 + 2 * nameLen;
+    total += e.bytes.length + 30 + 46 + 2 * nameLen;
   });
   if (entries.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) {
     throw new Error('A zip file can hold at most ' + ZIP_MAX_ENTRIES + ' files and 4 GB. Apply the workflow to fewer files at one time.');
@@ -269,9 +270,9 @@ function makeZip(entries) {
   var central = [];
   var offset = 0;
   entries.forEach(function (e) {
-    var size = e.blob.size;
+    var size = e.bytes.length;
     var name = encoder.encode(e.name);
-    var crc = crc32(e.blob);
+    var crc = crc32(e.bytes);
     var local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);
     local.setUint16(4, 20, true);       // version needed
@@ -284,7 +285,7 @@ function makeZip(entries) {
     local.setUint32(22, size, true);
     local.setUint16(26, name.length, true);
     local.setUint16(28, 0, true);
-    parts.push(local.buffer, name, e.blob);
+    parts.push(local.buffer, name, e.bytes);
     central.push({ name: name, crc: crc, size: size, offset: offset });
     offset += 30 + name.length + size;
   });
@@ -321,12 +322,13 @@ function makeZip(entries) {
   end.setUint32(16, centralStart, true);
   end.setUint16(20, 0, true);
   parts.push(end.buffer);
-  return new Blob(parts, { type: 'application/zip' });
+  return { chunks: parts, mime: 'application/zip' };
 }
 
 /* ---------- Export ---------- */
 
 
+// Writers by output format id. Each gives { chunks, mime }.
 var writers: any = {};
 
 // Writes a value for a delimited file. A value gets quotes when it holds the delimiter, a quote, a
@@ -360,7 +362,7 @@ function writeDelimited(table, o, delimiter, mime) {
     chunks.push(lines.join(newline) + newline);
     if (n > BLOCK) DL.platform.progress('Preparing download', Math.round(100 * end / n));
   }
-  return new Blob(chunks, { type: mime });
+  return { chunks: chunks, mime: mime };
 }
 
 writers.csv = function (table, o, format) { return writeDelimited(table, o, ',', format.mime); };
@@ -397,7 +399,7 @@ writers.xlsx = function (table, o, format) {
   DL.platform.xlsx().utils.book_append_sheet(wb, ws, sheetName);
   DL.platform.progress('Building Excel file', 80);
   var out = DL.platform.xlsx().write(wb, { type: 'array', bookType: 'xlsx', compression: true });
-  return new Blob([out], { type: format.mime });
+  return { chunks: [out], mime: format.mime };
 };
 
 writers.json = function (table, o, format) {
@@ -415,20 +417,103 @@ writers.json = function (table, o, format) {
     parts.push((i ? ',' : '') + obj);
   }
   parts.push((pretty ? '\n' : '') + ']');
-  return new Blob(parts, { type: format.mime });
+  return { chunks: parts, mime: format.mime };
 };
 
 // Writes a table in the output format of the options. Gives a Blob.
-function writeTable(table, o) {
+// The bytes of the table in the output format of the options, as { chunks, mime }. A chunk is a
+// string or a byte array. Nothing here knows about Blob, so the command line writes the bytes
+// straight to a file and the page wraps them.
+function writeBytes(table, o) {
   var format = DL.outputFormatById(o.format) || DL.outputFormats[0];
   return writers[format.id](table, o, format);
 }
 
+// The same bytes as a Blob, which is what the page and the worker pass around.
+function writeTable(table, o) {
+  var out = writeBytes(table, o);
+  return new Blob(out.chunks, { type: out.mime });
+}
+
 DL.readers = readers;
-DL.writers = writers;
+DL.writeBytes = writeBytes;
 DL.writeTable = writeTable;
 DL.makeZip = makeZip;
 DL.tooLarge = tooLarge;
 DL.raggedNote = RAGGED_NOTE;
 DL.readerFor = function (name) { return readers[DL.inputFormatFor(name).id]; };
 DL.sheetNames = sheetNames;
+
+/* Reads files into one table.
+ *
+ * Gives { table, info }. info names every file with its rows, and carries the notes of the read,
+ * the encoding and the separator of the first file, and the time that the read took.
+ *
+ * The command line and the worker both call this. Neither has a reader of its own.
+ */
+DL.readSource = function (files, opts) {
+  files = files || [];
+  opts = opts || {};
+  var started = Date.now();
+  var tables = [];
+  var names = [];
+  var each = [];
+  var notes = [];
+  var ragged = 0;
+  var meta: any = {};
+  var cells = 0;
+  var key = 'src:';
+  // The column of the file name belongs to a source that puts files together.
+  var stackOpts = { fileColumn: (opts.fileNameColumn && opts.multiFile === 'stack') ? 'Source file' : null };
+  var many = files.length > 1;
+  var share = many ? 90 / files.length : 0;
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    if (many) DL.platform.scope(file.name + ' (' + (i + 1) + ' of ' + files.length + ')', share * i, share * (i + 1));
+    var result = DL.readerFor(file.name)(file, opts);
+    // Each file adds to the cells that the browser must hold, so the limit is on the total.
+    cells += result.table.length * Math.max(1, result.table.columns.length);
+    if (cells > DL.maxCells) throw DL.tooLarge(cells);
+    tables.push(result.table);
+    names.push(file.name);
+    each.push({ name: file.name, size: file.size, rowCount: result.table.length });
+    ragged += result.ragged || 0;
+    for (var n = 0; n < result.notes.length; n++) {
+      notes.push(files.length > 1 ? '"' + file.name + '": ' + result.notes[n] : result.notes[n]);
+    }
+    if (i === 0) meta = result.meta || {};
+    key += file.name + ':' + file.size + ':' + file.lastModified + ':';
+  }
+  DL.platform.scope(null, 0, 0);
+  // The columns of all the files together make the table wider than any one file, and the column of
+  // the file name adds one more. Count the cells of that table before the memory for it is necessary.
+  if (tables.length > 1 || stackOpts.fileColumn) {
+    var shape = DL.stackedShape(tables, stackOpts);
+    var stackedCells = shape.rows * Math.max(1, shape.columns.length);
+    if (stackedCells > DL.maxCells) throw DL.tooLarge(stackedCells);
+  }
+  if (many) DL.platform.progress('Putting the files together', 92);
+  var stacked = DL.stackTables(tables, names, stackOpts);
+  var table = stacked.table;
+  for (var m = 0; m < stacked.notes.length; m++) notes.push(stacked.notes[m]);
+  var skip = Math.max(0, Number(opts.skipRows) || 0);
+  if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + (files.length > 1 ? ' of each file.' : '.'));
+  if (ragged) notes.push(DL.raggedNote(ragged));
+  return {
+    table: table,
+    key: key + JSON.stringify(opts),
+    info: {
+      fileName: files.length ? files[0].name : '',
+      fileSize: files.length ? files[0].size : 0,
+      files: each,
+      rowCount: table.length,
+      columns: table.columns,
+      notes: notes,
+      encoding: meta.encoding || null,
+      delimiter: meta.delimiter || null,
+      sheet: meta.sheet || null,
+      ms: Date.now() - started
+    }
+  };
+};
+

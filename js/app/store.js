@@ -31,14 +31,8 @@
   }
 
   // Makes a complete step record from saved or imported data. keepId: reuse the id when present.
-  Store.normalizeStep = function (s, keepId) {
-    return {
-      id: keepId && s.id ? String(s.id) : U.uid(),
-      opId: s.opId,
-      params: DL.cleanParams(s.opId, s.params),
-      enabled: s.enabled !== false
-    };
-  };
+  // The engine decides the shape of a step, so that the page and the command line agree.
+  Store.normalizeStep = DL.normalizeStep;
 
   Store.prototype.subscribe = function (fn) {
     this.listeners.push(fn);

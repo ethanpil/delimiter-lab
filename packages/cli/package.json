@@ -1,0 +1,8 @@
+{
+  "name": "@delimiter-lab/cli",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Run a Delimiter Lab workflow on files, from a terminal.",
+  "license": "MIT",
+  "type": "module"
+}

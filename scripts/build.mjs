@@ -1,17 +1,26 @@
 /* Builds the engine for every platform from one source.
  *
  * dist/engine.global.js  the page and the worker read it as self.DL
- * dist/engine.mjs        Node brings it in, for the command line
+ * dist/engine.mjs        Node brings it in
+ * dist/dl.mjs            the dl command, with the engine and the two libraries inside it
  */
 import * as esbuild from 'esbuild';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
+
+// js/manifest.js holds the one version of the application. The page reads that file before it
+// loads anything else, so the build takes the number from there in place of holding a second one.
+const manifest = readFileSync('js/manifest.js', 'utf8');
+const found = manifest.match(/DL\.VERSION = '([^']+)'/);
+if (!found) throw new Error('js/manifest.js does not say DL.VERSION.');
+const version = found[1];
 
 mkdirSync('dist', { recursive: true });
 
 const common = {
   bundle: true,
   target: ['es2020'],
-  logLevel: 'info'
+  logLevel: 'info',
+  define: { __DL_VERSION__: JSON.stringify(version) }
 };
 
 await esbuild.build({
@@ -34,4 +43,17 @@ await esbuild.build({
   sourcemap: true
 });
 
-console.log('engine built');
+// The command line carries the engine and the same two libraries that the page uses, so that a
+// file read on a terminal is read exactly as the page reads it.
+await esbuild.build({
+  ...common,
+  entryPoints: ['packages/cli/src/cli.ts'],
+  outfile: 'dist/dl.mjs',
+  format: 'esm',
+  platform: 'node',
+  target: ['node20'],
+  banner: { js: '#!/usr/bin/env node' },
+  alias: { '@engine': './packages/engine/src/index.ts' }
+});
+
+console.log('engine and command line built, version ' + version);

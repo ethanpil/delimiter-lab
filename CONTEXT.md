@@ -31,7 +31,7 @@ Run both test files before every commit. There is no test runner; each file coun
 index.html            Page shell, theme script, loader (reads the manifest, loads the files in order)
 js/manifest.js        DL.VERSION, DL.LOCALES, DL.FILES (the ordered file lists)
 packages/engine/src/   The engine, in TypeScript. core.ts and ops/*.ts. One source for every platform.
-js/engine/worker.js   Web Worker: readers, chain runner with cache, slices, diff, profile, search, writers, batch, zip
+js/engine/worker.js   Web Worker: the message protocol, the cache, slices, diff, profile, search. It calls the engine to read, run and write.
 dist/engine.global.js  The build of that source. The page and the worker load it as self.DL.
 js/app/i18n.js        DL.t, DL.registerLocale, DL.setLocale, DL.applyI18n
 js/i18n/en.js         Every user interface text (the only locale today)

@@ -19,6 +19,9 @@ DL.platform.readBuffer = function (blob) { return new FileReaderSync().readAsArr
 DL.platform.papa = Papa;
 DL.platform.xlsx = ensureXlsx;
 DL.platform.progress = function (phase, percent) { progress(phase, percent); };
+DL.platform.scope = function (label, from, to) {
+  progressScope = label === null ? null : { label: label, from: from, to: to };
+};
 
 var state = {
   source: null,          // table { columns, cols, length }
@@ -82,7 +85,7 @@ function handle(msg) {
       case 'slice': reply({ type: 'slice', stepId: msg.stepId, data: getSlice(msg) }); break;
       case 'export': exportStep(msg, reply); break;
       case 'batch': reply({ type: 'batch', result: batchFile(msg) }); break;
-      case 'zip': reply({ type: 'zip', blob: DL.makeZip(msg.entries) }); break;
+      case 'zip': reply({ type: 'zip', blob: zipBlob(msg.entries) }); break;
       case 'columnInfo': reply({ type: 'columnInfo', stepId: msg.stepId, info: columnInfo(msg) }); break;
       case 'columnStats': reply({ type: 'columnStats', stepId: msg.stepId, col: msg.col, stats: columnStats(msg) }); break;
       case 'diffSummary': reply({ type: 'diffSummary', stepId: msg.stepId, summary: diffSummary(msg) }); break;
@@ -101,6 +104,15 @@ function handle(msg) {
 // stays between from and to. One file of a list then owns one part of the bar.
 var progressScope = null;
 
+// The zip of the engine takes bytes, so that every platform can make one. A browser worker reads
+// a blob without waiting, so the change from blobs to bytes happens here.
+function zipBlob(entries) {
+  var out = DL.makeZip(entries.map(function (e) {
+    return { name: e.name, bytes: new Uint8Array(new FileReaderSync().readAsArrayBuffer(e.blob)) };
+  }));
+  return new Blob(out.chunks, { type: out.mime });
+}
+
 function progress(phase, percent) {
   if (progressScope) {
     phase = phase ? progressScope.label + ' \u00b7 ' + phase : progressScope.label;
@@ -112,73 +124,14 @@ function progress(phase, percent) {
 
 function loadFile(msg, reply) {
   var files = msg.files || (msg.file ? [msg.file] : []);
-  var opts = msg.options || {};
   state.cache.clear();
   state.source = null;
   state.sourceInfo = null;
   state.cancelledFrom = -1;
-  var started = Date.now();
-  var tables = [];
-  var names = [];
-  var each = [];
-  var notes = [];
-  var ragged = 0;
-  var meta = {};
-  var cells = 0;
-  var key = 'src:';
-  // The column of the file name belongs to a source that puts files together.
-  var stackOpts = { fileColumn: (opts.fileNameColumn && opts.multiFile === 'stack') ? 'Source file' : null };
-  var many = files.length > 1;
-  var share = many ? 90 / files.length : 0;
-  for (var i = 0; i < files.length; i++) {
-    var file = files[i];
-    if (many) {
-      progressScope = { label: file.name + ' (' + (i + 1) + ' of ' + files.length + ')', from: share * i, to: share * (i + 1) };
-      progress('', 0); // the name of the file, before the reader says what it does
-    }
-    var result = DL.readerFor(file.name)(file, opts);
-    // Each file adds to the cells that the browser must hold, so the limit is on the total.
-    cells += result.table.length * Math.max(1, result.table.columns.length);
-    if (cells > DL.maxCells) throw DL.tooLarge(cells);
-    tables.push(result.table);
-    names.push(file.name);
-    each.push({ name: file.name, size: file.size, rowCount: result.table.length });
-    ragged += result.ragged || 0;
-    for (var n = 0; n < result.notes.length; n++) {
-      notes.push(files.length > 1 ? '"' + file.name + '": ' + result.notes[n] : result.notes[n]);
-    }
-    if (i === 0) meta = result.meta || {};
-    key += file.name + ':' + file.size + ':' + file.lastModified + ':';
-  }
-  progressScope = null;
-  // The columns of all the files together make the table wider than any one file, and the column of
-  // the file name adds one more. Count the cells of that table before the memory for it is necessary.
-  if (tables.length > 1 || stackOpts.fileColumn) {
-    var shape = DL.stackedShape(tables, stackOpts);
-    var stackedCells = shape.rows * Math.max(1, shape.columns.length);
-    if (stackedCells > DL.maxCells) throw DL.tooLarge(stackedCells);
-  }
-  if (many) progress('Putting the files together', 92);
-  var stacked = DL.stackTables(tables, names, stackOpts);
-  var table = stacked.table;
-  for (var m = 0; m < stacked.notes.length; m++) notes.push(stacked.notes[m]);
-  var skip = Math.max(0, Number(opts.skipRows) || 0);
-  if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + (files.length > 1 ? ' of each file.' : '.'));
-  if (ragged) notes.push(DL.raggedNote(ragged));
-  state.source = table;
-  state.sourceKey = key + JSON.stringify(opts);
-  state.sourceInfo = {
-    fileName: files.length ? files[0].name : '',
-    fileSize: files.length ? files[0].size : 0,
-    files: each,
-    rowCount: table.length,
-    columns: table.columns,
-    notes: notes,
-    encoding: meta.encoding || null,
-    delimiter: meta.delimiter || null,
-    sheet: meta.sheet || null,
-    ms: Date.now() - started
-  };
+  var read = DL.readSource(files, msg.options || {});
+  state.source = read.table;
+  state.sourceKey = read.key;
+  state.sourceInfo = read.info;
   reply({ type: 'loaded', info: state.sourceInfo });
 }
 

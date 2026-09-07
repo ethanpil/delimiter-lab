@@ -4,8 +4,7 @@
   var DL = root.DL;
   var U = DL.util;
   var KEY = 'dl.workflows.v1';
-  var FORMAT = 'delimiter-lab-workflow';
-  var VERSION = 1;
+
 
   var W = DL.workflows = {};
 
@@ -36,9 +35,7 @@
     }
   }
 
-  function cleanStep(s) {
-    return { id: s.id, opId: s.opId, params: s.params, enabled: s.enabled !== false };
-  }
+  var cleanStep = DL.cleanStep;
 
   // Saves (or updates) a workflow. Gives the saved record, or null when the save failed.
   W.save = function (wf) {
@@ -96,31 +93,8 @@
     return found ? 'partial' : 'none';
   };
 
-  W.toJSON = function (wf) {
-    return JSON.stringify({
-      format: FORMAT,
-      version: VERSION,
-      name: wf.name,
-      exportedAt: new Date().toISOString(),
-      columns: wf.columns || [],
-      sourceOptions: wf.sourceOptions || null,
-      steps: (wf.steps || []).map(cleanStep)
-    }, null, 2);
-  };
+  // The engine writes and reads the file, so that every platform reads one format.
+  W.toJSON = DL.workflowToJSON;
 
-  // Parses an imported file. Throws with a plain message when the file is not a workflow.
-  W.fromJSON = function (text) {
-    var data;
-    try { data = JSON.parse(text); } catch (e) { throw new Error('This file is not a workflow file.'); }
-    if (!data || data.format !== FORMAT || !Array.isArray(data.steps)) throw new Error('This file is not a Delimiter Lab workflow.');
-    if (Number(data.version) > VERSION) throw new Error('This workflow file comes from a newer version of Delimiter Lab. Update the application to open it.');
-    var unknown = data.steps.filter(function (s) { return !s || !DL.getOp(s.opId); }).map(function (s) { return s ? s.opId : '?'; });
-    if (unknown.length) throw new Error('The workflow uses operations this version does not know: ' + unknown.join(', '));
-    return {
-      name: typeof data.name === 'string' && data.name.trim() ? data.name.trim().slice(0, 80) : 'Imported workflow',
-      columns: Array.isArray(data.columns) ? data.columns.filter(function (c) { return typeof c === 'string'; }) : [],
-      sourceOptions: data.sourceOptions && typeof data.sourceOptions === 'object' ? DL.cleanSourceOptions(data.sourceOptions) : null,
-      steps: data.steps.map(function (s) { return DL.Store.normalizeStep(s, false); })
-    };
-  };
+  W.fromJSON = DL.parseWorkflow;
 })(typeof self !== 'undefined' ? self : this);
