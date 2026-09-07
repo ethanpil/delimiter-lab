@@ -6,6 +6,9 @@ history of the development before that.
 ## 1.0 (in development)
 
 - Add: "Many files" in the source settings, with the answers batch and stack (02b9d92, c2736f4, d02e4bc).
+- Add: a column with the name of the file that gave each row, for a source that stacks (061a575).
+- Change: files that write one column name in different ways make one column (061a575).
+- Change: the progress bar names the file that it reads, and it goes forward through the list (e20678d).
 - Add: the source panel lists its files, and it can add one or take one out (615ad5a).
 - Add: "Skip rows at the bottom" in the source settings (843e481).
 - Add: a drag on the right of a column name changes its width (c3c20de).
