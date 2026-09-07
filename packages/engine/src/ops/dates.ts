@@ -1,7 +1,6 @@
 /* Date operations: Format Dates, Date Math. */
 import { DL } from '../dl.js';
 
-var DAY_FIRST = { key: 'dayFirst', label: 'Read 01/02/2024 as 1 February', type: 'boolean', default: false, help: 'Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly. A value with a time zone, such as 2024-01-01T00:00:00Z, is converted to the local time of this computer.' };
 
 var OUTPUT_FORMATS = [
   { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (2024-01-31)' },
@@ -30,7 +29,7 @@ DL.registerOp({
   keywords: 'date time parse convert iso',
   params: [
     { key: 'columns', label: 'Columns', type: 'columns' },
-    DAY_FIRST,
+    DL.DAY_FIRST,
     { key: 'format', label: 'Write as', type: 'select', default: 'YYYY-MM-DD', options: OUTPUT_FORMATS },
     { key: 'pattern', label: 'Custom pattern', type: 'text', default: 'YYYY-MM-DD', required: true, showIf: function (p) { return p.format === 'custom'; },
       help: 'Tokens: YYYY YY MMMM MMM MM M DDDD DDD DD D HH H mm ss A a. Put other letters in square brackets, for example [at]. Other characters stay as they are.' },
@@ -143,7 +142,7 @@ DL.registerOp({
   keywords: 'date add subtract difference age days between year month weekday',
   params: [
     { key: 'column', label: 'Date column', type: 'column' },
-    DAY_FIRST,
+    DL.DAY_FIRST,
     { key: 'mode', label: 'Calculate', type: 'select', default: 'add',
       options: [
         { value: 'add', label: 'Add or subtract time' },

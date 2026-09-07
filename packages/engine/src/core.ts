@@ -429,6 +429,9 @@ var YEAR_RE = /\b\d{4}\b/;
 
 // Parses common date formats. Gives a timestamp (ms) or NaN.
 // dayFirst: read "01/02/2024" as 1 February (true) or 2 January (false).
+// Operations that read dates share this setting, so that one column is never read by two rules.
+DL.DAY_FIRST = { key: 'dayFirst', label: 'Read 01/02/2024 as 1 February', type: 'boolean', default: false, help: 'Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly. A value with a time zone, such as 2024-01-01T00:00:00Z, is converted to the local time of this computer.' };
+
 DL.toDate = function (v, dayFirst) {
   if (v == null) return NaN;
   var s = String(v).trim();
@@ -632,7 +635,7 @@ DL.sortKey = function (s) {
       var ei = si;
       while (ei < n && s.charCodeAt(ei) >= 48 && s.charCodeAt(ei) <= 57) ei++;
       var len = ei - si;
-      if (len > 40) return null;
+      if (len > 16) return null; // 48 + 17 is "A": a longer run would sort as a letter
       out += s.slice(last, i) + String.fromCharCode(48 + len) + s.slice(si, ei);
       last = i = ei;
     } else if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 32) {

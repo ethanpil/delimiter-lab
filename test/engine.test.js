@@ -127,7 +127,35 @@ test('substitute op', () => {
 test('padTrim op', () => {
   const r = run('padTrim', { columns: ['First'], trim: 'both', pad: 'left', length: 6, char: '*' }, people);
   assert.strictEqual(rowsOf(r.table)[1][0], '**Jane');
-  assert.strictEqual(rowsOf(r.table)[2][0], '******');
+  // An empty value stays empty. This test asked for '******' before, which made a value that the
+  // file does not hold: a person who zero-pads a postcode would get 00000 for a missing one.
+  assert.strictEqual(rowsOf(r.table)[2][0], '');
+});
+
+// Values that come from a file must never reach a key of Object.prototype, and a value that is
+// only spaces must count as empty, as it does in every other operation.
+test('operations do not invent values or answer with Object.prototype', () => {
+  const blank = T(['A', 'B', 'C'], [['1 Main', '  ', 'NY']]);
+  const j = run('concat', { columns: ['A', 'B', 'C'], separator: ', ', skipEmpty: true, output: 'Addr' }, blank);
+  assert.strictEqual(rowsOf(j.table)[0][3], '1 Main, NY');
+
+  const ent = run('textClean', { columns: ['A'], steps: ['html'] }, T(['A'], [['Acme &constructor; Ltd']]));
+  assert.strictEqual(rowsOf(ent.table)[0][0], 'Acme &constructor; Ltd');
+
+  const n = DL.splitName('John Constructor');
+  assert.strictEqual(n.last, 'Constructor');
+  assert.strictEqual(n.suffix, '');
+});
+
+// "Smith, Jr." holds only a suffix after the comma, so Smith is still the last name.
+test('splitName keeps the last name when only a suffix follows the comma', () => {
+  const a = DL.splitName('Smith, Jr.');
+  assert.strictEqual(a.last, 'Smith');
+  assert.strictEqual(a.first, '');
+  assert.strictEqual(a.suffix, 'Jr.');
+  const b = DL.splitName('Smith, John, Jr.');
+  assert.strictEqual(b.last, 'Smith');
+  assert.strictEqual(b.first, 'John');
 });
 
 /* ---- row ops ---- */
@@ -187,6 +215,26 @@ test('unique op', () => {
   assert.deepStrictEqual(r.table.columns, ['Last', 'Count']);
   assert.deepStrictEqual(rowsOf(r.table)[0], ['SMITH', '2']);
   assert.strictEqual(rowsOf(r.table).length, 3);
+});
+
+// Sort and Filter must read a column of dates by one rule. Day-first was not an answer they
+// could give before, so a column could be read half day-first and half month-first.
+test('sort and filter read dates day-first when asked', () => {
+  const d = T(['D'], [['13/01/2024'], ['01/02/2024'], ['05/01/2024'], ['20/03/2024']]);
+  const s1 = run('sort', { keys: [{ column: 'D', type: 'date', dir: 'asc' }], dayFirst: true }, d);
+  assert.deepStrictEqual(rowsOf(s1.table).map((r) => r[0]),
+    ['05/01/2024', '13/01/2024', '01/02/2024', '20/03/2024']);
+
+  const f = run('filter', { action: 'keep', logic: 'all', dayFirst: true,
+    conditions: [{ column: 'D', op: 'dateBefore', value: '01/02/2024' }] }, d);
+  assert.deepStrictEqual(rowsOf(f.table).map((r) => r[0]), ['13/01/2024', '05/01/2024']);
+});
+
+// The key of a run of digits must stay below the letters, or a long number sorts as a word.
+test('a long number sorts before letters, as the collator puts it', () => {
+  const t = T(['A'], [['a1'], ['12345678901234567'], ['a9']]);
+  const r = run('sort', { keys: [{ column: 'A', type: 'text', dir: 'asc' }] }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((x) => x[0]), ['12345678901234567', 'a1', 'a9']);
 });
 
 /* ---- column ops ---- */

@@ -66,7 +66,7 @@ DL.registerOp({
       var count = 0;
       for (var j = 0; j < k; j++) {
         var v = srcCols[j][i];
-        if (skipEmpty && v === '') continue;
+        if (skipEmpty && DL.isBlank(v)) continue;
         out = count++ ? out + sep + v : v;
       }
       values[i] = out;
@@ -164,9 +164,9 @@ DL.registerOp({
 });
 
 /* ---------- Split name ---------- */
-var PREFIXES = { 'mr': 1, 'mrs': 1, 'ms': 1, 'miss': 1, 'mx': 1, 'dr': 1, 'prof': 1, 'rev': 1, 'sir': 1, 'dame': 1, 'hon': 1, 'capt': 1, 'col': 1, 'lt': 1, 'sgt': 1, 'fr': 1 };
-var SUFFIXES = { 'jr': 1, 'sr': 1, 'ii': 1, 'iii': 1, 'iv': 1, 'v': 1, 'phd': 1, 'md': 1, 'esq': 1, 'dds': 1, 'cpa': 1, 'mba': 1, 'ra': 1 };
-var PARTICLES = { 'van': 1, 'von': 1, 'de': 1, 'del': 1, 'della': 1, 'di': 1, 'da': 1, 'la': 1, 'le': 1, 'du': 1, 'der': 1, 'den': 1, 'ter': 1, 'ten': 1, 'st': 1, 'san': 1, 'bin': 1, 'ibn': 1, 'al': 1, 'el': 1, 'y': 1, 'e': 1 };
+var PREFIXES = Object.assign(Object.create(null), { 'mr': 1, 'mrs': 1, 'ms': 1, 'miss': 1, 'mx': 1, 'dr': 1, 'prof': 1, 'rev': 1, 'sir': 1, 'dame': 1, 'hon': 1, 'capt': 1, 'col': 1, 'lt': 1, 'sgt': 1, 'fr': 1 });
+var SUFFIXES = Object.assign(Object.create(null), { 'jr': 1, 'sr': 1, 'ii': 1, 'iii': 1, 'iv': 1, 'v': 1, 'phd': 1, 'md': 1, 'esq': 1, 'dds': 1, 'cpa': 1, 'mba': 1, 'ra': 1 });
+var PARTICLES = Object.assign(Object.create(null), { 'van': 1, 'von': 1, 'de': 1, 'del': 1, 'della': 1, 'di': 1, 'da': 1, 'la': 1, 'le': 1, 'du': 1, 'der': 1, 'den': 1, 'ter': 1, 'ten': 1, 'st': 1, 'san': 1, 'bin': 1, 'ibn': 1, 'al': 1, 'el': 1, 'y': 1, 'e': 1 });
 
 DL.splitName = function (full) {
   var res = { prefix: '', first: '', middle: '', last: '', suffix: '' };
@@ -185,7 +185,9 @@ DL.splitName = function (full) {
       if (SUFFIXES[norm(t)]) suffixParts.push(t); else others.push(t);
     });
     if (suffixParts.length) res.suffix = suffixParts.join(' ');
-    if (others.length) { lastName = parts[0]; s = others.join(' '); } else { s = parts[0]; }
+    if (others.length) { lastName = parts[0]; s = others.join(' '); }
+    else if (suffixParts.length) { lastName = parts[0]; s = ''; } // "Smith, Jr.": only a suffix follows
+    else { s = parts[0]; }
   }
   var tokens = s.split(' ');
   var hadPrefix = false;
@@ -423,6 +425,7 @@ DL.registerOp({
       else if (trim === 'left') v = v.replace(/^\s+/, '');
       else if (trim === 'right') v = v.replace(/\s+$/, '');
       if (collapse) v = v.replace(/\s{2,}/g, ' ');
+      if (DL.isBlank(v)) return v; // an empty value stays empty: to pad it would invent a value
       // The length counts characters, so an emoji pad character or value counts as one.
       var missing = pad === 'none' ? 0 : len - DL.charCount(v);
       if (missing > 0) v = pad === 'left' ? ch.repeat(missing) + v : v + ch.repeat(missing);
@@ -488,7 +491,7 @@ DL.registerOp({
 });
 
 /* ---------- Text clean ---------- */
-var HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', copy: '\u00a9', reg: '\u00ae', euro: '\u20ac', pound: '\u00a3' };
+var HTML_ENTITIES = Object.assign(Object.create(null), { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '\u2013', mdash: '\u2014', hellip: '\u2026', copy: '\u00a9', reg: '\u00ae', euro: '\u20ac', pound: '\u00a3' });
 
 function stripHtml(s) {
   if (s.indexOf('<') < 0 && s.indexOf('&') < 0) return s;

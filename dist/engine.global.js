@@ -371,6 +371,7 @@
   }
   var MONTH_RE = /\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t|tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\b\.?/i;
   var YEAR_RE = /\b\d{4}\b/;
+  DL.DAY_FIRST = { key: "dayFirst", label: "Read 01/02/2024 as 1 February", type: "boolean", default: false, help: "Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly. A value with a time zone, such as 2024-01-01T00:00:00Z, is converted to the local time of this computer." };
   DL.toDate = function(v, dayFirst) {
     if (v == null) return NaN;
     var s = String(v).trim();
@@ -581,7 +582,7 @@
         var ei = si;
         while (ei < n && s.charCodeAt(ei) >= 48 && s.charCodeAt(ei) <= 57) ei++;
         var len = ei - si;
-        if (len > 40) return null;
+        if (len > 16) return null;
         out += s.slice(last, i) + String.fromCharCode(48 + len) + s.slice(si, ei);
         last = i = ei;
       } else if (c >= 65 && c <= 90 || c >= 97 && c <= 122 || c === 32) {
@@ -2075,7 +2076,7 @@
         var count = 0;
         for (var j = 0; j < k; j++) {
           var v = srcCols[j][i];
-          if (skipEmpty && v === "") continue;
+          if (skipEmpty && DL.isBlank(v)) continue;
           out = count++ ? out + sep + v : v;
         }
         values[i] = out;
@@ -2170,9 +2171,9 @@
       return { table: out, notes: ["Split into " + DL.pluralize(values.length, "column") + "."] };
     }
   });
-  var PREFIXES = { "mr": 1, "mrs": 1, "ms": 1, "miss": 1, "mx": 1, "dr": 1, "prof": 1, "rev": 1, "sir": 1, "dame": 1, "hon": 1, "capt": 1, "col": 1, "lt": 1, "sgt": 1, "fr": 1 };
-  var SUFFIXES = { "jr": 1, "sr": 1, "ii": 1, "iii": 1, "iv": 1, "v": 1, "phd": 1, "md": 1, "esq": 1, "dds": 1, "cpa": 1, "mba": 1, "ra": 1 };
-  var PARTICLES = { "van": 1, "von": 1, "de": 1, "del": 1, "della": 1, "di": 1, "da": 1, "la": 1, "le": 1, "du": 1, "der": 1, "den": 1, "ter": 1, "ten": 1, "st": 1, "san": 1, "bin": 1, "ibn": 1, "al": 1, "el": 1, "y": 1, "e": 1 };
+  var PREFIXES = Object.assign(/* @__PURE__ */ Object.create(null), { "mr": 1, "mrs": 1, "ms": 1, "miss": 1, "mx": 1, "dr": 1, "prof": 1, "rev": 1, "sir": 1, "dame": 1, "hon": 1, "capt": 1, "col": 1, "lt": 1, "sgt": 1, "fr": 1 });
+  var SUFFIXES = Object.assign(/* @__PURE__ */ Object.create(null), { "jr": 1, "sr": 1, "ii": 1, "iii": 1, "iv": 1, "v": 1, "phd": 1, "md": 1, "esq": 1, "dds": 1, "cpa": 1, "mba": 1, "ra": 1 });
+  var PARTICLES = Object.assign(/* @__PURE__ */ Object.create(null), { "van": 1, "von": 1, "de": 1, "del": 1, "della": 1, "di": 1, "da": 1, "la": 1, "le": 1, "du": 1, "der": 1, "den": 1, "ter": 1, "ten": 1, "st": 1, "san": 1, "bin": 1, "ibn": 1, "al": 1, "el": 1, "y": 1, "e": 1 });
   DL.splitName = function(full) {
     var res = { prefix: "", first: "", middle: "", last: "", suffix: "" };
     var s = (full || "").replace(/\s+/g, " ").trim();
@@ -2197,6 +2198,9 @@
       if (others.length) {
         lastName = parts[0];
         s = others.join(" ");
+      } else if (suffixParts.length) {
+        lastName = parts[0];
+        s = "";
       } else {
         s = parts[0];
       }
@@ -2473,6 +2477,7 @@
         else if (trim === "left") v = v.replace(/^\s+/, "");
         else if (trim === "right") v = v.replace(/\s+$/, "");
         if (collapse) v = v.replace(/\s{2,}/g, " ");
+        if (DL.isBlank(v)) return v;
         var missing = pad === "none" ? 0 : len - DL.charCount(v);
         if (missing > 0) v = pad === "left" ? ch.repeat(missing) + v : v + ch.repeat(missing);
         return v;
@@ -2549,7 +2554,7 @@
       return { table: out, notes: stats.tagged ? [DL.pluralize(stats.tagged, "value") + " had no match."] : [] };
     }
   });
-  var HTML_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "\u2013", mdash: "\u2014", hellip: "\u2026", copy: "\xA9", reg: "\xAE", euro: "\u20AC", pound: "\xA3" };
+  var HTML_ENTITIES = Object.assign(/* @__PURE__ */ Object.create(null), { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "\u2013", mdash: "\u2014", hellip: "\u2026", copy: "\xA9", reg: "\xAE", euro: "\u20AC", pound: "\xA3" });
   function stripHtml(s) {
     if (s.indexOf("<") < 0 && s.indexOf("&") < 0) return s;
     return s.replace(/<br\s*\/?>/gi, " ").replace(/<(?:!--[\s\S]*?--|!\[CDATA\[[\s\S]*?\]\]|[!?][^>]*|\/?[a-z][a-z0-9-]*(?:\s+[^<>=]*=[^<>]*)?\s*\/?)>/gi, "").replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, function(m, code) {
@@ -2703,12 +2708,12 @@
     { value: "inList", label: "is one of (comma separated)", needs: "text" },
     { value: "notInList", label: "is not one of (comma separated)", needs: "text" }
   ];
-  function memoDate(test) {
+  function memoDate(test, dayFirst) {
     var cache = /* @__PURE__ */ new Map();
     return function(v) {
       var t = cache.get(v);
       if (t === void 0) {
-        t = DL.toDate(v);
+        t = DL.toDate(v, dayFirst);
         if (cache.size < 5e4) cache.set(v, t);
       }
       return test(t);
@@ -2723,7 +2728,8 @@
     } : function(s) {
       return s.toLowerCase();
     };
-    var n = DL.toNumber(val), n2 = DL.toNumber(c.value2), d = DL.toDate(val);
+    var dayFirst = !!(opts && opts.dayFirst);
+    var n = DL.toNumber(val), n2 = DL.toNumber(c.value2), d = DL.toDate(val, dayFirst);
     var toNumber = DL.toNumber;
     var list;
     switch (c.op) {
@@ -2800,11 +2806,11 @@
       case "dateBefore":
         return memoDate(function(t) {
           return t < d;
-        });
+        }, dayFirst);
       case "dateAfter":
         return memoDate(function(t) {
           return t > d;
-        });
+        }, dayFirst);
       case "inList":
       case "notInList":
         list = new Set(val.split(",").map(function(s) {
@@ -2845,7 +2851,8 @@
         options: [{ value: "all", label: "All rules are true" }, { value: "any", label: "Any rule is true" }]
       },
       { key: "conditions", label: "Rules", type: "conditions" },
-      { key: "matchCase", label: "Match case", type: "boolean", default: false }
+      { key: "matchCase", label: "Match case", type: "boolean", default: false },
+      DL.DAY_FIRST
     ],
     summary: function(p) {
       return (p.action === "remove" ? "Remove" : "Keep") + " rows where " + p.conditions.map(function(x) {
@@ -2967,7 +2974,8 @@
     keywords: "order arrange ascending descending",
     params: [
       { key: "keys", label: "Sort by", type: "sortKeys" },
-      { key: "emptyLast", label: "Put empty values last", type: "boolean", default: true }
+      { key: "emptyLast", label: "Put empty values last", type: "boolean", default: true },
+      DL.DAY_FIRST
     ],
     summary: function(p) {
       return p.keys.map(function(k) {
@@ -2984,7 +2992,10 @@
         var ranked;
         if (type === "text") ranked = textRanks(col, n, dir, emptyLast);
         else {
-          var parse = type === "number" ? DL.toNumber : DL.toDate;
+          var dayFirst = !!p.dayFirst;
+          var parse = type === "number" ? DL.toNumber : function(v) {
+            return DL.toDate(v, dayFirst);
+          };
           var parsed = DL.mapValues(col, n, function(v) {
             return v === "" ? NaN : parse(v);
           });
@@ -3727,7 +3738,6 @@
   Row.prototype = /* @__PURE__ */ Object.create(null);
 
   // packages/engine/src/ops/dates.ts
-  var DAY_FIRST = { key: "dayFirst", label: "Read 01/02/2024 as 1 February", type: "boolean", default: false, help: "Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly. A value with a time zone, such as 2024-01-01T00:00:00Z, is converted to the local time of this computer." };
   var OUTPUT_FORMATS = [
     { value: "YYYY-MM-DD", label: "YYYY-MM-DD (2024-01-31)" },
     { value: "YYYY-MM-DD HH:mm:ss", label: "YYYY-MM-DD HH:mm:ss" },
@@ -3752,7 +3762,7 @@
     keywords: "date time parse convert iso",
     params: [
       { key: "columns", label: "Columns", type: "columns" },
-      DAY_FIRST,
+      DL.DAY_FIRST,
       { key: "format", label: "Write as", type: "select", default: "YYYY-MM-DD", options: OUTPUT_FORMATS },
       {
         key: "pattern",
@@ -3888,7 +3898,7 @@
     keywords: "date add subtract difference age days between year month weekday",
     params: [
       { key: "column", label: "Date column", type: "column" },
-      DAY_FIRST,
+      DL.DAY_FIRST,
       {
         key: "mode",
         label: "Calculate",

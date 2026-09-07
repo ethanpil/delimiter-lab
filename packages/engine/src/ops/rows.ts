@@ -77,11 +77,11 @@ DL.FILTER_OPERATORS = [
 
 // Makes a function(value) -> boolean for one condition.
 // A test on the parsed date of a value. Each different value is parsed once.
-function memoDate(test) {
+function memoDate(test, dayFirst) {
   var cache = new Map();
   return function (v) {
     var t = cache.get(v);
-    if (t === undefined) { t = DL.toDate(v); if (cache.size < 50000) cache.set(v, t); }
+    if (t === undefined) { t = DL.toDate(v, dayFirst); if (cache.size < 50000) cache.set(v, t); }
     return test(t);
   };
 }
@@ -91,7 +91,8 @@ DL.buildCondition = function (c, opts) {
   var val = c.value == null ? '' : String(c.value);
   var cmp = matchCase ? val : val.toLowerCase();
   var norm = matchCase ? function (s) { return s; } : function (s) { return s.toLowerCase(); };
-  var n = DL.toNumber(val), n2 = DL.toNumber(c.value2), d = DL.toDate(val);
+  var dayFirst = !!(opts && opts.dayFirst);
+  var n = DL.toNumber(val), n2 = DL.toNumber(c.value2), d = DL.toDate(val, dayFirst);
   var toNumber = DL.toNumber;
   var list;
   switch (c.op) {
@@ -115,8 +116,8 @@ DL.buildCondition = function (c, opts) {
       return function (v) { var x = toNumber(v); return x >= lo && x <= hi; };
     case 'isNumber': return function (v) { return !isNaN(toNumber(v)); };
     case 'notNumber': return function (v) { return v.trim() !== '' && isNaN(toNumber(v)); };
-    case 'dateBefore': return memoDate(function (t) { return t < d; });
-    case 'dateAfter': return memoDate(function (t) { return t > d; });
+    case 'dateBefore': return memoDate(function (t) { return t < d; }, dayFirst);
+    case 'dateAfter': return memoDate(function (t) { return t > d; }, dayFirst);
     case 'inList':
     case 'notInList':
       list = new Set(val.split(',').map(function (s) { return norm(s.trim()); }).filter(function (s) { return s !== ''; }));
@@ -139,7 +140,8 @@ DL.registerOp({
     { key: 'logic', label: 'A row matches when', type: 'select', default: 'all',
       options: [{ value: 'all', label: 'All rules are true' }, { value: 'any', label: 'Any rule is true' }] },
     { key: 'conditions', label: 'Rules', type: 'conditions' },
-    { key: 'matchCase', label: 'Match case', type: 'boolean', default: false }
+    { key: 'matchCase', label: 'Match case', type: 'boolean', default: false },
+    DL.DAY_FIRST
   ],
   summary: function (p) {
     return (p.action === 'remove' ? 'Remove' : 'Keep') + ' rows where ' + p.conditions.map(function (x) {
@@ -248,7 +250,8 @@ DL.registerOp({
   keywords: 'order arrange ascending descending',
   params: [
     { key: 'keys', label: 'Sort by', type: 'sortKeys' },
-    { key: 'emptyLast', label: 'Put empty values last', type: 'boolean', default: true }
+    { key: 'emptyLast', label: 'Put empty values last', type: 'boolean', default: true },
+    DL.DAY_FIRST
   ],
   summary: function (p) { return p.keys.map(function (k) { return k.column + ' ' + (k.dir === 'desc' ? '↓' : '↑'); }).join(', '); },
   apply: function (table, p) {
@@ -261,7 +264,8 @@ DL.registerOp({
       var ranked;
       if (type === 'text') ranked = textRanks(col, n, dir, emptyLast);
       else {
-        var parse = type === 'number' ? DL.toNumber : DL.toDate;
+        var dayFirst = !!p.dayFirst;
+        var parse = type === 'number' ? DL.toNumber : function (v) { return DL.toDate(v, dayFirst); };
         var parsed = DL.mapValues(col, n, function (v) { return v === '' ? NaN : parse(v); }); // each different value once
         var vals = new Float64Array(n);
         for (var i = 0; i < n; i++) vals[i] = parsed[i];
