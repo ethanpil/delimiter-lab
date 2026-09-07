@@ -27,6 +27,9 @@
     this.undoStack = [];
     this.redoStack = [];
     this.savedSnapshot = null; // the workflow as it was last saved
+    // Every tab of this browser writes one session. This name says which tab wrote it last, so a
+    // tab can see that another one owns the workspace now and say so before work is lost.
+    this.writerId = DL.uid();
     this.restoreSession();
   }
 
@@ -45,12 +48,17 @@
 
   /* ---------- Undo / redo ---------- */
 
-  Store.prototype.snapshot = function () {
-    return JSON.stringify({ workflow: this.state.workflow, selectedId: this.state.selectedId, sourceOptions: this.state.source.options });
+  // withSource: the action also changes the settings of the source, so an undo must put them back.
+  // Without it an undo of a step would take away a delimiter or a heading answer that the person
+  // chose after that step, and those answers have no undo entry of their own.
+  Store.prototype.snapshot = function (withSource) {
+    var snap = { workflow: this.state.workflow, selectedId: this.state.selectedId };
+    if (withSource) snap.sourceOptions = this.state.source.options;
+    return JSON.stringify(snap);
   };
 
-  Store.prototype.pushHistory = function () {
-    this.undoStack.push(this.snapshot());
+  Store.prototype.pushHistory = function (withSource) {
+    this.undoStack.push(this.snapshot(withSource));
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift();
     this.redoStack.length = 0;
     this.lastEditKey = null; // the next edit starts a new undo entry
@@ -76,7 +84,8 @@
     this.state.dirty = this.workflowSnapshot() !== this.savedSnapshot;
     this.emit('steps');
     this.emit('workflow');
-    // An undo of an applied workflow also restores the source options, which reload the file.
+    // Only an entry that holds them: an applied workflow. The panel and the reader both listen
+    // for this, so the form on the screen and the file agree.
     if (data.sourceOptions && JSON.stringify(data.sourceOptions) !== JSON.stringify(this.state.source.options)) {
       this.state.source.options = data.sourceOptions;
       this.emit('sourceOptions');
@@ -85,8 +94,9 @@
 
   Store.prototype.undo = function () {
     if (!this.undoStack.length) return;
-    this.redoStack.push(this.snapshot());
-    this.applySnapshot(this.undoStack.pop());
+    var back = this.undoStack.pop();
+    this.redoStack.push(this.snapshot(back.indexOf('"sourceOptions"') >= 0));
+    this.applySnapshot(back);
   };
 
   Store.prototype.redo = function () {
@@ -220,8 +230,14 @@
 
   // Replaces all steps, for example when a saved workflow is opened.
   Store.prototype.replaceWorkflow = function (wf) {
-    this.pushHistory();
-    var steps = (wf.steps || []).map(function (s) { return Store.normalizeStep(s, true); });
+    this.pushHistory(true);
+    // A step of an operation this build does not have keeps nothing when it is cleaned, and the
+    // next save would write that empty step back over the one on the disk. Such a step goes out,
+    // and the caller is told how many, as the session reader does.
+    var all = wf.steps || [];
+    var known = all.filter(function (s) { return s && DL.getOp(s.opId); });
+    this.droppedSteps = all.length - known.length;
+    var steps = known.map(function (s) { return Store.normalizeStep(s, true); });
     this.state.workflow = { id: wf.id || null, name: wf.name || '', steps: steps };
     this.state.selectedId = steps.length ? steps[steps.length - 1].id : 'source';
     this.invalidateResultsFrom(0);
@@ -393,14 +409,35 @@
 
   Store.prototype.saveSession = function () {
     try {
+      // Another tab writes the same one session. The first time this tab sees the name of another
+      // tab, it says so: the work of one of the two will not come back after a reload.
+      if (!this.sharedWarned) {
+        var held = localStorage.getItem(SESSION_KEY);
+        var other = held ? JSON.parse(held) : null;
+        if (other && other.writer && other.writer !== this.writerId) {
+          this.sharedWarned = true;
+          U.toast(DL.t('wf.sessionShared'), 'warning');
+        }
+      }
+    } catch (e) { /* a store that cannot be read is reported by the write below */ }
+    try {
       localStorage.setItem(SESSION_KEY, JSON.stringify({
+        writer: this.writerId,
+        writtenAt: Date.now(),
         workflow: this.state.workflow,
         selectedId: this.state.selectedId,
         sourceOptions: this.state.source.options,
         sourceName: this.state.source.file ? this.state.source.file.name : null,
-        sourceNames: this.state.source.files.map(function (f) { return f.name; })
+        // The name alone is not the file. Two files can share a name, and the wrong one would
+        // come back beside steps that were built for the other.
+        sourceNames: this.state.source.files.map(function (f) { return f.name + ':' + f.size + ':' + f.lastModified; })
       }));
-    } catch (e) { /* storage can be full or blocked */ }
+      this.sessionFailed = false;
+    } catch (e) {
+      // A store that is full keeps the value of the last write. The workspace that comes back
+      // would then be older than the work on the screen, and nothing would say so.
+      if (!this.sessionFailed) { this.sessionFailed = true; U.toast(DL.t('wf.sessionNotKept'), 'warning'); }
+    }
   };
 
   Store.prototype.restoreSession = function () {

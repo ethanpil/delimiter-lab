@@ -178,6 +178,9 @@
     // Saved workflows dialog (js/ui/dialogs.js)
     'wf.search': 'Search saved workflows…',
     'wf.notSaved': 'The workflow could not be saved. The browser storage may be full.',
+    'wf.damaged': 'The saved workflows in this browser cannot be read, so nothing was written. Nothing was removed.',
+    'wf.sessionNotKept': 'The browser storage is full, so your steps are not kept. After a reload you would get an older copy.',
+    'wf.sessionShared': 'Another tab has this workspace open. Only the work of one tab comes back after a reload.',
     'wf.empty': 'No saved workflows yet. Build some steps, then click "Save" to keep them for the next file.',
     'wf.noMatch': 'Nothing matches your search.',
     'wf.fits': 'Fits this file',

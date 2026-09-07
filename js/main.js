@@ -666,6 +666,9 @@
     autosaveNow();
     var go = function () {
       store.replaceWorkflow(wf);
+      // A step of an operation this build does not have goes out, and the person is told. Without
+      // a word, that step would come back empty and the next save would write the empty one down.
+      if (store.droppedSteps) U.toast(DL.t('msg.stepsDropped', { n: DL.pluralize(store.droppedSteps, 'step') }), 'warning');
       if (then) then();
       if (wf.id) DL.workflows.touch(wf.id);
       if (wf.sourceOptions && store.state.source.file) {
@@ -1049,9 +1052,11 @@
   // The steps come from localStorage. The file comes from IndexedDB, which answers later.
   DL.fileStore.get().then(function (files) {
     // The two stores are written one after the other, and every tab of this browser writes the same
-    // two. Files with other names do not belong to these steps, so they stay closed.
+    // two. A file that does not belong to these steps stays closed. The name alone is not enough:
+    // two files can share a name, and the wrong one would open beside steps built for the other.
     var names = store.restoredSourceNames || [];
-    var mine = files.length === names.length && files.every(function (f, i) { return f.name === names[i]; });
+    var keyOf = function (f) { return f.name + ':' + f.size + ':' + f.lastModified; };
+    var mine = files.length === names.length && files.every(function (f, i) { return keyOf(f) === names[i]; });
     if (mine && files.length && !store.state.source.files.length) {
       U.toast(files.length > 1
         ? DL.t('msg.workspaceBackMany', { n: DL.pluralize(files.length, 'file') })

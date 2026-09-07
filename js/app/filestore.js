@@ -16,6 +16,30 @@
   // connections do not, and the file of the last write could be the older one.
   var dbp = null;
 
+  // True when the database itself is wrong, not the work asked of it: a store that is not there
+  // after an upgrade that stopped half way, or a database that a later build made. Neither heals
+  // on its own, and without a way back every file the person opens says that it cannot be kept.
+  function brokenDb(err) {
+    var name = err && err.name;
+    return name === 'NotFoundError' || name === 'VersionError' || name === 'InvalidStateError';
+  }
+
+  var repaired = false;
+
+  // Removes the database so that the next open makes it again. Once only: a second failure is
+  // not the database.
+  function repair() {
+    if (repaired || !root.indexedDB) return Promise.resolve(false);
+    repaired = true;
+    dbp = null;
+    return new Promise(function (resolve) {
+      var req = root.indexedDB.deleteDatabase(NAME);
+      req.onsuccess = function () { resolve(true); };
+      req.onerror = function () { resolve(false); };
+      req.onblocked = function () { resolve(false); };
+    });
+  }
+
   function open() {
     if (dbp) return dbp;
     dbp = new Promise(function (resolve, reject) {
@@ -38,6 +62,13 @@
   }
 
   function run(mode, action) {
+    return once(mode, action).catch(function (err) {
+      if (!brokenDb(err) || repaired) throw err;
+      return repair().then(function (done) { if (!done) throw err; return once(mode, action); });
+    });
+  }
+
+  function once(mode, action) {
     return open().then(function (db) {
       return new Promise(function (resolve, reject) {
         var out;
