@@ -517,11 +517,12 @@
       yes: DL.t('msg.newYes')
     }, function () {
       U.confirm({ title: DL.t('msg.newSureTitle'), message: DL.t('msg.newSureMessage'), yes: DL.t('msg.newSureYes'), danger: true }, function () {
+        // A file dropped on the page can start a batch while the questions are on the screen.
+        if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
         autosaveSoon.cancel();
         autosaveNow(); // a change that waits goes to the old record before the steps go away
         store.replaceWorkflow({ id: null, name: '', steps: [] });
         loadToken++; // a load that is on its way must not put its file on the empty screen
-        batchToken++; // and a batch that is on its way must not go on with the new worker
         searchToken++;
         exportToken++;
         store.setSourceFile(null);
