@@ -505,7 +505,7 @@
     U.toast(DL.t('msg.autosaveOn', { name: st.workflow.name }), 'success');
   });
 
-  // Empties the steps so that the user can start again. The file that is open stays open.
+  // Empties the steps and closes the file, so that the user can start again.
   function newWorkflow() {
     grid.closeProfile();
     if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
