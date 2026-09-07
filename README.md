@@ -48,6 +48,39 @@ Then open `http://localhost:8765` in a modern browser (Chrome, Edge, Firefox or 
 
 Note: The Web Worker needs a web server. Most browsers do not start workers from `file://` addresses.
 
+## The dl command
+
+The same engine runs on a terminal. `dl` takes a workflow file and one or more data files, runs the
+steps, and writes the result.
+
+```
+dl workflow.json input.csv -o out.csv        # write a file
+dl workflow.json input.csv                   # write to standard output
+dl workflow.json jan.csv feb.csv -o q1.csv   # many files, one source
+dl workflow.json input.csv --dry-run         # run every step, write nothing
+dl workflow.json input.csv --validate        # check the workflow against the files
+```
+
+| Option | What it does |
+| --- | --- |
+| `-o`, `--output <file>` | Write here. Without it the result goes to standard output. |
+| `--format <id>` | `csv`, `tsv`, `delimited`, `xlsx` or `json`. Without it the format comes from the name of the output file, or `csv`. |
+| `--dry-run` | Run every step and write nothing. Says what the result would hold. |
+| `--validate` | Check the settings of each step against the columns that the files really have, then stop. |
+| `-q`, `--quiet` | Say nothing except errors. |
+
+Everything that `dl` says about its work goes to standard error, so a pipe carries only data. It
+answers 0 when the work is done and 1 when it is not.
+
+More than one input file is read as one Data Source, one file after the other, with the settings
+that the workflow holds. Columns go by name.
+
+A workflow file comes from the page: open Workflows and use Export.
+
+Binaries for Linux, macOS and Windows, with packages for Debian, Red Hat and Alpine, are on the
+[releases page](https://github.com/ethanpil/delimiter-lab/releases). Each release says how to
+install them.
+
 ## Test
 
 Run the engine tests and the worker tests:

@@ -1,0 +1,305 @@
+name: Release
+
+# Runs when a tag that starts with v is pushed, for example v1.0.
+# It builds the dl command for every platform, packs it, and puts the files on the release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The tag to build, for example v1.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------- one build for every platform
+  binaries:
+    name: Build the binaries
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The tests must pass before anything is built for a release. The parity suite is the one
+      # that says the command and the page give the same answer.
+      - name: Tests
+        run: npm test
+
+      - name: The version of the tag and the version of the application must agree
+        id: version
+        run: |
+          set -eu
+          version=$(sed -n "s/.*DL\.VERSION = '\([^']*\)'.*/\1/p" js/manifest.js)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          tag="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::The tag is $tag but js/manifest.js says $version. They must agree."
+            exit 1
+          fi
+          echo "Building version $version"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.1.38'
+
+      # One machine builds every target. The binary carries its own runtime, so a person who
+      # downloads it needs nothing else.
+      - name: Build
+        run: |
+          set -eu
+          mkdir -p out
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do
+            name="dl-$target"
+            case "$target" in windows-*) name="$name.exe" ;; esac
+            echo "--- $target"
+            bun build --compile --minify --target="bun-$target" ./dist/dl.mjs --outfile "out/$name"
+          done
+          ls -la out
+
+      - name: Check that the Linux binary runs
+        run: |
+          set -eu
+          chmod +x out/dl-linux-x64
+          ./out/dl-linux-x64 --version
+          ./out/dl-linux-x64 --help > /dev/null
+          printf 'name,city\n ada ,London\n' > /tmp/in.csv
+          cat > /tmp/wf.json <<'JSON'
+          { "format": "delimiter-lab-workflow", "version": 1, "name": "Check", "columns": [],
+            "sourceOptions": null,
+            "steps": [ { "id": "s1", "opId": "padTrim", "params": { "columns": ["name"], "trim": "both" }, "enabled": true },
+                       { "id": "s2", "opId": "case", "params": { "columns": ["name"], "mode": "title" }, "enabled": true } ] }
+          JSON
+          ./out/dl-linux-x64 /tmp/wf.json /tmp/in.csv -o /tmp/out.csv --quiet
+          grep -q 'Ada,London' /tmp/out.csv || { echo "::error::the binary gave the wrong answer"; cat /tmp/out.csv; exit 1; }
+          echo "the binary reads, runs and writes"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raw-binaries
+          path: out/*
+          retention-days: 1
+
+  # ---------------------------------------------------------------- one file for both Mac chips
+  macos:
+    name: Join the two Mac binaries
+    needs: binaries
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: raw-binaries
+          path: out
+
+      # lipo puts the Intel build and the Apple silicon build in one file, so one download runs
+      # on either kind of Mac.
+      - name: Join
+        run: |
+          set -eu
+          chmod +x out/dl-darwin-x64 out/dl-darwin-arm64
+          lipo -create -output out/dl-macos-universal out/dl-darwin-x64 out/dl-darwin-arm64
+          lipo -info out/dl-macos-universal
+          chmod +x out/dl-macos-universal
+          ./out/dl-macos-universal --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: out/dl-macos-universal
+          retention-days: 1
+
+  # ---------------------------------------------------------------- the packages
+  packages:
+    name: Make the packages
+    needs: [binaries, macos]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.binaries.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: raw-binaries
+          path: out
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-universal
+          path: out
+
+      - name: Get nfpm
+        run: |
+          set -eu
+          curl -sSfL -o /tmp/nfpm.tar.gz \
+            https://github.com/goreleaser/nfpm/releases/download/v2.41.1/nfpm_2.41.1_Linux_x86_64.tar.gz
+          tar -xzf /tmp/nfpm.tar.gz -C /tmp nfpm
+          sudo install /tmp/nfpm /usr/local/bin/nfpm
+          nfpm --version
+
+      # One description makes the Debian, the Red Hat and the Alpine package, for both chips.
+      - name: Build deb, rpm and apk
+        run: |
+          set -eu
+          mkdir -p release
+          for arch in amd64 arm64; do
+            case "$arch" in
+              amd64) src=out/dl-linux-x64 ;;
+              arm64) src=out/dl-linux-arm64 ;;
+            esac
+            chmod +x "$src"
+            cp "$src" packaging/dl
+            for kind in deb rpm apk; do
+              ARCH="$arch" VERSION="$VERSION" nfpm package -f packaging/nfpm.yaml -p "$kind" -t release/
+            done
+            rm -f packaging/dl
+          done
+          ls -la release
+
+      - name: Pack the plain binaries
+        run: |
+          set -eu
+          cd out
+          chmod +x dl-linux-x64 dl-linux-arm64 dl-darwin-x64 dl-darwin-arm64 dl-macos-universal
+          tar -czf "../release/dl-$VERSION-linux-x64.tar.gz" dl-linux-x64
+          tar -czf "../release/dl-$VERSION-linux-arm64.tar.gz" dl-linux-arm64
+          tar -czf "../release/dl-$VERSION-macos-universal.tar.gz" dl-macos-universal
+          zip -q "../release/dl-$VERSION-windows-x64.zip" dl-windows-x64.exe
+          cd ..
+          ls -la release
+
+      - name: Write the checksums
+        run: |
+          set -eu
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: release/*
+          retention-days: 7
+
+  # ---------------------------------------------------------------- the release itself
+  release:
+    name: Publish the release
+    needs: [binaries, packages]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.binaries.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: release
+
+      # The names of the packages come from nfpm, so the instructions read the names off the
+      # files that were really built in place of guessing them.
+      - name: Write the notes
+        run: |
+          set -eu
+          base="https://github.com/${{ github.repository }}/releases/download/v$VERSION"
+          deb=$(cd release && ls *amd64.deb 2>/dev/null | head -1 || true)
+          rpm=$(cd release && ls *x86_64.rpm 2>/dev/null | head -1 || true)
+          apk=$(cd release && ls *x86_64.apk 2>/dev/null | head -1 || true)
+          mac=$(cd release && ls *macos-universal.tar.gz | head -1)
+          lin=$(cd release && ls *linux-x64.tar.gz | head -1)
+          win=$(cd release && ls *windows-x64.zip | head -1)
+          {
+            echo "The \`dl\` command runs a workflow on files from a terminal. It gives the same"
+            echo "answer as the page at https://ethanpil.github.io/delimiter-lab/, because both run"
+            echo "the same engine, built from one source."
+            echo
+            echo '```'
+            echo "dl workflow.json input.csv -o out.csv        # write a file"
+            echo "dl workflow.json input.csv                   # write to standard output"
+            echo "dl workflow.json jan.csv feb.csv -o q1.csv   # many files, one source"
+            echo "dl workflow.json input.csv --dry-run         # run every step, write nothing"
+            echo "dl workflow.json input.csv --validate        # check the workflow against the files"
+            echo '```'
+            echo
+            echo "A workflow file comes from the page: open Workflows and use Export."
+            echo
+            echo "## Install"
+            echo
+            echo "### Debian and Ubuntu"
+            echo '```'
+            echo "curl -LO $base/$deb"
+            echo "sudo dpkg -i $deb"
+            echo '```'
+            echo
+            echo "### Fedora, Red Hat and SUSE"
+            echo '```'
+            echo "curl -LO $base/$rpm"
+            echo "sudo rpm -i $rpm"
+            echo '```'
+            echo
+            echo "### Alpine"
+            echo '```'
+            echo "curl -LO $base/$apk"
+            echo "sudo apk add --allow-untrusted $apk"
+            echo '```'
+            echo
+            echo "### macOS"
+            echo
+            echo "One file runs on Intel and on Apple silicon."
+            echo '```'
+            echo "curl -LO $base/$mac"
+            echo "tar -xzf $mac"
+            echo "chmod +x dl-macos-universal"
+            echo "xattr -d com.apple.quarantine dl-macos-universal   # macOS holds a downloaded file"
+            echo "sudo mv dl-macos-universal /usr/local/bin/dl"
+            echo '```'
+            echo
+            echo "### Linux, without a package"
+            echo '```'
+            echo "curl -LO $base/$lin"
+            echo "tar -xzf $lin"
+            echo "chmod +x dl-linux-x64"
+            echo "sudo mv dl-linux-x64 /usr/local/bin/dl"
+            echo '```'
+            echo
+            echo "For a machine with an ARM chip, take the file whose name says arm64."
+            echo
+            echo "### Windows"
+            echo
+            echo "Take \`$win\`, open it, and put \`dl-windows-x64.exe\` in a folder that is on your"
+            echo "PATH. Name it \`dl.exe\` for the short name."
+            echo
+            echo "## Check a download"
+            echo
+            echo "\`SHA256SUMS.txt\` holds the checksum of every file here."
+            echo '```'
+            echo "sha256sum -c SHA256SUMS.txt --ignore-missing"
+            echo '```'
+            echo
+            echo "## The files"
+            echo
+            echo '```'
+            (cd release && ls -1)
+            echo '```'
+          } > notes.md
+          cat notes.md
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Delimiter Lab ${{ env.VERSION }}
+          body_path: notes.md
+          files: release/*
+          draft: false
+          prerelease: false

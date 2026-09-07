@@ -1,0 +1,23 @@
+# One description of the package, for Debian, Red Hat and Alpine.
+# The workflow sets ARCH and VERSION, and puts the binary for that architecture at packaging/dl.
+name: dl
+arch: ${ARCH}
+version: ${VERSION}
+version_schema: none
+section: utils
+priority: optional
+maintainer: Delimiter Lab <noreply@github.com>
+description: |
+  Run a Delimiter Lab workflow on CSV, TSV and Excel files.
+  The dl command reads a workflow file and one or more data files, runs the
+  steps of the workflow, and writes the result. It gives the same answer as
+  the page, because both run the same engine.
+vendor: Delimiter Lab
+homepage: https://github.com/ethanpil/delimiter-lab
+license: MIT
+
+contents:
+  - src: ./dl
+    dst: /usr/bin/dl
+    file_info:
+      mode: 0755

@@ -1,0 +1,40 @@
+name: Check
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Build, types and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Types
+        run: npm run typecheck
+
+      # npm test builds first, then runs the engine, worker, bundle and parity suites.
+      # The parity suite runs the same workflow through the worker of the page and through the
+      # dl command, and compares the bytes.
+      - name: Tests
+        run: npm test
+
+      # GitHub Pages serves the files of the repository and has no build step, so
+      # dist/engine.global.js is committed. It must match the sources at this commit.
+      - name: The committed engine matches its source
+        run: |
+          if ! git diff --exit-code -- dist/engine.global.js; then
+            echo "::error::dist/engine.global.js does not match packages/engine/src. Run: npm run build"
+            exit 1
+          fi
