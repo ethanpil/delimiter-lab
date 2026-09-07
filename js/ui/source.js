@@ -109,8 +109,8 @@
     var each = (info && info.files && info.files.length === files.length) ? info.files : null;
     var items = files.map(function (f, i) {
       var rows = each ? each[i].rowCount : undefined;
-      return U.el('li', { class: 'source-file' }, [
-        U.el('i', { class: 'bi bi-file-earmark-text me-2 text-secondary' }),
+      return U.el('li', { class: 'source-file', draggable: 'true', title: DL.t('source.dragToOrder') }, [
+        U.el('i', { class: 'bi bi-grip-vertical me-2 text-secondary source-grip' }),
         U.el('span', { class: 'source-file-name', text: f.name }),
         U.el('span', { class: 'text-secondary ms-2 small', text: U.fmtBytes(f.size) + (rows === undefined ? '' : ' · ' + DL.pluralize(rows, 'row')) }),
         U.el('button', {
@@ -126,9 +126,12 @@
       add.value = '';
       if (picked.length) self.actions.addFiles(picked);
     });
+    var list = U.el('ul', { class: 'source-file-list' }, items);
+    // The order of the files is the order of the rows, so a drag changes the data.
+    DL.fields.sortable(list, 'li[draggable]', function (from, to) { self.actions.moveFile(from, to); });
     return U.el('div', { class: 'mt-3' }, [
       U.el('div', { class: 'field-label', text: DL.t('source.files') }),
-      U.el('ul', { class: 'source-file-list' }, items),
+      list,
       U.el('div', { class: 'd-flex align-items-center gap-2 mt-2' }, [
         U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', onclick: function () { add.click(); } },
           [U.el('i', { class: 'bi bi-plus-lg me-1' }), DL.t('source.addFiles')]),

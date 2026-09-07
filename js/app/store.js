@@ -353,6 +353,20 @@
     return added;
   };
 
+  // Moves one file of the source to another place in the list. toIndex is the place that the file
+  // takes, before the file itself goes out of the list, as moveStep() takes it. Gives true when the
+  // list changed. The order of the files is the order of the rows, so the source reads again.
+  Store.prototype.moveSourceFile = function (from, toIndex) {
+    var files = this.state.source.files.slice();
+    if (from < 0 || from >= files.length) return false;
+    if (toIndex > from) toIndex--;
+    toIndex = Math.max(0, Math.min(files.length - 1, toIndex));
+    if (toIndex === from) return false;
+    files.splice(toIndex, 0, files.splice(from, 1)[0]);
+    this.setSourceFiles(files, true);
+    return true;
+  };
+
   Store.prototype.removeSourceFile = function (index) {
     var files = this.state.source.files.slice();
     if (index < 0 || index >= files.length) return;

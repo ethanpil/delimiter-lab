@@ -19,6 +19,7 @@
     openFiles: openFiles,
     addFiles: addSourceFiles,
     removeFile: removeSourceFile,
+    moveFile: moveSourceFile,
     reload: loadSource,
     loadSample: function () { openFile(DL.SourceView.sampleFile()); }
   });
@@ -128,6 +129,12 @@
     var added = store.addSourceFiles(good);
     if (!added) { U.toast(DL.t('msg.filesAlreadyThere'), 'info'); return; }
     U.toast(DL.t('msg.filesAdded', { n: DL.pluralize(added, 'file') }), 'success');
+    keepWorkspace();
+    startLoad();
+  }
+
+  function moveSourceFile(from, to) {
+    if (!store.moveSourceFile(from, to)) return;
     keepWorkspace();
     startLoad();
   }
