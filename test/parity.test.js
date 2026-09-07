@@ -1,9 +1,16 @@
 /* Parity: the page and the command line must give the same bytes. Run: node test/parity.test.js
  *
- * Both sides run the same workflow over the same files. The browser side loads the engine exactly
- * as the page does, through js/manifest.js and dist/engine.global.js, and drives it through the
- * worker's own message protocol. The terminal side runs the real dl command as a separate process.
- * The two outputs are then compared byte for byte.
+ * Both sides run the same workflow file over the same data files. The browser side loads the engine
+ * exactly as the page does, through js/manifest.js and dist/engine.global.js, and drives it through
+ * the worker's own message protocol. The terminal side runs the real dl command as a separate
+ * process. The two outputs are then compared byte for byte.
+ *
+ * Both sides read the workflow from disk through DL.parseWorkflow and shape the steps with
+ * DL.workerSteps, which is what the page and the command both do, so the comparison covers the
+ * reading of a workflow and not only the running of it.
+ *
+ * Both sides read dist/, so this holds the two builds to one answer. It does not say that the
+ * answer is right: test/engine.test.js says that.
  *
  * This is the test that holds the promise: one engine, the same answer on every platform.
  */
@@ -34,27 +41,42 @@ const INPUT_B = [
   ' MEI ,Taipei,,2024-04-02'
 ].join('\n') + '\n';
 
-const WORKFLOW = {
-  format: 'delimiter-lab-workflow',
-  version: 1,
-  name: 'Parity',
-  columns: ['name', 'city', 'amount', 'when'],
-  sourceOptions: null,
-  steps: [
-    { id: 's1', opId: 'padTrim', params: { columns: ['name'], trim: 'both' }, enabled: true },
-    { id: 's2', opId: 'case', params: { columns: ['name'], mode: 'title' }, enabled: true },
-    { id: 's3', opId: 'numFormat', params: { columns: ['amount'], decimals: 2, thousands: ',' }, enabled: true },
-    { id: 's4', opId: 'dateFormat', params: { columns: ['when'], format: 'D MMM YYYY', pattern: 'D MMM YYYY' }, enabled: true },
-    { id: 's5', opId: 'sort', params: { keys: [{ column: 'name', type: 'auto', dir: 'asc' }] }, enabled: true }
-  ]
-};
+const STEPS = [
+  { id: 's1', opId: 'padTrim', params: { columns: ['name'], trim: 'both' }, enabled: true },
+  { id: 's2', opId: 'case', params: { columns: ['name'], mode: 'title' }, enabled: true },
+  { id: 's3', opId: 'numFormat', params: { columns: ['amount'], decimals: 2, thousands: ',' }, enabled: true },
+  { id: 's4', opId: 'dateFormat', params: { columns: ['when'], format: 'D MMM YYYY', pattern: 'D MMM YYYY' }, enabled: true },
+  { id: 's5', opId: 'sort', params: { keys: [{ column: 'name', type: 'auto', dir: 'asc' }] }, enabled: true }
+];
 
 const aPath = path.join(tmp, 'a.csv');
 const bPath = path.join(tmp, 'b.csv');
-const wfPath = path.join(tmp, 'wf.json');
 fs.writeFileSync(aPath, INPUT_A);
 fs.writeFileSync(bPath, INPUT_B);
-fs.writeFileSync(wfPath, JSON.stringify(WORKFLOW, null, 2));
+
+let wfCount = 0;
+// Writes a workflow file, which is what a person exports from the page and gives to the command.
+function workflow(steps, sourceOptions) {
+  const file = path.join(tmp, 'wf-' + (++wfCount) + '.json');
+  fs.writeFileSync(file, JSON.stringify({
+    format: 'delimiter-lab-workflow',
+    version: 1,
+    name: 'Parity ' + wfCount,
+    columns: ['name', 'city', 'amount', 'when'],
+    sourceOptions: sourceOptions || null,
+    steps: steps
+  }, null, 2));
+  return file;
+}
+
+const PLAIN = workflow(STEPS);
+// A stacked source with the name of the file as a column. The name of a file is where the two
+// sides once differed: the command kept the whole path.
+const STACKED = workflow(STEPS, { multiFile: 'stack', fileNameColumn: true });
+const WITH_OFF_STEP = workflow(STEPS.map((s, i) => (i === 1 ? Object.assign({}, s, { enabled: false }) : s)));
+const CANNOT_RUN = workflow([
+  { id: 's1', opId: 'case', params: { columns: ['no such column'], mode: 'upper' }, enabled: true }
+]);
 
 /* ---------- the browser side ---------- */
 
@@ -109,27 +131,29 @@ async function sendAsync(msg) {
   throw new Error('the worker gave no reply to ' + msg.type);
 }
 
-async function browserBytes(files, format) {
+// Reads the files and runs the steps, the way the page does. Gives the reply of the run.
+async function browserRun(files, wfPath) {
+  // A limit of memory belongs to the machine, not to the engine. Both sides are far above what
+  // these files need, so it cannot change the answer.
   send({ type: 'config', maxCells: 8e6 });
-  // The settings come from the workflow and are completed the same way on both sides, so that the
-  // comparison is of the engine and not of two different sets of settings.
-  const options = global.DL.cleanSourceOptions(WORKFLOW.sourceOptions || {});
-  if (files.length > 1) options.multiFile = 'stack';
+  const wf = global.DL.parseWorkflow(fs.readFileSync(wfPath, 'utf8'));
   const loaded = send({
     type: 'load',
     files: files.map((f) => new BrowserFile(fs.readFileSync(f), path.basename(f))),
-    options: options
+    options: global.DL.cleanSourceOptions(wf.sourceOptions || {})
   });
   assert.strictEqual(loaded.type, 'loaded', 'the browser side could not read the files');
-  const steps = WORKFLOW.steps.map((s) => ({ id: s.id, opId: s.opId, params: s.params, skip: false }));
-  const ran = await sendAsync({ type: 'run', steps: steps });
+  return await sendAsync({ type: 'run', steps: global.DL.workerSteps(wf.steps) });
+}
+
+async function browserBytes(files, format, wfPath) {
+  const ran = await browserRun(files, wfPath);
   assert.ok(ran.type === 'ran', 'the browser side could not run the steps: ' + JSON.stringify(ran).slice(0, 200));
-  const last = ran.results[ran.results.length - 1];
   ran.results.forEach(function (r, i) {
-    assert.ok(r.status === 'ok' || r.status === 'warning',
-      'step ' + (i + 1) + ' (' + WORKFLOW.steps[i].opId + ') came back "' + r.status + '": ' +
-      (r.error || JSON.stringify(r.notes)));
+    assert.ok(r.status === 'ok' || r.status === 'warning' || r.status === 'skipped',
+      'step ' + (i + 1) + ' came back "' + r.status + '": ' + (r.error || JSON.stringify(r.notes)));
   });
+  const last = ran.results[ran.results.length - 1];
   const out = await sendAsync({
     type: 'export',
     stepId: last.stepId,
@@ -141,10 +165,21 @@ async function browserBytes(files, format) {
 
 /* ---------- the terminal side ---------- */
 
-function cliBytes(files, format) {
-  const outPath = path.join(tmp, 'cli-out.' + format);
+function cliBytes(files, format, wfPath) {
+  const outPath = path.join(tmp, 'cli-out-' + (nextId++) + '.' + format);
   execFileSync(process.execPath, [path.join(root, 'dist/dl.mjs'), wfPath].concat(files, ['-o', outPath, '--quiet']));
   return fs.readFileSync(outPath);
+}
+
+// Runs a workflow that cannot run, and gives what the command said about it.
+function cliFailure(files, wfPath) {
+  try {
+    execFileSync(process.execPath, [path.join(root, 'dist/dl.mjs'), wfPath].concat(files, ['--quiet']),
+      { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (e) {
+    return { code: e.status, said: String(e.stderr || '').trim() };
+  }
+  throw new Error('the command answered with success for a workflow that cannot run');
 }
 
 /* ---------- compare ---------- */
@@ -156,35 +191,69 @@ async function test(name, fn) {
   catch (e) { failed++; console.error('FAIL ' + name + '\n  ' + (e && e.stack ? e.stack : e)); }
 }
 
+function sameBytes(fromBrowser, fromCli, what) {
+  if (!fromCli.equals(fromBrowser)) {
+    fs.writeFileSync(path.join(root, 'parity-browser.out'), fromBrowser);
+    fs.writeFileSync(path.join(root, 'parity-cli.out'), fromCli);
+  }
+  assert.ok(fromCli.equals(fromBrowser), 'the two sides wrote different bytes for ' + what);
+}
+
 (async () => {
   await test('one file: the page and the command line write the same CSV', async () => {
-    const fromBrowser = await browserBytes([aPath], 'csv');
-    const fromCli = cliBytes([aPath], 'csv');
+    const fromBrowser = await browserBytes([aPath], 'csv', PLAIN);
+    const fromCli = cliBytes([aPath], 'csv', PLAIN);
     assert.ok(fromBrowser.length > 0, 'the output is empty');
-    assert.strictEqual(fromCli.toString('utf8'), fromBrowser.toString('utf8'),
-      'the two sides wrote different text');
-    assert.ok(fromCli.equals(fromBrowser), 'the two sides wrote different bytes');
+    assert.strictEqual(fromCli.toString('utf8'), fromBrowser.toString('utf8'), 'the two sides wrote different text');
+    sameBytes(fromBrowser, fromCli, 'one file');
   });
 
   await test('many files: the page and the command line stack them the same way', async () => {
-    const fromBrowser = await browserBytes([aPath, bPath], 'csv');
-    const fromCli = cliBytes([aPath, bPath], 'csv');
-    assert.ok(fromBrowser.toString('utf8').split('\n').length > 5, 'the stacked output looks too short');
-    if (!fromCli.equals(fromBrowser)) {
-      fs.writeFileSync(path.join(root, 'parity-browser.txt'), fromBrowser);
-      fs.writeFileSync(path.join(root, 'parity-cli.txt'), fromCli);
-    }
-    assert.ok(fromCli.equals(fromBrowser), 'the two sides wrote different bytes for a stacked source');
+    const fromBrowser = await browserBytes([aPath, bPath], 'csv', STACKED);
+    const fromCli = cliBytes([aPath, bPath], 'csv', STACKED);
+    const text = fromBrowser.toString('utf8');
+    assert.ok(text.split('\n').length > 5, 'the stacked output looks too short');
+    // The name of the file must be the name alone on both sides, never the way to it.
+    assert.match(text, /(^|\n)"?a\.csv/, 'the name of the file is missing from the stacked output');
+    assert.ok(text.indexOf(tmp) < 0, 'the browser side wrote a whole path');
+    assert.ok(fromCli.toString('utf8').indexOf(tmp) < 0, 'the command wrote a whole path');
+    sameBytes(fromBrowser, fromCli, 'a stacked source');
   });
 
   await test('another format: the two sides agree on TSV as well', async () => {
-    const fromBrowser = await browserBytes([aPath], 'tsv');
-    const fromCli = cliBytes([aPath], 'tsv');
-    assert.ok(fromCli.equals(fromBrowser), 'the two sides wrote different bytes for TSV');
+    sameBytes(await browserBytes([aPath], 'tsv', PLAIN), cliBytes([aPath], 'tsv', PLAIN), 'TSV');
+  });
+
+  await test('a workbook: the two sides write the same bytes for xlsx', async () => {
+    const fromBrowser = await browserBytes([aPath], 'xlsx', PLAIN);
+    const fromCli = cliBytes([aPath], 'xlsx', PLAIN);
+    assert.strictEqual(fromBrowser.slice(0, 2).toString('latin1'), 'PK', 'the workbook is not a zip');
+    sameBytes(fromBrowser, fromCli, 'a workbook');
+  });
+
+  await test('a step that is off is left out on both sides', async () => {
+    const fromBrowser = await browserBytes([aPath], 'csv', WITH_OFF_STEP);
+    const fromCli = cliBytes([aPath], 'csv', WITH_OFF_STEP);
+    assert.ok(fromBrowser.toString('utf8').indexOf('Ada') < 0, 'the step that is off still ran');
+    sameBytes(fromBrowser, fromCli, 'a workflow with a step that is off');
+  });
+
+  await test('a workflow that cannot run fails the same way on both sides', async () => {
+    const ran = await browserRun([aPath], CANNOT_RUN);
+    // A step stops either because its settings do not fit the columns ("invalid") or because it
+    // threw while it ran ("error"). Both mean that the workflow cannot go on.
+    const bad = ran.results.filter((r) => r.status === 'error' || r.status === 'invalid')[0];
+    assert.ok(bad, 'the browser side did not report a step that cannot run: ' +
+      JSON.stringify(ran.results.map((r) => r.status)));
+    const browserSaid = bad.error || bad.notes.map((n) => global.DL.noteText(n)).join('; ');
+    const cli = cliFailure([aPath], CANNOT_RUN);
+    assert.strictEqual(cli.code, 1, 'the command must answer with a failure');
+    assert.ok(cli.said.indexOf(browserSaid) >= 0,
+      'the two sides said different things:\n  page: ' + browserSaid + '\n  dl:   ' + cli.said);
   });
 
   await test('the values themselves came through, not two empty files', async () => {
-    const text = (await browserBytes([aPath], 'csv')).toString('utf8');
+    const text = (await browserBytes([aPath], 'csv', PLAIN)).toString('utf8');
     assert.match(text, /Ada/, 'the trim and the case steps did not run');
     assert.match(text, /1,234\.50/, 'the number step did not run');
     assert.match(text, /15 Jan 2024/, 'the date step did not run');
