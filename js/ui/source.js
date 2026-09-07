@@ -48,7 +48,7 @@
 
     var drop = U.el('div', { class: 'dropzone', tabindex: '0', role: 'button' }, [
       U.el('i', { class: 'bi bi-cloud-arrow-up' }),
-      src.file ? U.el('div', {}, [U.el('strong', { text: src.file.name }), ' · ' + U.fmtBytes(src.file.size), U.el('div', { class: 'small', text: DL.t('source.dropAnother') })])
+      src.file ? U.el('div', {}, [U.el('strong', { text: src.file.name }), ' · ' + U.fmtBytes(src.file.size), U.el('div', { class: 'small', text: DL.t(stacking(st) ? 'source.dropToAdd' : 'source.dropAnother') })])
         : U.el('div', {}, [U.el('strong', { text: DL.t('source.dropHere') }), DL.t('source.orClick'), U.el('div', { class: 'small mt-1', text: DL.t('source.formats', { types: DL.acceptedExtensions().map(function (e) { return e.slice(1).toUpperCase(); }).join(', ') }) })])
     ]);
     drop.addEventListener('click', function () { fileInput.click(); });
@@ -81,9 +81,11 @@
     if (src.status === 'ready' && src.info) {
       var info = src.info;
       var bits = [DL.rowsAndColumns(info.rowCount, info.columns.length)];
-      if (info.encoding) bits.push(DL.t('source.encoding', { name: info.encoding.toUpperCase() }));
-      if (info.delimiter) bits.push(DL.t('source.separator', { name: describeDelimiter(info.delimiter) }));
-      if (info.sheet) bits.push(DL.t('source.sheet', { name: info.sheet }));
+      var one = src.files.length < 2; // with many files these describe the first file only
+      if (one && info.encoding) bits.push(DL.t('source.encoding', { name: info.encoding.toUpperCase() }));
+      if (one && info.delimiter) bits.push(DL.t('source.separator', { name: describeDelimiter(info.delimiter) }));
+      if (one && info.sheet) bits.push(DL.t('source.sheet', { name: info.sheet }));
+      if (!one) bits.push(DL.t('source.fromFiles', { n: DL.pluralize(src.files.length, 'file') }));
       bits.push(DL.t('source.readIn', { s: (info.ms / 1000).toFixed(1) }));
       var box = U.el('div', { class: 'alert alert-light border mt-3 mb-0 py-2' }, [
         U.el('div', {}, [U.el('i', { class: 'bi bi-check-circle text-success me-1' }), bits.join(' · ')])
@@ -103,10 +105,10 @@
     var st = this.store.state;
     var files = st.source.files;
     var info = st.source.info;
-    var rowsOf = {};
-    if (info && info.files) info.files.forEach(function (f) { rowsOf[f.name + ':' + f.size] = f.rowCount; });
+    // The information of the source lists the files in the same order, so the place gives the rows.
+    var each = (info && info.files && info.files.length === files.length) ? info.files : null;
     var items = files.map(function (f, i) {
-      var rows = rowsOf[f.name + ':' + f.size];
+      var rows = each ? each[i].rowCount : undefined;
       return U.el('li', { class: 'source-file' }, [
         U.el('i', { class: 'bi bi-file-earmark-text me-2 text-secondary' }),
         U.el('span', { class: 'source-file-name', text: f.name }),
@@ -158,6 +160,8 @@
       patch[key] = value;
       self.store.setSourceOptions(patch);
       DL.fields.updateVisibility(params, self.store.state.source.options, rendered.els);
+      // This one says what a new file does. It does not change how the bytes are read.
+      if (key === 'multiFile') { self.render(); return; }
       if (opts && opts.merge) apply();
       else { apply.cancel(); self.actions.reload(); }
     });
