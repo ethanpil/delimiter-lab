@@ -11,7 +11,8 @@
     this.listeners = [];
     this.state = {
       source: {
-        file: null,
+        file: null,        // the first of the files; it names the source
+        files: [],         // every file that the source reads, one after the other
         options: DL.defaultSourceOptions(),
         info: null,        // from the worker after a load
         sheets: null,      // sheet names for workbooks
@@ -318,15 +319,51 @@
 
   /* ---------- Source ---------- */
 
-  Store.prototype.setSourceFile = function (file) {
-    this.state.source.file = file;
+  // Puts a list of files in the source. The first of them names the source.
+  Store.prototype.setSourceFiles = function (files) {
+    files = files ? [].concat(files) : [];
+    this.state.source.files = files;
+    this.state.source.file = files[0] || null;
     this.state.source.info = null;
     this.state.source.sheets = null;
     this.state.source.error = null;
-    this.state.source.status = file ? 'loading' : 'empty';
+    this.state.source.status = files.length ? 'loading' : 'empty';
     this.state.source.options.sheet = '';
     this.invalidateResultsFrom(0);
     this.emit('source');
+  };
+
+  Store.prototype.setSourceFile = function (file) {
+    this.setSourceFiles(file ? [file] : []);
+  };
+
+  // Adds files at the end of the list. A file that is there already does not come a second time.
+  Store.prototype.addSourceFiles = function (files) {
+    var have = {};
+    var kept = this.state.source.files.slice();
+    kept.forEach(function (f) { have[f.name + ':' + f.size + ':' + f.lastModified] = true; });
+    var added = 0;
+    [].concat(files || []).forEach(function (f) {
+      var key = f.name + ':' + f.size + ':' + f.lastModified;
+      if (have[key]) return;
+      have[key] = true;
+      kept.push(f);
+      added++;
+    });
+    if (!added) return 0;
+    var sheet = this.state.source.options.sheet;
+    this.setSourceFiles(kept);
+    this.state.source.options.sheet = sheet; // the sheet belongs to the settings, not to one file
+    return added;
+  };
+
+  Store.prototype.removeSourceFile = function (index) {
+    var files = this.state.source.files.slice();
+    if (index < 0 || index >= files.length) return;
+    files.splice(index, 1);
+    var sheet = this.state.source.options.sheet;
+    this.setSourceFiles(files);
+    if (files.length) this.state.source.options.sheet = sheet;
   };
 
   Store.prototype.setSourceOptions = function (patch) {
@@ -358,7 +395,8 @@
         workflow: this.state.workflow,
         selectedId: this.state.selectedId,
         sourceOptions: this.state.source.options,
-        sourceName: this.state.source.file ? this.state.source.file.name : null
+        sourceName: this.state.source.file ? this.state.source.file.name : null,
+        sourceNames: this.state.source.files.map(function (f) { return f.name; })
       }));
     } catch (e) { /* storage can be full or blocked */ }
   };
@@ -379,6 +417,8 @@
         var ids = this.state.workflow.steps.map(function (s) { return s.id; });
         if (data.selectedId && ids.indexOf(data.selectedId) >= 0) this.state.selectedId = data.selectedId;
         this.restoredSourceName = data.sourceName || null;
+        this.restoredSourceNames = Array.isArray(data.sourceNames) && data.sourceNames.length
+          ? data.sourceNames : (data.sourceName ? [data.sourceName] : []);
         // A restored workflow with an id counts as saved when it is the same as the saved record.
         var saved = this.state.workflow.id && DL.workflows ? DL.workflows.get(this.state.workflow.id) : null;
         if (saved) {
