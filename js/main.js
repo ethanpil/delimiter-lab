@@ -762,7 +762,7 @@
         U.downloadBlob(msg.blob, outName);
         var attention = items.some(function (it) { return it.error || (it.notes && it.notes.length); });
         if (attention) DL.dialogs.batchReport(items);
-        else U.toast(DL.t('msg.downloadedZip', { name: zipName, files: DL.pluralize(done.length, 'file') }), 'success');
+        else U.toast(DL.t('msg.downloadedZip', { name: outName, files: DL.pluralize(done.length, 'file') }), 'success');
       }).catch(function (err) { if (token !== batchToken) return; end(); U.toast(err.message, 'danger'); });
     }
     next();
