@@ -329,6 +329,28 @@ test('sort text uses ranks with direction and empties', () => {
   assert.deepStrictEqual(rowsOf(r2.table).map((x) => x[0]), ['', 'a', 'b', 'B', 'c']);
 });
 
+test('TableBuilder skips rows at the bottom', () => {
+  const rows = [['a', 'b'], ['1', 'x'], ['2', 'y'], ['3', 'z'], ['total', '-']];
+  const build = (opts) => { const b = new DL.TableBuilder(opts); rows.forEach((r) => b.add(r)); return b.finish(); };
+  const one = build({ headers: true, skipRowsBottom: 1 });
+  assert.deepStrictEqual(one.columns, ['a', 'b']);
+  assert.deepStrictEqual(rowsOf(one), [['1', 'x'], ['2', 'y'], ['3', 'z']]);
+  assert.strictEqual(build({ headers: true, skipRowsBottom: 0 }).length, 4);
+  assert.strictEqual(build({ headers: true }).length, 4);
+  // More than the file holds leaves an empty table, not a negative length.
+  const over = build({ headers: true, skipRowsBottom: 99 });
+  assert.strictEqual(over.length, 0);
+  assert.deepStrictEqual(rowsOf(over), []);
+  // The two skips work together, and the count is of the rows that are left.
+  const both = build({ headers: true, skipRows: 1, skipRowsBottom: 1 });
+  assert.deepStrictEqual(both.columns, ['1', 'x']);
+  assert.deepStrictEqual(rowsOf(both), [['2', 'y'], ['3', 'z']]);
+  // An empty row that the rule drops does not count against the rows at the bottom.
+  const blanks = new DL.TableBuilder({ headers: true, skipRowsBottom: 1, skipEmptyLines: true });
+  [['a'], ['1'], ['2'], ['', ''], ['3']].forEach((r) => blanks.add(r));
+  assert.deepStrictEqual(rowsOf(blanks.finish()), [['1'], ['2']]);
+});
+
 test('TableBuilder handles headers, skipped rows, blank rows and ragged rows', () => {
   const b = new DL.TableBuilder({ headers: true, skipRows: 1, skipEmptyLines: true });
   [['title line'], ['a', 'b'], ['', ''], ['1', '2'], ['3'], ['4', '5', '6']].forEach((r) => b.add(r));

@@ -800,10 +800,11 @@
   };
 
   // Builds a columnar table while rows arrive. It reads the header row, skips rows and drops blank rows.
-  // opts: { headers, skipRows, skipEmptyLines }
+  // opts: { headers, skipRows, skipRowsBottom, skipEmptyLines }
   DL.TableBuilder = function (opts) {
     this.headers = opts.headers !== false;
     this.toSkip = Math.max(0, Math.floor(Number(opts.skipRows) || 0));
+    this.toSkipBottom = Math.max(0, Math.floor(Number(opts.skipRowsBottom) || 0));
     this.dropEmpty = opts.skipEmptyLines !== false;
     this.columns = null;   // the header row, when there is one
     this.expected = -1;    // the number of values a row must have (from the header or the first row)
@@ -835,7 +836,14 @@
     var header = this.columns || [];
     while (this.cols.length < header.length) this.cols.push(new Array(this.n).fill(''));
     var names = header.concat(new Array(this.cols.length - header.length).fill(''));
-    return DL.makeTable(DL.cleanHeaders(names), this.cols, this.n);
+    var n = this.n;
+    // The last rows go away. The count is of the rows that the table holds, so the rows that
+    // "Skip rows at the top" and the empty-row rule removed are not in it.
+    if (this.toSkipBottom) {
+      n = Math.max(0, n - this.toSkipBottom);
+      for (var i = 0; i < this.cols.length; i++) this.cols[i].length = n;
+    }
+    return DL.makeTable(DL.cleanHeaders(names), this.cols, n);
   };
 
   /* ---------- Rule lists (shared by Filter, Verify and Sort) ---------- */
@@ -1213,6 +1221,7 @@
 
   var headerOption = { key: 'headers', label: 'First row holds the column names', type: 'boolean', default: true, help: 'Turn this off if the first row is data. Columns are then named "Column 1", "Column 2", …' };
   var skipRowsOption = { key: 'skipRows', label: 'Skip rows at the top', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file starts with notes or a title before the real header row.' };
+  var skipRowsBottomOption = { key: 'skipRowsBottom', label: 'Skip rows at the bottom', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file ends with totals, notes or an empty block. The last rows go away.' };
 
   // Input formats. The worker registers a reader for each id. options are field definitions.
   DL.inputFormats = [
@@ -1223,6 +1232,7 @@
       options: [
         headerOption,
         skipRowsOption,
+        skipRowsBottomOption,
         { key: 'delimiter', label: 'Column separator', type: 'select', default: 'auto', help: 'The character between values. It is detected automatically in most files.',
           options: [{ value: 'auto', label: 'Detect automatically' }, { value: ',', label: 'Comma ( , )' }, { value: '\\t', label: 'Tab' }, { value: ';', label: 'Semicolon ( ; )' }, { value: '|', label: 'Pipe ( | )' }, { value: 'custom', label: 'Other…' }] },
         { key: 'customDelimiter', label: 'Other separator', type: 'text', default: '', showIf: function (o) { return o.delimiter === 'custom'; } },
@@ -1241,6 +1251,7 @@
       options: [
         headerOption,
         skipRowsOption,
+        skipRowsBottomOption,
         { key: 'skipEmptyLines', label: 'Skip empty rows', type: 'boolean', default: true }
       ]
     }
