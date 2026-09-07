@@ -16,14 +16,19 @@ The version in `js/manifest.js` is 1.4.0. `CHANGELOG.md` lists the changes with 
 | --- | --- |
 | Run the application | `python -m http.server 8765` in the project folder, then open `http://localhost:8765`. The Web Worker does not start from a `file://` address; the page shows a clear message then. `.claude/launch.json` holds this server for the coding assistant. |
 | Debug handle | Open the page with `?debug`. `window.DLApp` then gives `store`, `engine`, `grid`, `openFile(file)` and `openFiles(files)`. |
-| Run the engine tests | `node test/engine.test.js` (73 tests) |
-| Run the worker tests | `node test/worker.test.js` (15 tests; loads the real worker in Node with a fake File and the real PapaParse and SheetJS) |
+| Build the engine | `npm install`, then `npm run build`. It writes `dist/engine.global.js` (the page and the worker), `dist/engine.mjs` and `dist/dl.mjs` (the `dl` command). Only the first is in the repository. |
+| Run every test | `npm test`. It builds first, then runs the four sets below. |
+| Run the engine tests | `node test/engine.test.js` (77 tests) |
+| Run the worker tests | `node test/worker.test.js` (20 tests; loads the real worker in Node with a fake File and the real PapaParse and SheetJS) |
+| Run the tests of the build | `node test/bundle.test.js` (the page loads the manifest and then the build; these hold that pair to its promises) |
+| Run the parity tests | `node test/parity.test.js` (one workflow through the worker of the page and through the `dl` command; the bytes must agree) |
+| Check the types | `npm run typecheck` |
 | Make test data | `node test/make-data.js 300000` writes `test/data/` (the `big*.csv` files are ignored by git) |
 | Run the benchmark | `node test/bench.js 1200000` |
 | Check the text keys | Write a small Node script that collects every `DL.t('key'` in `js/` and every `data-i18n*` attribute in `index.html`, loads `js/i18n/en.js` with a stub `DL.registerLocale`, and reports missing and unused keys. Zero of both is the rule. |
-| Release | Set `DL.VERSION` in `js/manifest.js` and the two `?v=` values in `index.html` (stylesheet link and manifest tag). Close the changelog section with the hashes. Commit "Release x.y.z". |
+| Release | Set `DL.VERSION` in `js/manifest.js` and run `npm run build`. Close the changelog section with the hashes. Commit "Release x.y.z", then push the tag `vX.Y`. The tag starts `.github/workflows/release.yml`, which stops when the tag and the manifest do not agree. |
 
-Run both test files before every commit. There is no test runner; each file counts its own results and sets the exit code.
+Run `npm test` before every commit. There is no test runner; each file counts its own results and sets the exit code. `npm test` builds first, so a change to the engine that is not built cannot pass.
 
 ## 3. Structure
 
@@ -44,7 +49,11 @@ js/main.js            Controller: wires the store, the engine and the views
 css/app.css           Styles with theme tokens
 vendor/               Pinned libraries
 test/                 Tests, benchmark, test data
-docs/embedding.md     Plan for a library and a command line tool (not built)
+packages/cli/src/     The dl command: the arguments, and what Node gives the engine
+scripts/build.mjs     The build: makes dist/ from packages/
+packaging/nfpm.yaml   The description that makes the deb, the rpm and the apk
+.github/              The checks on a push, and the build of a release
+docs/embedding.md     How other programs can use the engine. Steps 1 to 3 are built.
 .gitattributes        `* text=auto eol=lf`
 ```
 
@@ -216,4 +225,4 @@ These are known and documented, not fixed:
 - Unpivot builds its lazy columns by hand instead of `DL.selectRows`, so the Changes view cannot follow its rows.
 - The JavaScript step's error path assumes an `Error` object and a JSON-safe return.
 - `DL.maxCells` as a global and `state.pinned`/`state.recent` as eviction heuristics could become explicit limits and reference counts when the engine becomes a library.
-- `docs/embedding.md` describes a library and a command line tool that do not exist yet. The engine is already free of the DOM, so the first step (an ESM build with `runWorkflow`) is small.
+- `docs/embedding.md` still asks for a JSON Schema of the workflow file, for a byte source that reads a file in slices on both platforms, and for an embeddable interface. The engine, the readers and the writers, and the command line tool are built.

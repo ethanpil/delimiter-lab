@@ -48,6 +48,9 @@ Then open `http://localhost:8765` in a modern browser (Chrome, Edge, Firefox or 
 
 Note: The Web Worker needs a web server. Most browsers do not start workers from `file://` addresses.
 
+The page runs with no build. A change to the engine needs one, because the page and the worker load
+`dist/engine.global.js`, which the build makes from `packages/engine/src`. See "Build and test".
+
 ## The dl command
 
 The same engine runs on a terminal. `dl` takes a workflow file and one or more data files, runs the
@@ -68,6 +71,11 @@ dl workflow.json input.csv --validate        # check the workflow against the fi
 | `--dry-run` | Run every step and write nothing. Says what the result would hold. |
 | `--validate` | Check the settings of each step against the columns that the files really have, then stop. |
 | `-q`, `--quiet` | Say nothing except errors. |
+| `-h`, `--help` | Show the options. |
+| `-v`, `--version` | Show the version. |
+| `--` | Everything after this is a file name, even when it starts with `-`. |
+
+`--output=<file>` and `--format=<id>` say the same as `-o <file>` and `--format <id>`.
 
 Everything that `dl` says about its work goes to standard error, so a pipe carries only data. It
 answers 0 when the work is done and 1 when it is not.
@@ -81,16 +89,38 @@ Binaries for Linux, macOS and Windows, with packages for Debian, Red Hat and Alp
 [releases page](https://github.com/ethanpil/delimiter-lab/releases). Each release says how to
 install them.
 
-## Test
+## Build and test
 
-Run the engine tests and the worker tests:
+The engine is TypeScript in `packages/engine/src`. The page, the worker and the `dl` command all
+read what the build makes, so start with:
 
 ```bash
-node test/engine.test.js
+npm install
 ```
 
 ```bash
-node test/worker.test.js
+npm run build
+```
+
+The build writes `dist/engine.global.js`, which the page and the worker load; `dist/engine.mjs` for
+a program that takes the engine as a module; and `dist/dl.mjs`, the `dl` command. Only
+`dist/engine.global.js` is in the repository, because GitHub Pages serves the files as they are and
+has no build step. A change that leaves it behind stops the check on GitHub.
+
+Run every test:
+
+```bash
+npm test
+```
+
+That builds first and then runs four sets: the engine tests, the worker tests, the tests of the
+build, and the parity tests. The parity tests run one workflow through the worker of the page and
+through the `dl` command and compare the bytes, so the page and the command cannot drift apart.
+
+Check the types:
+
+```bash
+npm run typecheck
 ```
 
 Make the test data files (the last argument is the number of rows in the large file):
@@ -110,26 +140,36 @@ node test/bench.js 1200000
 Read `CONTEXT.md` before you change the code. It explains the design, the conventions, the lessons learned and the pitfalls.
 
 ```
-index.html          Page shell. Loads the files from the manifest.
-js/manifest.js      Version and the list of application files
-css/app.css         Styles
-packages/engine/src/core.ts   Table model, value parsing, field types, operation and format registries
-js/engine/worker.js Web Worker: reads files, runs the chain, makes downloads
-packages/engine/src/ops/*.ts  Operations (text, rows, columns, dates, reshape, verify)
-dist/engine.global.js         The build that the page and the worker load as self.DL
-js/app/*.js         State store, worker client, saved workflows, texts, helpers
-js/i18n/*.js        Texts of the user interface, one file per language
-js/ui/*.js          Views: steps list, source panel, step form, data grid, dialogs, timing panel
-js/main.js          Application controller
-vendor/             Bootstrap, Bootstrap Icons, PapaParse, SheetJS
-test/               Tests, benchmark and test data
+index.html                       Page shell. Loads the files from the manifest.
+js/manifest.js                   Version and the list of application files
+css/app.css                      Styles
+packages/engine/src/core.ts      Table model, value parsing, field types, operation and format registries
+packages/engine/src/io.ts        Readers, writers and the zip
+packages/engine/src/run.ts       One step, and a chain of steps
+packages/engine/src/workflow.ts  The workflow file format
+packages/engine/src/ops/*.ts     Operations (text, rows, columns, dates, reshape, verify)
+packages/cli/src/*.ts            The dl command, and what Node gives the engine
+scripts/build.mjs                The build: makes dist/ from packages/
+dist/engine.global.js            The build that the page and the worker load as self.DL
+js/engine/worker.js              Web Worker: the messages of the page, the cache and the slices. It
+                                 calls the engine to read, to run and to write.
+js/app/*.js                      State store, worker client, saved workflows, texts, helpers
+js/i18n/*.js                     Texts of the user interface, one file per language
+js/ui/*.js                       Views: steps list, source panel, step form, data grid, dialogs, timing panel
+js/main.js                       Application controller
+vendor/                          Bootstrap, Bootstrap Icons, PapaParse, SheetJS
+test/                            Tests, benchmark and test data
+packaging/                       The description that makes the deb, the rpm and the apk
+.github/                         The checks on a push, and the build of a release
+docs/                            Notes on the design
+CONTEXT.md                       The design, the conventions and the pitfalls
 ```
 
 ## Add an operation
 
 1. Make a new file in `packages/engine/src/ops/` or add to an existing file. A new file goes into the list in `packages/engine/src/index.ts`.
 2. Call `DL.registerOp` with an `id`, `name`, `category`, `icon`, `description`, `params` and `apply`.
-3. Add a new file to the `ops` list in `js/manifest.js`.
+3. Run `npm run build`. The page, the worker and the `dl` command all read the build.
 
 The `params` list makes the form. The field types are `text`, `number`, `code`, `boolean`, `select`, `checkboxes`, `column`, `columns`, `columnOrder`, `renameMap`, `mapping`, `conditions`, `rules` and `sortKeys`. Each type checks and repairs its value. To add a type, register it with `DL.registerParamType` in `packages/engine/src/core.ts`. Then add a renderer for it in `js/ui/fields.js`.
 
@@ -145,7 +185,7 @@ A result note can be an object `{ text, rows }` instead of a text. The user can 
 
 ## Add an input or output format
 
-`DL.inputFormats` (`core.ts`) lists the input formats with their file extensions and options. The worker has a reader for each format id in `readers` (`worker.js`). `DL.outputFormats` lists the output formats with their options. The worker has a writer for each format id in `writers`.
+`DL.inputFormats` (`core.ts`) lists the input formats with their file extensions and options. `DL.outputFormats` lists the output formats with their options. The engine has a reader and a writer for each format id, in `readers` and `writers` (`packages/engine/src/io.ts`). Both the page and the `dl` command use them, so a format that you add is there on every platform. Run `npm run build` after the change.
 
 ## Add a language
 
@@ -168,7 +208,21 @@ These texts stay in English, because they come from the engine and the data laye
 
 ## Release
 
-Change `DL.VERSION` in `js/manifest.js`. Then change the two `?v=` values in `index.html` (the stylesheet link and the manifest tag). Browsers then load the new files.
+Change `DL.VERSION` in `js/manifest.js` and run `npm run build`, so that the page and the engine
+carry the same number. Close the changelog section with the hashes. Then push a tag with the same
+number and a `v` in front:
+
+```bash
+git tag v1.0 && git push origin v1.0
+```
+
+The tag starts the release build. It stops when the tag and `js/manifest.js` do not agree. It builds
+the `dl` command for Linux, macOS and Windows, makes the deb, the rpm and the apk for both chips,
+writes the checksums, and puts everything on the releases page with the instructions to install it.
+
+Every file that the manifest lists carries `?v=` with the version, so a browser takes the new one.
+`index.html`, `js/manifest.js` and `css/app.css` do not: a browser takes those again when its copy
+is old enough. GitHub Pages says ten minutes.
 
 ## Workflow files
 

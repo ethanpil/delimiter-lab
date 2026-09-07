@@ -1,5 +1,6 @@
 /* Delimiter Lab - file manifest.
- * The page, the worker and the tests read this list. Add new operation files here.
+ * The page, the worker and the tests read this list. The operations are in the build of the
+ * engine, so a new operation goes into packages/engine/src/index.ts, not here.
  */
 (function (root) {
   'use strict';

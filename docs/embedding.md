@@ -30,28 +30,34 @@ delimiterlab (CLI)     run, validate, describe; packaged as a single binary     
 ### 1. Engine package
 
 - Done: the engine is TypeScript in `packages/engine/src`, and `scripts/build.mjs` builds it to one IIFE file for the page and one ESM file for Node. The page loads the build, not the source.
-- Add `DL.runWorkflow(table, workflow, options)` to the core. It validates each step against the real input columns, runs the steps in order, and gives `{ table, results }`. The worker uses the same function without its cache.
+- Done: `DL.runWorkflow(table, steps)` runs the steps in order and gives `{ table, results, failedAt }`. `DL.runStep(step, upstream)` runs one. The worker calls `DL.runStep` behind its cache; the `dl` command calls `DL.runWorkflow`.
+- Done: `DL.parseWorkflow`, `DL.normalizeStep` and `DL.workflowToJSON` hold the workflow file format, so the page and the command read a workflow the same way.
 - Publish a JSON Schema for the workflow file. Keep the format version in the file. Add a migration hook per operation for future setting changes.
-- Make the results the same in each environment. Put a fixed collator locale in the workflow (default `en`). Make the day-first option for dates explicit. Do not let text case changes depend on the machine locale.
+- Done: the collator has the fixed name `en`, so a sort gives one order on every machine. `test/parity.test.js` compares the bytes of the page and of the command for the same workflow.
+- Publish a JSON Schema for the workflow file, and make the day-first option for dates explicit.
 
 ### 2. IO package
 
 - Define a byte source: `{ size, readSlice(offset, length) }`. The browser implements it with `Blob.slice`; Node implements it with `fs.read`.
-- Move the delimited reader (streaming decoder, PapaParse stream, table builder) and the Excel reader out of the worker into this package. The worker calls the package with the Blob source.
-- Writers give chunks (for streaming to a file or an HTTP response) instead of one Blob.
+- Done: the readers and the writers are in `packages/engine/src/io.ts`, not in the worker. `DL.platform` holds the few things that only a browser or only Node can do: `readBuffer`, `papa`, `xlsx`, `progress` and `scope`.
+- Done: the writers give chunks with `DL.writeBytes`, so a caller can stream them to a file or to an answer. The worker makes a Blob from the chunks; the command writes them to a file or to standard output.
+- Define a byte source that reads in slices on both platforms. Today the command reads the whole file into memory, while the page reads a Blob in slices.
 
 ### 3. Command line tool
 
+Built. The command is `dl`, and it takes no subcommand:
+
 ```
-delimiterlab run workflow.json input.csv --out output.csv --format csv
-delimiterlab run workflow.json input.xlsx --sheet Orders --format json
-delimiterlab validate workflow.json --columns "Full Name,Email,Amount"
-delimiterlab describe workflow.json
+dl workflow.json input.csv -o out.csv        # write a file
+dl workflow.json input.csv                   # write to standard output
+dl workflow.json jan.csv feb.csv -o q1.csv   # many files, one source
+dl workflow.json input.csv --dry-run         # run every step, write nothing
+dl workflow.json input.csv --validate        # check the workflow against the files
 ```
 
-- The exit code is 0 on success, 1 when a step cannot run, and 2 for a bad file. Notes and problems go to a JSON report (`--report report.json`), so the calling application can show them.
-- Package with the Node single-executable feature (`--experimental-sea-config`) or Bun (`bun build --compile`). This gives one file for Windows, macOS and Linux. Applications in any language call it as a subprocess.
-- Custom JavaScript steps run in an isolated context with a time limit. A `--no-js` flag refuses workflows that contain them.
+- The exit code is 0 when the work is done and 1 when it is not. Everything the command says goes to standard error, so a pipe carries only data.
+- `bun build --compile` makes one file for Linux, macOS and Windows. `.github/workflows/release.yml` builds them, joins the two Mac builds into one file, and makes a deb, an rpm and an apk. A program in any language calls the command as a subprocess.
+- Still open: a JSON report for the notes and the problems, and a flag that refuses a workflow with a Custom JavaScript step.
 
 ### 4. Embeddable interface
 
@@ -73,12 +79,12 @@ Two ways exist for applications that do not run JavaScript:
 
 ## Tests
 
-Golden tests hold sample input files, workflows and the expected outputs. The same tests run in the browser (through the worker) and in the CLI, so both give the same output for the same workflow.
+Built: `test/parity.test.js` runs one workflow over the same files through the worker of the page and through the `dl` command, and compares the bytes. It covers CSV, TSV, a workbook, a source of many files with the name of the file as a column, a step that is off, and a workflow that cannot run.
 
 ## Order of work
 
-1. Engine package with `runWorkflow` and the JSON Schema.
-2. IO package with the byte-source interface; the worker uses it.
-3. CLI and binary.
+1. Engine package with `runWorkflow`. Built. The JSON Schema is still open.
+2. Readers and writers out of the worker. Built. The byte source that reads in slices is still open.
+3. CLI and binary. Built.
 4. Embeddable interface.
 5. Server mode and streaming, when needed.

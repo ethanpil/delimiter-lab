@@ -5,6 +5,16 @@ history of the development before that.
 
 ## 1.0 (in development)
 
+- Add: the dl command runs a workflow on files from a terminal (d89b7c9).
+- Add: a release gives the dl command for Linux, macOS and Windows, with deb, rpm and apk packages (5660420, d8ded69, 9df4a20).
+- Change: the engine is TypeScript in packages/engine. One build serves the page, the worker and the command, so no platform has its own copy (b6b97c1, ed36ff6, 69a9bbe).
+- Change: sort takes the English order on every machine. Before, the order came from the machine (b551c3b).
+- Fix: a batch of large files makes a zip again. The zip held every file in memory at one time (b551c3b).
+- Fix: the dl command took the memory limit of a browser, and refused files that the page reads (d7302f5).
+- Fix: on Windows the dl command wrote the whole path in the Source file column in place of the name (d7302f5).
+- Fix: dl --validate said "ok" for a step whose columns it never saw (d7302f5).
+- Fix: dl stops quietly when a reader such as head closes the pipe (d7302f5).
+- Fix: the list of checksums of a release held a line for itself, so the check of a download always failed (9df4a20).
 - Add: "Many files" in the source settings, with the answers batch and stack (02b9d92, c2736f4, d02e4bc).
 - Add: a drag on a file in the source list changes the order of the files (4fc2762).
 - Add: a step card gives the time that the step took, when that time is 400 ms or more (90c1ce1).
