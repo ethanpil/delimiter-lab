@@ -6,6 +6,8 @@ history of the development before that.
 ## 1.0 (in development)
 
 - Add: "Many files" in the source settings, with the answers batch and stack (02b9d92, c2736f4, d02e4bc).
+- Add: a drag on a file in the source list changes the order of the files (4fc2762).
+- Add: a step card gives the time that the step took, when that time is 400 ms or more (90c1ce1).
 - Add: a column with the name of the file that gave each row, for a source that stacks (061a575).
 - Change: files that write one column name in different ways make one column (061a575).
 - Change: the progress bar names the file that it reads, and it goes forward through the list (e20678d).
