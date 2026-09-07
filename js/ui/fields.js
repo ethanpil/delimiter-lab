@@ -253,7 +253,11 @@
         var next = chosen.filter(function (x) { return x !== c; });
         if (on) {
           if (param.ordered) next.push(c);
-          else next = columns.filter(function (x) { return x === c || chosen.indexOf(x) >= 0; });
+          // The order follows the columns of the input. A name that the input does not have keeps
+          // its place at the end: it is shown as missing, and a tick on another box must not
+          // take it away without a word.
+          else next = columns.filter(function (x) { return x === c || chosen.indexOf(x) >= 0; })
+            .concat(chosen.filter(function (x) { return columns.indexOf(x) < 0; }));
         }
         setChosen(next);
       });
@@ -303,9 +307,10 @@
     var map = Object.assign(Object.create(null), value || {});
     var columns = ctx.columns || [];
     if (!columns.length) return wrap(param, U.el('div', { class: 'text-secondary small', text: noColumnsMessage(ctx.columns) }), true);
-    // A name of a column that is no longer in the input has no box; the map drops it.
-    var stale = Object.keys(map).filter(function (c) { return columns.indexOf(c) < 0; });
-    if (stale.length) { stale.forEach(function (c) { delete map[c]; }); ctx.onChange(Object.assign(Object.create(null), map), { merge: true }); }
+    // A name of a column that the input does not have now has no box. It stays in the settings,
+    // so it comes back when the column does, for example when an earlier step goes off. To write
+    // it away here would also write to the store in the middle of a draw, and this view cannot
+    // take a change before it is built.
     var tbody = U.el('tbody');
     var inputs = new Map();
     columns.forEach(function (c) {

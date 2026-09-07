@@ -89,6 +89,7 @@
     var res = st.results[id];
     if (!problems.length && res && res.status === 'invalid') problems = res.notes;
     var pbox = this.el.querySelector('[data-role=problems]');
+    if (!pbox) return; // the panel is still being built; render() calls update() again at its end
     U.empty(pbox);
     if (problems.length) {
       pbox.appendChild(U.el('div', { class: 'alert alert-warning py-2 mb-0' }, [

@@ -44,9 +44,9 @@
     progressEl.hidden = false;
     progressEl.querySelector('.progress-bar').style.width = Math.max(2, percent || 0) + '%';
     progressEl.querySelector('.app-progress-label').textContent = batchLabel ? batchLabel + (label ? ' · ' + label : '') : (label || '');
-    $('btnCancel').hidden = !cancelable;
+    $('btnCancel').hidden = !cancelable || exporting; // Cancel stops a run, never a download
     clearTimeout(progressTimer);
-    if (!batchLabel && !runInFlight && store.state.source.status !== 'loading') progressTimer = setTimeout(hideProgress, 4000);
+    if (!batchLabel && !runInFlight && !exporting && store.state.source.status !== 'loading') progressTimer = setTimeout(hideProgress, 4000);
   }
   function hideProgress() { clearTimeout(progressTimer); progressEl.hidden = true; $('btnStop').hidden = true; $('btnCancel').hidden = true; }
 
@@ -198,6 +198,7 @@
       loadSource();
     }).catch(function (err) {
       if (token !== loadToken) return;
+      disarmStop();
       hideProgress();
       store.setSourceError(err.message);
       U.toast(err.message, 'danger');
@@ -226,8 +227,10 @@
     showProgress(DL.t('progress.readingFile'), 2);
     armStop();
     engine.load(src.files, src.options).then(function (msg) {
-      if (token !== loadToken) return;
+      // The timer of a load that another load took over must go too, or it puts a message about
+      // work that is running on a screen where nothing runs.
       disarmStop();
+      if (token !== loadToken) return;
       hideProgress();
       restoredLoad = false;
       store.setSourceInfo(msg.info);
@@ -807,6 +810,7 @@
   // Ends a batch that does not finish. The worker restarts and reads the open file again.
   function stopBatch() {
     batchToken++;
+    runToken++; // the run that the restart refuses does not report an error
     batchRunning = false;
     batchLabel = '';
     cancelable = false;
@@ -839,6 +843,10 @@
 
   // outName is the name of the zip file, or the name of the output when there is one file.
   function runBatch(files, steps, output, outName, items, sourceOptions) {
+    // The dialog that leads here stays open while a batch can start by another way, for example a
+    // drop on the page. Without this check the new batch takes the token of the running one, and
+    // that one ends with no file, no report and no word.
+    if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
     var format = DL.outputFormatById(output.format);
     var single = files.length === 1;
     var usedNames = {};
