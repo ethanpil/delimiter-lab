@@ -89,6 +89,7 @@
   var MAX_FILE_BYTES = 1.5 * 1024 * 1024 * 1024; // browsers cannot read a larger file into memory
 
   // opts.sheet opens a workbook at that sheet. setSourceFile() empties the sheet, so it goes back after.
+  // opts.keep false leaves the workspace store as it is, for a file that came out of that store.
   function openFile(file, opts) {
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
@@ -98,9 +99,11 @@
     opts = opts || {};
     store.setSourceFile(file);
     if (opts.sheet) store.setSourceOptions({ sheet: opts.sheet });
-    // The workspace comes back after a reload, but only for a file that is small enough.
-    if (file.size > DL.fileStore.MAX_BYTES) U.toast(DL.t('msg.workspaceTooBig', { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
-    DL.fileStore.put(file);
+    if (opts.keep !== false) {
+      // The workspace comes back after a reload, but only for a file that is small enough.
+      if (file.size > DL.fileStore.MAX_BYTES) U.toast(DL.t('msg.workspaceTooBig', { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
+      DL.fileStore.put(file);
+    }
     if (DL.inputFormatFor(file.name).hasSheets) {
       var token = ++loadToken;
       showProgress(DL.t('progress.readingWorkbook'), 5);
@@ -951,7 +954,7 @@
     var mine = file && (!store.restoredSourceName || file.name === store.restoredSourceName);
     if (mine && !store.state.source.file) {
       U.toast(DL.t('msg.workspaceBack', { name: file.name }), 'info');
-      openFile(file, { sheet: store.state.source.options.sheet });
+      openFile(file, { sheet: store.state.source.options.sheet, keep: false });
     } else if (store.restoredSourceName && store.state.workflow.steps.length) {
       U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
     }
