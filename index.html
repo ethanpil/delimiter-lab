@@ -17,7 +17,7 @@
       document.documentElement.setAttribute('data-bs-theme', t);
     })();
   </script>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=1.0">
 </head>
 <body>
   <noscript><div class="p-4">Delimiter Lab needs JavaScript to run.</div></noscript>
@@ -50,7 +50,7 @@
   </header>
 
   <div id="progress" class="app-progress" hidden>
-    <div class="progress" role="progressbar"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div></div>
+    <div class="progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" data-i18n-label="progress.label"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div></div>
     <div class="app-progress-label small text-secondary"></div>
     <button id="btnCancel" class="btn btn-outline-secondary btn-sm no-tip" type="button" hidden title="Stop before the next step. The steps that ran keep their results." data-i18n-title="progress.cancelTitle" data-i18n="progress.cancel">Cancel</button>
     <button id="btnStop" class="btn btn-outline-danger btn-sm no-tip" type="button" hidden title="Stop the work and turn the current step off" data-i18n-title="progress.stopTitle" data-i18n="progress.stop">Stop</button>
@@ -69,6 +69,7 @@
     </aside>
 
     <section class="app-main">
+      <div id="dropHint" data-i18n="msg.dropToOpen">Drop the file to open it</div>
       <div id="config" class="config-panel"></div>
       <div id="preview" class="preview-panel">
         <div class="preview-toolbar d-flex align-items-center gap-2 flex-wrap">
@@ -98,7 +99,7 @@
   <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3" aria-live="polite"></div>
 
   <script src="vendor/bootstrap.bundle.min.js"></script>
-  <script src="js/manifest.js"></script>
+  <script src="js/manifest.js?v=1.0"></script>
   <script>
     // Loads the application files listed in the manifest, in order. The texts of the language of the
     // user (?lang=xx or the browser language) load when js/i18n/ has a file for it.

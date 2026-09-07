@@ -41,6 +41,18 @@ test('the version of the build is the version of the manifest', () => {
   assert.strictEqual(DL.VERSION, manifestVersion);
 });
 
+test('index.html asks for the version that the manifest holds', () => {
+  // js/manifest.js and css/app.css are loaded before DL.BUILD exists, so their version is written
+  // in index.html by hand. When it falls behind, a browser keeps an old manifest or an old
+  // stylesheet beside new files, and nothing says so. This keeps the three in step.
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  ['css/app.css', 'js/manifest.js'].forEach((f) => {
+    const m = new RegExp(f.replace('.', '\\.').replace('/', '\\/') + '\\?v=([^"\']+)').exec(html);
+    assert.ok(m, f + ' must be asked for with ?v=<version> in index.html');
+    assert.strictEqual(m[1], manifestVersion, f + ' asks for version ' + m[1] + ' but js/manifest.js says ' + manifestVersion);
+  });
+});
+
 test('the build brings every operation', () => {
   assert.strictEqual(DL.ops.length, 27);
   assert.strictEqual(DL.getOp('unpivot').id, 'unpivot');

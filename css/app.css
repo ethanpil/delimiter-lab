@@ -10,8 +10,8 @@
   --dl-surface-2: #f6f7f9;
   --dl-text-2: #495057;
   --dl-muted: #6c757d;
-  --dl-faint: #adb5bd;
-  --dl-empty: #dee2e6;
+  --dl-faint: #737b83;
+  --dl-empty: #868e96;
   --dl-line: #f0f1f3;
   --dl-row-alt: #fbfbfc;
   --dl-hover: #e9ecef;
@@ -31,8 +31,8 @@
   --dl-surface-2: #161920;
   --dl-text-2: #cfd4da;
   --dl-muted: #9aa3ad;
-  --dl-faint: #6c757d;
-  --dl-empty: #495057;
+  --dl-faint: #949ba3;
+  --dl-empty: #7d858d;
   --dl-line: #2a2f38;
   --dl-row-alt: #22262e;
   --dl-hover: #2c313a;
@@ -319,8 +319,8 @@ body.is-col-resize { cursor: col-resize; user-select: none; }
 }
 .dropzone:hover, .dropzone.is-over { border-color: var(--dl-accent); background: var(--dl-accent-soft); color: var(--dl-link); }
 .dropzone i { font-size: 30px; display: block; margin-bottom: 6px; }
-body.is-dragging-file .app-main::after {
-  content: 'Drop the file to open it';
+#dropHint { display: none; }
+body.is-dragging-file #dropHint {
   position: absolute; inset: 0; z-index: 1030;
   display: flex; align-items: center; justify-content: center;
   background: rgba(13,110,253,.10); border: 3px dashed var(--dl-accent);

@@ -82,7 +82,7 @@
     } else {
       meta = U.el('div', { class: 'step-meta text-secondary' }, [DL.t('chain.noFile')]);
     }
-    return U.el('div', { class: 'step-card' + (selected ? ' is-selected' : ''), tabindex: '0', role: 'button' }, [
+    return U.el('div', { class: 'step-card' + (selected ? ' is-selected' : ''), dataset: { step: 'source' }, tabindex: '0', role: 'button' }, [
       U.el('span', { class: 'step-num' }, [U.el('i', { class: 'bi bi-file-earmark-text' })]),
       U.el('div', { class: 'step-body' }, [
         U.el('div', { class: 'step-title', text: DL.t('preview.sourceFile') }),

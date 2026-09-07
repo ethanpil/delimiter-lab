@@ -112,6 +112,8 @@
     'msg.openFileFirst': 'Open a file first.',
     'msg.downloaded': 'Downloaded {name} ({rows}).',
     'msg.downloadedZip': 'Downloaded {name} with {files}.',
+    'msg.dropToOpen': 'Drop the file to open it',
+    'progress.label': 'Work in progress',
     'msg.batchStopped': 'The batch was stopped.',
     'msg.batchRunning': 'A batch is still running.',
     'msg.noDataFiles': 'None of the files is a data file ({types}).',
@@ -349,7 +351,6 @@
     'profile.earliest': 'Earliest',
     'profile.latest': 'Latest',
     'profile.length': 'Length',
-    'profile.chars': '{n} characters',
     'profile.lengthRange': '{min} to {max} characters',
     'profile.mostCommon': 'Most common values'
   });

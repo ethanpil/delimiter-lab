@@ -462,8 +462,10 @@
 
   /* ---------- Column profile ---------- */
 
+  // Both parts are escaped. Every value in this box can come from a file, and the box that holds
+  // it does not clean what it is given.
   function statRow(label, value) {
-    return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
+    return '<tr><th>' + U.esc(label) + '</th><td>' + U.esc(value) + '</td></tr>';
   }
 
   function number(v) {
@@ -488,7 +490,7 @@
       rows += statRow(DL.t('profile.dates'), st.dates.toLocaleString() + pct(st.dates)) +
         statRow(DL.t('profile.earliest'), DL.formatDateISO(st.earliest)) + statRow(DL.t('profile.latest'), DL.formatDateISO(st.latest));
     }
-    if (filled) rows += statRow(DL.t('profile.length'), st.minLen === st.maxLen ? DL.t('profile.chars', { n: st.maxLen }) : DL.t('profile.lengthRange', { min: st.minLen, max: st.maxLen }));
+    if (filled) rows += statRow(DL.t('profile.length'), st.minLen === st.maxLen ? DL.pluralize(st.maxLen, 'character') : DL.t('profile.lengthRange', { min: st.minLen, max: st.maxLen }));
     var top = st.top.map(function (t) {
       return '<tr><td class="pv">' + U.esc(t.value.length > 40 ? t.value.slice(0, 40) + '…' : t.value) + '</td><td class="pc">' + t.count.toLocaleString() + '</td></tr>';
     }).join('');

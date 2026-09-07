@@ -221,8 +221,10 @@ the `dl` command for Linux, macOS and Windows, makes the deb, the rpm and the ap
 writes the checksums, and puts everything on the releases page with the instructions to install it.
 
 Every file that the manifest lists carries `?v=` with the version, so a browser takes the new one.
-`index.html`, `js/manifest.js` and `css/app.css` do not: a browser takes those again when its copy
-is old enough. GitHub Pages says ten minutes.
+`js/manifest.js` and `css/app.css` load before that version exists, so `index.html` asks for them
+with the number written by hand. `npm test` fails when that number and `DL.VERSION` disagree, so
+change all three together. `index.html` itself carries no version: a browser takes it again when
+its copy is old enough, which on GitHub Pages is ten minutes.
 
 ## Workflow files
 

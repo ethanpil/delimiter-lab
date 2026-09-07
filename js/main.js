@@ -42,7 +42,10 @@
   var exporting = false;   // True while the worker makes a download.
   function showProgress(label, percent) {
     progressEl.hidden = false;
-    progressEl.querySelector('.progress-bar').style.width = Math.max(2, percent || 0) + '%';
+    var pc = Math.max(0, Math.min(100, Math.round(percent || 0)));
+    progressEl.querySelector('.progress-bar').style.width = Math.max(2, pc) + '%';
+    var bar = progressEl.querySelector('[role=progressbar]');
+    if (bar) bar.setAttribute('aria-valuenow', String(pc)); // a bar with no value says nothing
     progressEl.querySelector('.app-progress-label').textContent = batchLabel ? batchLabel + (label ? ' · ' + label : '') : (label || '');
     $('btnCancel').hidden = !cancelable || exporting; // Cancel stops a run, never a download
     clearTimeout(progressTimer);

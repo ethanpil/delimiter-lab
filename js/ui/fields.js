@@ -178,7 +178,7 @@
     if (ctx.columns && ctx.columns.length) {
       var hint = U.el('div', { class: 'form-text' }, [DL.t('fields.columnsHint')]);
       ctx.columns.slice(0, 30).forEach(function (c) {
-        hint.appendChild(U.el('a', { href: '#', class: 'text-mono me-2', text: 'row["' + c + '"]', onclick: function (e) {
+        hint.appendChild(U.el('a', { href: '#', class: 'text-mono me-2', text: 'row[' + JSON.stringify(c) + ']', onclick: function (e) {
           e.preventDefault();
           var s = ta.selectionStart;
           var ins = 'row[' + JSON.stringify(c) + ']';
@@ -361,10 +361,12 @@
           var lines = text.split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
           if (!lines.length) return;
           e.preventDefault();
+          // The spaces of a pasted value stay, as they do for a typed one. "Ignore spaces around
+          // values" is what decides whether they count.
           var parsed = lines.map(function (l) {
             var parts = l.split('\t');
             if (parts.length < 2 && l.split(',').length === 2) parts = l.split(',');
-            return { from: (parts[0] || '').trim(), to: (parts[1] || '').trim() };
+            return { from: parts[0] || '', to: parts[1] || '' };
           });
           var oneColumn = parsed.every(function (p) { return p.to === ''; });
           api.edit(function (rows, i) {
