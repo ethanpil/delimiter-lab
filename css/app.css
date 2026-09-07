@@ -64,10 +64,6 @@ body {
   white-space: nowrap;
 }
 .app-header .btn { white-space: nowrap; }
-.brand-mark {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px;
-}
 .brand-mark img { display: block; width: 28px; height: 28px; }
 .workflow-name { width: 260px; font-weight: 500; }
 .workflow-name:not(:focus) { border-color: transparent; background: transparent; }
