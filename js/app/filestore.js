@@ -22,7 +22,14 @@
       if (!root.indexedDB) { reject(new Error('This browser has no IndexedDB.')); return; }
       var req = root.indexedDB.open(NAME, 1);
       req.onupgradeneeded = function () { req.result.createObjectStore(STORE); };
-      req.onsuccess = function () { resolve(req.result); };
+      req.onsuccess = function () {
+        var db = req.result;
+        // Another tab, or the user, can ask to change or remove the database. A connection that stays
+        // open blocks that, so it closes and the next call opens a new one.
+        db.onversionchange = function () { db.close(); dbp = null; };
+        db.onclose = function () { dbp = null; };
+        resolve(db);
+      };
       req.onerror = function () { reject(req.error || new Error('IndexedDB is not available.')); };
       req.onblocked = function () { reject(new Error('IndexedDB is blocked.')); };
     });
@@ -41,8 +48,9 @@
           tx.onerror = function () { reject(tx.error); };
           tx.onabort = function () { reject(tx.error); };
         } catch (e) {
-          // The connection closes, or the store is not there. Close it here and release it, because
-          // no handler of the transaction can do that now.
+          // The connection closes, or the store is not there. No handler of the transaction can
+          // release it now, so this code does. A transaction that another call started keeps the
+          // connection alive until it ends.
           dbp = null;
           try { db.close(); } catch (e2) { /* it is closed already */ }
           reject(e);
@@ -51,20 +59,30 @@
     });
   }
 
+  var writes = 0; // counts the writes, so that a write that fails knows if it is still the last one
+
   // Keeps the file. Gives true when the file is in the store, and false when it is not.
   F.put = function (file) {
+    var mine = ++writes;
     if (!file || file.size > F.MAX_BYTES) return F.clear().then(function () { return false; });
     return run('readwrite', function (s) { return s.put(file, KEY); })
       .then(function () { return true; })
-      // A write that fails leaves the file of the last time. That file does not belong to the steps
-      // on the screen, so it must go.
-      .catch(function () { return F.clear().then(function () { return false; }); });
+      .catch(function () {
+        // A write that fails leaves the file of the last time, and that file does not belong to the
+        // steps on the screen. But a later write can be there already, and that file must stay.
+        if (mine !== writes) return false;
+        return F.clear().then(function () { return false; });
+      });
   };
 
   // Gives the file back, or null.
   F.get = function () {
     return run('readonly', function (s) { return s.get(KEY); })
-      .then(function (rec) { return rec instanceof Blob ? rec : null; }) // a record of an older shape gives null
+      .then(function (rec) {
+        if (rec instanceof Blob) return rec;
+        if (rec) F.clear(); // a record of an older shape has no use, and it holds space
+        return null;
+      })
       .catch(function () { return null; });
   };
 
