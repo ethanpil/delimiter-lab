@@ -110,6 +110,8 @@
         if (token !== loadToken) return;
         hideProgress();
         store.setSourceError(err.message);
+        U.toast(err.message, 'danger');
+        DL.fileStore.clear(); // a file that does not open must not come back at the next reload
       });
     } else {
       loadSource();
@@ -136,6 +138,9 @@
       hideProgress();
       store.setSourceError(err.message);
       U.toast(err.message, 'danger');
+      // The browser keeps a file as a name and a time, not as bytes. A file that moved, or that
+      // another program wrote again, does not read any more. Such a file must not come back.
+      DL.fileStore.clear();
     });
   }
 
