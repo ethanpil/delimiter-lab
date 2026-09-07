@@ -309,6 +309,7 @@
     'grid.emptyPct': '{pct}% empty',
     'grid.newBadge': 'new',
     'grid.newColumn': 'new column',
+    'grid.resize': 'Drag to change the width. Two clicks fit the column to its text.',
     'grid.clickProfile': 'Click for the column profile',
     'grid.loading': 'Loading…',
     // Column profile popover (js/ui/grid.js)

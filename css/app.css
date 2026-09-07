@@ -236,6 +236,13 @@ body {
   overflow: hidden; white-space: nowrap;
   box-sizing: border-box;
 }
+.grid-hcell { position: relative; }
+.grid-grip {
+  position: absolute; top: 0; right: -3px; width: 7px; height: 100%;
+  cursor: col-resize; z-index: 5;
+}
+.grid-grip:hover { background: var(--dl-accent); opacity: .55; }
+body.is-col-resize { cursor: col-resize; user-select: none; }
 .grid-hcell .type-icon { color: var(--dl-faint); font-size: 12px; flex: 0 0 auto; }
 .grid-hcell .hname { overflow: hidden; text-overflow: ellipsis; }
 .grid-rows { overflow: hidden; }

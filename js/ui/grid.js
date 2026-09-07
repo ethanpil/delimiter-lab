@@ -5,6 +5,8 @@
   var U = DL.util;
 
   var ROW_H = 28;
+  var MIN_COL_W = 70;   // narrower than this, a column name has no space
+  var MAX_FILL_W = 480; // a column that grows to fill the view stops here
   var HEADER_H = 34;
   var MAX_VIRTUAL_H = 8000000; // Browsers limit the element height. Above this, the grid scales the scrollbar.
   var BUFFER = 8;
@@ -31,6 +33,7 @@
     U.empty(container);
     container.appendChild(this.title);
     container.appendChild(this.scroll);
+    this.widthSet = {}; // column name -> the width that the user set
     this.reset();
     var self = this;
     // Render on each scroll event. About 40 rows are quick to build. requestAnimationFrame
@@ -39,7 +42,10 @@
       self.renderRows();
       if (self.onScroll) self.onScroll(self.scroll.scrollTop);
     }, { passive: true });
-    this.resizeObs = new ResizeObserver(function () { self.renderRows(); });
+    this.resizeObs = new ResizeObserver(function () {
+      if (self.columns.length) { self.fillWidth(); self.renderHeader(true); }
+      self.renderRows();
+    });
     this.resizeObs.observe(this.scroll);
     this.scroll.addEventListener('keydown', function (e) {
       if (e.key === 'Home' && e.ctrlKey) { self.scroll.scrollTop = 0; }
@@ -59,6 +65,32 @@
     document.addEventListener('click', this.onDocClick = function (e) {
       var tip = self.popover && self.popover.tip;
       if (self.popover && !(tip && tip.contains(e.target)) && !self.header.contains(e.target)) self.closeProfile();
+    });
+    this.header.addEventListener('mousedown', function (e) {
+      var grip = e.target.closest ? e.target.closest('.grid-grip') : null;
+      if (!grip) return;
+      e.preventDefault(); // no text selection while the column moves
+      e.stopPropagation(); // the profile panel must stay closed
+      var c = Number(grip.getAttribute('data-grip'));
+      var startX = e.clientX;
+      var startW = self.widths[c];
+      document.body.classList.add('is-col-resize');
+      var move = function (ev) {
+        self.setColumnWidth(c, Math.max(MIN_COL_W, startW + (ev.clientX - startX)));
+      };
+      var up = function () {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        document.body.classList.remove('is-col-resize');
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+    this.header.addEventListener('dblclick', function (e) {
+      var grip = e.target.closest ? e.target.closest('.grid-grip') : null;
+      if (!grip) return;
+      e.stopPropagation();
+      self.setColumnWidth(Number(grip.getAttribute('data-grip')), 0); // back to the width of the text
     });
     document.addEventListener('keydown', this.onDocKey = function (e) {
       if (e.key === 'Escape' && self.popover) self.closeProfile();
@@ -85,6 +117,7 @@
     this.scale = 1;
     this.diffSummary = null; // per-column change counts, when the "Changes" view is on
     this.profiles = {};      // column index -> statistics already received for this table
+    this.sample = null;      // the rows that gave the widths, for a new measurement of one column
     this.closeProfile();
   };
 
@@ -182,25 +215,67 @@
     return canvas.measureText(s).width;
   }
 
+  // The width that the text of one column needs.
+  GridView.prototype.naturalWidth = function (c) {
+    var rows = this.sample || [];
+    var n = Math.min(rows.length, 100);
+    var longest = '';
+    // Measure the longest sample value only: one measurement per column.
+    for (var i = 0; i < n; i++) { var v = rows[i][c]; if (v && v.length > longest.length) longest = v; }
+    var w = Math.max(MIN_COL_W, textWidth(this.columns[c], true) + 40);
+    if (longest) w = Math.max(w, textWidth(longest.length > 60 ? longest.slice(0, 60) : longest) + 18);
+    return Math.min(320, w);
+  };
+
   GridView.prototype.computeWidths = function (sampleRows) {
+    this.sample = sampleRows;
     var cols = this.columns;
-    var n = Math.min(sampleRows.length, 100);
     var widths = new Array(cols.length);
-    var lefts = new Array(cols.length + 1);
     this.rowNumW = Math.max(44, textWidth(String(this.total)) + 18);
-    lefts[0] = this.rowNumW;
     for (var c = 0; c < cols.length; c++) {
-      // Measure the longest sample value only: one measurement per column.
-      var longest = '';
-      for (var i = 0; i < n; i++) { var v = sampleRows[i][c]; if (v.length > longest.length) longest = v; }
-      var w = Math.max(70, textWidth(cols[c], true) + 40);
-      if (longest) w = Math.max(w, textWidth(longest.length > 60 ? longest.slice(0, 60) : longest) + 18);
-      widths[c] = Math.min(320, w);
-      lefts[c + 1] = lefts[c] + widths[c];
+      var set = this.widthSet[cols[c]];
+      widths[c] = set > 0 ? set : this.naturalWidth(c);
     }
     this.widths = widths;
+    this.fillWidth();
+  };
+
+  // With space left over, the columns grow together until the table fills the view. The columns that
+  // the user set keep their width.
+  GridView.prototype.fillWidth = function () {
+    var cols = this.columns;
+    var free = this.scroll.clientWidth - 1; // one pixel for the border
+    var growable = [];
+    var total = this.rowNumW;
+    for (var c = 0; c < cols.length; c++) {
+      total += this.widths[c];
+      if (!(this.widthSet[cols[c]] > 0)) growable.push(c);
+    }
+    if (growable.length && free > total) {
+      var share = (free - total) / growable.length;
+      for (var i = 0; i < growable.length; i++) {
+        this.widths[growable[i]] = Math.min(MAX_FILL_W, this.widths[growable[i]] + share);
+      }
+    }
+    this.layout();
+  };
+
+  // Puts the left edges and the total width beside the widths.
+  GridView.prototype.layout = function () {
+    var lefts = new Array(this.columns.length + 1);
+    lefts[0] = this.rowNumW;
+    for (var c = 0; c < this.columns.length; c++) lefts[c + 1] = lefts[c] + this.widths[c];
     this.lefts = lefts; // left edge of each column; lefts[cols.length] is the total width
-    this.totalW = lefts[cols.length];
+    this.totalW = lefts[this.columns.length];
+  };
+
+  // Gives one column a width, or removes the width that the user set when px is 0.
+  GridView.prototype.setColumnWidth = function (c, px) {
+    var name = this.columns[c];
+    if (px > 0) { this.widthSet[name] = Math.round(px); this.widths[c] = Math.round(px); this.layout(); }
+    else { delete this.widthSet[name]; this.widths[c] = this.naturalWidth(c); this.fillWidth(); }
+    this.renderHeader(true);
+    this.renderRows();
   };
 
   // The columns that are inside the view (plus a small buffer): [first, last).
@@ -243,7 +318,8 @@
         else if (d.changed) { cls += ' is-changed'; badge = '<span class="hbadge">' + d.changed.toLocaleString() + '</span>'; title += ' · ' + DL.pluralize(d.changed, 'changed cell'); }
       }
       title += ' · ' + DL.t('grid.clickProfile');
-      html += '<div class="' + cls + '" data-col="' + c + '" style="width:' + this.widths[c] + 'px" title="' + U.esc(title) + '">' + icon + '<span class="hname">' + U.esc(name) + '</span>' + badge + '</div>';
+      html += '<div class="' + cls + '" data-col="' + c + '" style="width:' + this.widths[c] + 'px" title="' + U.esc(title) + '">' + icon + '<span class="hname">' + U.esc(name) + '</span>' + badge +
+        '<span class="grid-grip no-tip" data-grip="' + c + '" title="' + U.esc(DL.t('grid.resize')) + '"></span></div>';
     }
     var openCol = keepProfile && this.popover ? this.popover.col : -1;
     this.closeProfile();
