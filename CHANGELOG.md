@@ -1,12 +1,30 @@
 # Changelog
 
+The version is 1.0 while the work continues. The numbers below 1.0 are the
+history of the development before that.
+
+## 1.0 (in development)
+
+- Fix: a download of many files gave the error "zipName is not defined" in place of the message (4410533).
+- Fix: a workbook opens again at the same sheet. Before, it opened at the first sheet, and the steps ran on the wrong data (b898ff5).
+- Fix: a write that fails no longer leaves the file of the last time in the workspace (f6bfc55).
+- Fix: a file that does not open goes out of the workspace, so the application does not start with the same error at each reload (7228384).
+- Fix: the workspace opens its file again only when the name agrees with the steps. A second tab wrote its own file there (6b4b262).
+- Fix: New waits while a batch runs, and it stops the work that waits without a red message (f2db7d4, 0959e1b).
+- Fix: New gives no undo, because undo cannot bring the file back (b548994).
+- Fix: the questions that New asks name the file that it closes (135f6f6).
+- Fix: a message tells you when a file is too large for the workspace to keep (c4c0305).
+- Fix: the file store holds one connection and closes it when a transaction fails (397ecd9).
+- Fix: the session holds the name of the file as soon as the file changes (f351723).
+- Change: the workspace does not write its file again at each reload (78fb383).
+
 ## 1.7.0
 
 - Add: the workspace comes back after a reload. The steps stay in localStorage and the file stays in IndexedDB. A manual save is still necessary to keep a workflow.
 - Add: a logo, from the "Process Line" icon of Iconpark Duotone Icons.
 - Add: the help gives the address of the project and the names that the icon licence asks for.
 - Change: the New button closes the file as well as the steps.
-- Change: "Run a file" names the output [file]-processed-YYYY-MM-DD-HH-mm.
+- Change: "Run a file" names the output [file]-processed-YYYY-MM-DD-HH-mm. A run of many files names the zip file after the workflow.
 
 ## 1.6.0
 
