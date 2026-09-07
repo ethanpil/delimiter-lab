@@ -202,6 +202,13 @@ body {
 .rows-editor .rule-row > .form-check { flex: 0 0 auto; }
 .mapping-table td { padding: 2px; }
 .mapping-table input { min-width: 120px; }
+.source-file-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.source-file {
+  display: flex; align-items: center;
+  padding: 4px 8px; border: 1px solid var(--dl-border); border-radius: 6px;
+  background: var(--dl-surface); margin-bottom: 4px;
+}
+.source-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-editor { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; min-height: 140px; tab-size: 2; }
 
 .problems { margin-top: 10px; }

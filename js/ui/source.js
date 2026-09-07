@@ -75,6 +75,7 @@
       el.appendChild(U.el('div', { class: 'alert alert-danger mt-3 mb-0' }, [U.el('i', { class: 'bi bi-exclamation-triangle me-1' }), src.error || DL.t('msg.fileNotRead')]));
     }
 
+    if (src.files.length > 1 || (src.file && stacking(st))) el.appendChild(this.fileList());
     if (src.file) el.appendChild(this.optionsForm());
 
     if (src.status === 'ready' && src.info) {
@@ -92,6 +93,47 @@
       }
       el.appendChild(box);
     }
+  };
+
+  function stacking(st) { return st.source.options.multiFile === 'stack'; }
+
+  // The files of the source, with the rows that each one gave and a way to take one out.
+  SourceView.prototype.fileList = function () {
+    var self = this;
+    var st = this.store.state;
+    var files = st.source.files;
+    var info = st.source.info;
+    var rowsOf = {};
+    if (info && info.files) info.files.forEach(function (f) { rowsOf[f.name + ':' + f.size] = f.rowCount; });
+    var items = files.map(function (f, i) {
+      var rows = rowsOf[f.name + ':' + f.size];
+      return U.el('li', { class: 'source-file' }, [
+        U.el('i', { class: 'bi bi-file-earmark-text me-2 text-secondary' }),
+        U.el('span', { class: 'source-file-name', text: f.name }),
+        U.el('span', { class: 'text-secondary ms-2 small', text: U.fmtBytes(f.size) + (rows === undefined ? '' : ' · ' + DL.pluralize(rows, 'row')) }),
+        U.el('button', {
+          type: 'button', class: 'btn btn-sm btn-link text-danger ms-auto p-0',
+          title: DL.t('source.removeFile'), 'aria-label': DL.t('source.removeFile'),
+          onclick: function () { self.actions.removeFile(i); }
+        }, [U.el('i', { class: 'bi bi-x-lg' })])
+      ]);
+    });
+    var add = U.el('input', { type: 'file', multiple: true, accept: DL.acceptedExtensions().join(','), hidden: true });
+    add.addEventListener('change', function () {
+      var picked = Array.prototype.slice.call(add.files);
+      add.value = '';
+      if (picked.length) self.actions.addFiles(picked);
+    });
+    return U.el('div', { class: 'mt-3' }, [
+      U.el('div', { class: 'field-label', text: DL.t('source.files') }),
+      U.el('ul', { class: 'source-file-list' }, items),
+      U.el('div', { class: 'd-flex align-items-center gap-2 mt-2' }, [
+        U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', onclick: function () { add.click(); } },
+          [U.el('i', { class: 'bi bi-plus-lg me-1' }), DL.t('source.addFiles')]),
+        U.el('span', { class: 'text-secondary small', text: DL.t('source.stackHint') }),
+        add
+      ])
+    ]);
   };
 
   function describeDelimiter(d) {
