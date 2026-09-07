@@ -74,7 +74,9 @@ jobs:
           set -euo pipefail
           mkdir -p out
           for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do
-            name="dl-$target"
+            # Bun says darwin. The file says macos, because that is the name that people know, and
+            # it makes the names of the Mac files match the names of the Linux files.
+            name="dl-${target/darwin/macos}"
             case "$target" in windows-*) name="$name.exe" ;; esac
             echo "--- $target"
             bun build --compile --minify --target="bun-$target" ./dist/dl.mjs --outfile "out/$name"
@@ -96,9 +98,9 @@ jobs:
           retention-days: 7
           overwrite: true
 
-  # ---------------------------------------------------------------- one file for both Mac chips
+  # ---------------------------------------------------------------- the two Mac binaries
   macos:
-    name: Join the two Mac binaries
+    name: Check the Mac binaries
     needs: binaries
     runs-on: macos-latest
     steps:
@@ -112,37 +114,27 @@ jobs:
           path: out
 
       # An artifact does not carry the right to run, so the right comes back here.
-      # lipo puts the Intel build and the Apple silicon build in one file, so one download runs
-      # on either kind of Mac.
-      - name: Join and check
+      # There are two files, one for each kind of Mac, as there are for Linux. Both are checked.
+      - name: Check
         run: |
           set -euo pipefail
-          chmod +x out/dl-darwin-x64 out/dl-darwin-arm64
-          lipo -create -output out/dl-macos-universal out/dl-darwin-x64 out/dl-darwin-arm64
-          chmod +x out/dl-macos-universal
-          lipo -info out/dl-macos-universal
-          ./out/dl-macos-universal --version
-          bash .github/smoke.sh ./out/dl-macos-universal
-          # The runner has an Apple silicon chip. When it can also run Intel code, the Intel half
-          # is checked too, so that the file is known to work on both kinds of Mac.
+          chmod +x out/dl-macos-x64 out/dl-macos-arm64
+          echo "--- Apple silicon"
+          ./out/dl-macos-arm64 --version
+          bash .github/smoke.sh ./out/dl-macos-arm64
+          # The runner has an Apple silicon chip. When it can also run Intel code, the Intel file
+          # is checked too, so that both files are known to work.
           #
-          # The Intel half says "CPU lacks AVX support, strange crashes may occur" in this check.
+          # The Intel file says "CPU lacks AVX support, strange crashes may occur" in this check.
           # Rosetta does not give AVX to the code it runs. A real Intel Mac has AVX, so the message
           # belongs to the check and not to the file. Do not change the build for it.
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
-            echo "--- the Intel half"
-            arch -x86_64 ./out/dl-macos-universal --version
-            arch -x86_64 bash .github/smoke.sh ./out/dl-macos-universal
+            echo "--- Intel"
+            arch -x86_64 ./out/dl-macos-x64 --version
+            arch -x86_64 bash .github/smoke.sh ./out/dl-macos-x64
           else
-            echo "::warning::This runner cannot run Intel code, so only the Apple silicon half was checked."
+            echo "::warning::This runner cannot run Intel code, so the Intel file was not checked."
           fi
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-universal
-          path: out/dl-macos-universal
-          retention-days: 7
-          overwrite: true
 
   # ---------------------------------------------------------------- the Windows binary
   windows:
@@ -183,11 +175,6 @@ jobs:
           name: raw-binaries
           path: out
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: macos-universal
-          path: out
-
       - name: Get nfpm
         run: |
           set -euo pipefail
@@ -223,10 +210,11 @@ jobs:
         run: |
           set -euo pipefail
           cd out
-          chmod +x dl-linux-x64 dl-linux-arm64 dl-darwin-x64 dl-darwin-arm64 dl-macos-universal
+          chmod +x dl-linux-x64 dl-linux-arm64 dl-macos-x64 dl-macos-arm64
           tar -czf "../release/dl-$VERSION-linux-x64.tar.gz" dl-linux-x64
           tar -czf "../release/dl-$VERSION-linux-arm64.tar.gz" dl-linux-arm64
-          tar -czf "../release/dl-$VERSION-macos-universal.tar.gz" dl-macos-universal
+          tar -czf "../release/dl-$VERSION-macos-x64.tar.gz" dl-macos-x64
+          tar -czf "../release/dl-$VERSION-macos-arm64.tar.gz" dl-macos-arm64
           zip -q "../release/dl-$VERSION-windows-x64.zip" dl-windows-x64.exe
           cd ..
           ls -la release
@@ -283,7 +271,7 @@ jobs:
           deb=$(pick '*amd64.deb');      debArm=$(pick '*arm64.deb')
           rpm=$(pick '*x86_64.rpm');     rpmArm=$(pick '*aarch64.rpm')
           apk=$(pick '*x86_64.apk');     apkArm=$(pick '*aarch64.apk')
-          mac=$(pick '*macos-universal.tar.gz')
+          mac=$(pick '*macos-arm64.tar.gz'); macIntel=$(pick '*macos-x64.tar.gz')
           lin=$(pick '*linux-x64.tar.gz'); linArm=$(pick '*linux-arm64.tar.gz')
           win=$(pick '*windows-x64.zip')
           {
@@ -326,14 +314,17 @@ jobs:
             echo
             echo "### macOS"
             echo
-            echo "One file runs on Intel and on Apple silicon."
+            echo "Take the file for your chip. \`uname -m\` says \`arm64\` for Apple silicon and"
+            echo "\`x86_64\` for Intel."
             echo '```'
             echo "curl -LO $base/$mac"
             echo "tar -xzf $mac"
-            echo "chmod +x dl-macos-universal"
-            echo "xattr -d com.apple.quarantine dl-macos-universal   # macOS holds a downloaded file"
-            echo "sudo mv dl-macos-universal /usr/local/bin/dl"
+            echo "chmod +x dl-macos-arm64"
+            echo "xattr -d com.apple.quarantine dl-macos-arm64   # macOS holds a downloaded file"
+            echo "sudo mv dl-macos-arm64 /usr/local/bin/dl"
             echo '```'
+            echo "For a Mac with an Intel chip, take \`$macIntel\` and use \`dl-macos-x64\` in place"
+            echo "of \`dl-macos-arm64\` in those lines."
             echo
             echo "### Linux, without a package"
             echo '```'
