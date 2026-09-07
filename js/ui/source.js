@@ -95,49 +95,89 @@
       }
       el.appendChild(box);
     }
+    U.hideOrphanTooltips(); // this view builds its content again, as the other views do
   };
 
   function stacking(st) { return st.source.options.multiFile === 'stack'; }
 
-  // The files of the source, with the rows that each one gave and a way to take one out.
+  // The files of the source, with the rows that each one gave and a way to move or take one out.
+  // The list element lives as long as the view. A drag holds a row of it, and a redraw in the
+  // middle of the drag would take that row away and stop the drag with no word to the user.
   SourceView.prototype.fileList = function () {
+    var self = this;
+    if (!this.filesEl) {
+      this.filesEl = U.el('ul', { class: 'source-file-list sortable-list' });
+      DL.fields.sortable(this.filesEl, 'li[draggable]', function (from, to) { self.actions.moveFile(from, to); });
+      this.filesEl.addEventListener('dragstart', function () { self.fileDragging = true; });
+      this.filesEl.addEventListener('dragend', function () { self.fileDragging = false; });
+      this.filesEl.addEventListener('drop', function () { self.fileDragging = false; });
+    }
+    if (!this.fileDragging) this.fillFiles();
+    return U.el('div', { class: 'mt-3' }, [
+      U.el('div', { class: 'field-label', text: DL.t('source.files') }),
+      this.filesEl,
+      this.addFilesRow()
+    ]);
+  };
+
+  SourceView.prototype.fillFiles = function () {
     var self = this;
     var st = this.store.state;
     var files = st.source.files;
     var info = st.source.info;
+    var many = files.length > 1;
     // The information of the source lists the files in the same order, so the place gives the rows.
     var each = (info && info.files && info.files.length === files.length) ? info.files : null;
+    function removeButton(i) {
+      return U.el('button', {
+        type: 'button', class: 'btn btn-sm btn-link text-danger p-0',
+        title: DL.t('source.removeFile'), 'aria-label': DL.t('source.removeFile'),
+        onclick: function () { self.actions.removeFile(i); }
+      }, [U.el('i', { class: 'bi bi-x-lg' })]);
+    }
+    // A drag needs a second file to go to, so one file alone gets no grip and no drag. The buttons
+    // do the work of the drag for a user who does not use a pointer.
     var items = files.map(function (f, i) {
       var rows = each ? each[i].rowCount : undefined;
-      return U.el('li', { class: 'source-file', draggable: 'true', title: DL.t('source.dragToOrder') }, [
-        U.el('i', { class: 'bi bi-grip-vertical me-2 text-secondary source-grip' }),
+      var move = function (to) { return function () { self.actions.moveFile(i, to); }; };
+      var attrs = many
+        ? { class: 'source-file', draggable: 'true', title: DL.t('source.dragToOrder') }
+        : { class: 'source-file' };
+      return U.el('li', attrs, [
+        U.el('i', { class: 'bi ' + (many ? 'bi-grip-vertical' : 'bi-file-earmark-text') + ' me-2 text-secondary' }),
         U.el('span', { class: 'source-file-name', text: f.name }),
         U.el('span', { class: 'text-secondary ms-2 small', text: U.fmtBytes(f.size) + (rows === undefined ? '' : ' · ' + DL.pluralize(rows, 'row')) }),
-        U.el('button', {
-          type: 'button', class: 'btn btn-sm btn-link text-danger ms-auto p-0',
-          title: DL.t('source.removeFile'), 'aria-label': DL.t('source.removeFile'),
-          onclick: function () { self.actions.removeFile(i); }
-        }, [U.el('i', { class: 'bi bi-x-lg' })])
+        U.el('div', { class: 'source-file-actions ms-auto' }, many ? [
+          U.el('button', {
+            type: 'button', class: 'btn btn-sm btn-link text-secondary p-0', disabled: i === 0 ? 'disabled' : null,
+            title: DL.t('source.moveUp'), 'aria-label': DL.t('source.moveUp'), onclick: move(i - 1)
+          }, [U.el('i', { class: 'bi bi-chevron-up' })]),
+          U.el('button', {
+            type: 'button', class: 'btn btn-sm btn-link text-secondary p-0', disabled: i === files.length - 1 ? 'disabled' : null,
+            title: DL.t('source.moveDown'), 'aria-label': DL.t('source.moveDown'), onclick: move(i + 2)
+          }, [U.el('i', { class: 'bi bi-chevron-down' })]),
+          removeButton(i)
+        ] : [removeButton(i)])
       ]);
     });
+    U.empty(this.filesEl);
+    items.forEach(function (li) { self.filesEl.appendChild(li); });
+  };
+
+  // The button that adds more files, and the line that says a drop adds them too.
+  SourceView.prototype.addFilesRow = function () {
+    var self = this;
     var add = U.el('input', { type: 'file', multiple: true, accept: DL.acceptedExtensions().join(','), hidden: true });
     add.addEventListener('change', function () {
       var picked = Array.prototype.slice.call(add.files);
       add.value = '';
       if (picked.length) self.actions.addFiles(picked);
     });
-    var list = U.el('ul', { class: 'source-file-list' }, items);
-    // The order of the files is the order of the rows, so a drag changes the data.
-    DL.fields.sortable(list, 'li[draggable]', function (from, to) { self.actions.moveFile(from, to); });
-    return U.el('div', { class: 'mt-3' }, [
-      U.el('div', { class: 'field-label', text: DL.t('source.files') }),
-      list,
-      U.el('div', { class: 'd-flex align-items-center gap-2 mt-2' }, [
-        U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', onclick: function () { add.click(); } },
-          [U.el('i', { class: 'bi bi-plus-lg me-1' }), DL.t('source.addFiles')]),
-        U.el('span', { class: 'text-secondary small', text: DL.t('source.stackHint') }),
-        add
-      ])
+    return U.el('div', { class: 'd-flex align-items-center gap-2 mt-2' }, [
+      U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', onclick: function () { add.click(); } },
+        [U.el('i', { class: 'bi bi-plus-lg me-1' }), DL.t('source.addFiles')]),
+      U.el('span', { class: 'text-secondary small', text: DL.t('source.stackHint') }),
+      add
     ]);
   };
 

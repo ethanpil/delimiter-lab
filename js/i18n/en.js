@@ -250,6 +250,8 @@
     'source.files': 'Files in this source',
     'source.addFiles': 'Add more files',
     'source.dragToOrder': 'Drag to change the order. The rows come in the order of the files.',
+    'source.moveUp': 'Move this file one place up',
+    'source.moveDown': 'Move this file one place down',
     'source.removeFile': 'Take this file out of the source',
     'source.stackHint': 'Drop more files here to add them to this source.',
     'source.dropToAdd': 'Drop more files here to add them to this source',

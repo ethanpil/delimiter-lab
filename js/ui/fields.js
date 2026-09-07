@@ -71,6 +71,8 @@
         onMove(from, to);
       }
       clearMarks();
+      dragging.classList.remove('is-dragging');
+      dragging = null;
     });
     list.addEventListener('dragend', function () {
       if (dragging) dragging.classList.remove('is-dragging');

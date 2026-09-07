@@ -143,6 +143,7 @@ body {
 .step-title i { color: var(--dl-muted); }
 .step-summary { color: var(--dl-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .step-meta { font-size: 12px; margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.step-time { margin-left: auto; padding-left: 8px; font-variant-numeric: tabular-nums; color: var(--dl-muted); }
 .step-actions { flex: 0 0 auto; opacity: 0; transition: opacity .1s; }
 .step-card:hover .step-actions, .step-card.is-selected .step-actions, .step-card:focus-within .step-actions { opacity: 1; }
 .step-actions .btn { padding: 0 4px; line-height: 1; }
@@ -191,6 +192,7 @@ body {
 .sortable-list li.is-dragging { opacity: .4; }
 .sortable-list li.drop-before { box-shadow: inset 0 3px 0 0 var(--dl-accent); }
 .sortable-list li.drop-after { box-shadow: inset 0 -3px 0 0 var(--dl-accent); }
+.sortable-list li[draggable] { cursor: grab; }
 .sortable-list .grip { color: var(--dl-faint); }
 .sortable-list .item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sortable-list .btn { padding: 0 4px; line-height: 1.2; }
@@ -205,19 +207,14 @@ body {
 .source-file-list { list-style: none; margin: 6px 0 0; padding: 0; }
 .source-file {
   display: flex; align-items: center;
-  padding: 4px 8px; border: 1px solid var(--dl-border); border-radius: 6px;
-  background: var(--dl-surface); margin-bottom: 4px;
+  padding: 4px 8px; border: 1px solid var(--dl-border);
+  background: var(--dl-surface); margin-bottom: -1px; /* the borders meet: a drop has no dead space */
 }
+.source-file:first-child { border-radius: 6px 6px 0 0; }
+.source-file:last-child { border-radius: 0 0 6px 6px; margin-bottom: 0; }
+.source-file:only-child { border-radius: 6px; }
 .source-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-file[draggable] { cursor: grab; }
-.source-file.is-dragging { opacity: .4; }
-.source-file.drop-before { box-shadow: inset 0 3px 0 0 var(--dl-accent); }
-.source-file.drop-after { box-shadow: inset 0 -3px 0 0 var(--dl-accent); }
-.source-grip { cursor: grab; }
-.step-time {
-  margin-left: auto; padding-left: 8px;
-  font-variant-numeric: tabular-nums; color: var(--dl-muted);
-}
+.source-file-actions { display: flex; align-items: center; gap: 8px; }
 .code-editor { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; min-height: 140px; tab-size: 2; }
 
 .problems { margin-top: 10px; }
