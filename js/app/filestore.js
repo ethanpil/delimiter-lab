@@ -8,11 +8,9 @@
   var NAME = 'dl.workspace.v1';
   var STORE = 'file';
   var KEY = 'current';
-  // A larger file makes the reload slow, and some browsers write the bytes again. Such a file stays out.
-  var MAX_BYTES = 100 * 1024 * 1024;
-
   var F = DL.fileStore = {};
-  F.MAX_BYTES = MAX_BYTES;
+  // A larger file makes the reload slow, and some browsers write the bytes again. Such a file stays out.
+  F.MAX_BYTES = 100 * 1024 * 1024;
 
   // One connection for the page. Two transactions on one connection keep their order; two
   // connections do not, and the file of the last write could be the older one.
@@ -55,7 +53,7 @@
 
   // Keeps the file. Gives true when the file is in the store, and false when it is not.
   F.put = function (file) {
-    if (!file || file.size > MAX_BYTES) return F.clear().then(function () { return false; });
+    if (!file || file.size > F.MAX_BYTES) return F.clear().then(function () { return false; });
     return run('readwrite', function (s) { return s.put(file, KEY); })
       .then(function () { return true; })
       // A write that fails leaves the file of the last time. That file does not belong to the steps
