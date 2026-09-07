@@ -65,6 +65,12 @@
     return JSON.stringify(this.state.workflow);
   };
 
+  // Forgets the steps that came before. Use it after an action that undo cannot complete.
+  Store.prototype.clearHistory = function () {
+    this.undoStack.length = 0;
+    this.redoStack.length = 0;
+  };
+
   Store.prototype.applySnapshot = function (snap) {
     var data = JSON.parse(snap);
     this.state.workflow = data.workflow;

@@ -524,6 +524,10 @@
         DL.fileStore.clear();
         engine.restart(); // the worker holds the table of the old file
         previewKey = null; // the source event redraws the preview
+        // Undo cannot bring the file back, and it would put the settings of the old file on an empty
+        // screen. A half undo is worse than none.
+        store.clearHistory();
+        updateUndoButtons();
         U.toast(DL.t('msg.newDone'), 'success');
       });
     });
