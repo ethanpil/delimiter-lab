@@ -940,7 +940,10 @@
   if (store.droppedSteps) U.toast(DL.t('msg.stepsDropped', { n: DL.pluralize(store.droppedSteps, 'step') }), 'warning');
   // The steps come from localStorage. The file comes from IndexedDB, which answers later.
   DL.fileStore.get().then(function (file) {
-    if (file && !store.state.source.file) {
+    // The two stores are written one after the other, and every tab of this browser writes the same
+    // two. A file with a different name does not belong to these steps, so it stays closed.
+    var mine = file && (!store.restoredSourceName || file.name === store.restoredSourceName);
+    if (mine && !store.state.source.file) {
       U.toast(DL.t('msg.workspaceBack', { name: file.name }), 'info');
       openFile(file, { sheet: store.state.source.options.sheet });
     } else if (store.restoredSourceName && store.state.workflow.steps.length) {
