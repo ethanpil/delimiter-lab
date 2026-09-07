@@ -831,6 +831,7 @@
         chain.render(false);
         renderConfig();
         refreshPreview();
+        store.saveSession(); // the name of the file belongs to the session, as the steps do
         break;
       case 'sourceOptions':
         store.saveSession();
