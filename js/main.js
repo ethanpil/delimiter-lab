@@ -89,7 +89,7 @@
   var MAX_FILE_BYTES = 1.5 * 1024 * 1024 * 1024; // browsers cannot read a larger file into memory
 
   // opts.sheet opens a workbook at that sheet. setSourceFile() empties the sheet, so it goes back after.
-  // opts.keep false leaves the workspace store as it is, for a file that came out of that store.
+  // opts.fromStore says that the file came out of the workspace store: it does not go back in.
   function openFile(file, opts) {
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
@@ -97,9 +97,10 @@
       return;
     }
     opts = opts || {};
+    restoredLoad = opts.fromStore === true;
     store.setSourceFile(file);
     if (opts.sheet) store.setSourceOptions({ sheet: opts.sheet });
-    if (opts.keep !== false) {
+    if (!opts.fromStore) {
       // The workspace comes back after a reload, but only for a file that is small enough.
       if (file.size > DL.fileStore.MAX_BYTES) U.toast(DL.t('msg.workspaceTooBig', { size: U.fmtBytes(DL.fileStore.MAX_BYTES) }), 'warning');
       DL.fileStore.put(file);
@@ -116,11 +117,23 @@
         hideProgress();
         store.setSourceError(err.message);
         U.toast(err.message, 'danger');
-        DL.fileStore.clear(); // a file that does not open must not come back at the next reload
+        forgetIfRestored(); // a file that does not open must not come back at the next reload
       });
     } else {
       loadSource();
     }
+  }
+
+  // True while the first read of a file that came out of the workspace store runs.
+  var restoredLoad = false;
+
+  // The browser keeps a file as a name and a time, not as bytes. A file that moved, or that another
+  // program wrote again, does not read any more, and it must not come back at every reload. A read
+  // that fails after a change of the settings says nothing about the file, so that file stays.
+  function forgetIfRestored() {
+    if (!restoredLoad) return;
+    restoredLoad = false;
+    DL.fileStore.clear();
   }
 
   function loadSource() {
@@ -135,6 +148,7 @@
       if (token !== loadToken) return;
       disarmStop();
       hideProgress();
+      restoredLoad = false;
       store.setSourceInfo(msg.info);
       runChain();
     }).catch(function (err) {
@@ -143,9 +157,7 @@
       hideProgress();
       store.setSourceError(err.message);
       U.toast(err.message, 'danger');
-      // The browser keeps a file as a name and a time, not as bytes. A file that moved, or that
-      // another program wrote again, does not read any more. Such a file must not come back.
-      DL.fileStore.clear();
+      forgetIfRestored();
     });
   }
 
@@ -954,7 +966,7 @@
     var mine = file && (!store.restoredSourceName || file.name === store.restoredSourceName);
     if (mine && !store.state.source.file) {
       U.toast(DL.t('msg.workspaceBack', { name: file.name }), 'info');
-      openFile(file, { sheet: store.state.source.options.sheet, keep: false });
+      openFile(file, { sheet: store.state.source.options.sheet, fromStore: true });
     } else if (store.restoredSourceName && store.state.workflow.steps.length) {
       U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
     }
