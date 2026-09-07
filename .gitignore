@@ -1,5 +1,6 @@
 node_modules/
 *.tsbuildinfo
+.DS_Store
 
 # The build output. dist/engine.global.js is committed, because GitHub Pages serves the files
 # of the repository and has no build step of its own. The other outputs are made when needed.

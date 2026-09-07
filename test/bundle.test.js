@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const url = require('url');
 const assert = require('assert');
 
 const root = path.join(__dirname, '..');
@@ -68,5 +69,18 @@ test('an operation reads the memory limit that the page writes', () => {
   assert.strictEqual(run(8e6), 'ran');
 });
 
-console.log(passed + ' passed, ' + failed + ' failed');
-process.exit(failed ? 1 : 0);
+// The page reads the IIFE build; a program that takes the engine as a module reads the other one.
+// Both come from one source, so both must hold the same engine.
+(async () => {
+  try {
+    const mod = await import(url.pathToFileURL(path.join(root, 'dist/engine.mjs')).href);
+    assert.strictEqual(mod.DL.ops.length, DL.ops.length);
+    assert.strictEqual(mod.DL.VERSION, DL.VERSION);
+    passed++;
+  } catch (e) {
+    failed++;
+    console.error('FAIL the module build holds the same engine\n  ' + (e && e.stack ? e.stack : e));
+  }
+  console.log(passed + ' passed, ' + failed + ' failed');
+  process.exit(failed ? 1 : 0);
+})();

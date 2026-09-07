@@ -53,7 +53,8 @@ await esbuild.build({
   platform: 'node',
   target: ['node20'],
   banner: { js: '#!/usr/bin/env node' },
-  alias: { '@engine': './packages/engine/src/index.ts' }
+  alias: { '@engine': './packages/engine/src/index.ts' },
+  sourcemap: true
 });
 
 console.log('engine and command line built, version ' + version);

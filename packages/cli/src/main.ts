@@ -37,6 +37,7 @@ const USAGE = [
   '  -q, --quiet           Say nothing on standard error except errors.',
   '  -h, --help            Show this text.',
   '  -v, --version         Show the version.',
+  '      --                Everything after this is a file name, even when it starts with -.',
   '',
   'More than one input file is read as one Data Source, one file after the other, with the',
   'settings that the workflow holds. The columns go by name.',
@@ -49,30 +50,33 @@ const USAGE = [
   '  ' + NAME + ' clean.json sales.csv --validate'
 ].join('\n');
 
+// The value that follows an option. It must be there, and it must not be another option: -o
+// --quiet would else make a file named "--quiet", and --output= with nothing after it would send
+// the answer to the screen and say that the work was done.
+function value(given: string | undefined, option: string, what: string): string {
+  if (!given || (given.charAt(0) === '-' && given.length > 1)) throw new Error(option + ' needs ' + what + '.');
+  return given;
+}
+
 function parseArgs(argv: string[]): Args {
   const a: Args = {
     workflow: null, inputs: [], output: null, format: null,
     dryRun: false, validate: false, quiet: false, help: false, version: false
   };
+  let onlyFiles = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (onlyFiles) { if (!a.workflow) a.workflow = arg; else a.inputs.push(arg); continue; }
+    if (arg === '--') { onlyFiles = true; continue; }
     if (arg === '-h' || arg === '--help') { a.help = true; continue; }
     if (arg === '-v' || arg === '--version') { a.version = true; continue; }
     if (arg === '-q' || arg === '--quiet') { a.quiet = true; continue; }
     if (arg === '--dry-run') { a.dryRun = true; continue; }
     if (arg === '--validate') { a.validate = true; continue; }
-    if (arg === '-o' || arg === '--output') {
-      a.output = argv[++i] || null;
-      if (!a.output) throw new Error('--output needs a file name.');
-      continue;
-    }
-    if (arg.indexOf('--output=') === 0) { a.output = arg.slice(9); continue; }
-    if (arg === '--format') {
-      a.format = argv[++i] || null;
-      if (!a.format) throw new Error('--format needs a name.');
-      continue;
-    }
-    if (arg.indexOf('--format=') === 0) { a.format = arg.slice(9); continue; }
+    if (arg === '-o' || arg === '--output') { a.output = value(argv[++i], '--output', 'a file name'); continue; }
+    if (arg.indexOf('--output=') === 0) { a.output = value(arg.slice(9), '--output', 'a file name'); continue; }
+    if (arg === '--format') { a.format = value(argv[++i], '--format', 'a name'); continue; }
+    if (arg.indexOf('--format=') === 0) { a.format = value(arg.slice(9), '--format', 'a name'); continue; }
     if (arg.charAt(0) === '-' && arg.length > 1) throw new Error('Unknown option "' + arg + '". Try ' + NAME + ' --help.');
     if (!a.workflow) a.workflow = arg;
     else a.inputs.push(arg);
@@ -117,10 +121,17 @@ export async function main(argv: string[]): Promise<void> {
 
   // ---- the workflow ----
   let workflow: any;
+  let text: string;
   try {
-    workflow = DL.parseWorkflow(fs.readFileSync(a.workflow, 'utf8'));
+    text = fs.readFileSync(a.workflow, 'utf8');
   } catch (e: any) {
     return fail('The workflow file "' + a.workflow + '" could not be read: ' + e.message);
+  }
+  try {
+    // A Windows editor puts a byte order mark at the head of a file. JSON has no place for it.
+    workflow = DL.parseWorkflow(text.replace(/^\ufeff/, ''));
+  } catch (e: any) {
+    return fail('The workflow file "' + a.workflow + '" is not right: ' + e.message);
   }
 
   // ---- the files ----
@@ -155,21 +166,32 @@ export async function main(argv: string[]): Promise<void> {
 
   // ---- validate: check the settings against the real columns, then stop ----
   if (a.validate) {
+    if (a.output) say('--output does nothing with --validate: no step runs and nothing is written.');
     let columns = source.table.columns;
     let problems = 0;
+    let unknownAfter = -1;   // the step whose columns cannot be known before it runs
     steps.forEach(function (step: any, i: number) {
       if (step.skip) { say('Step ' + (i + 1) + ' (' + step.opId + '): off'); return; }
+      // With no columns the engine checks the settings alone, so such a step must not say "ok".
       const found = DL.validateParams(step.opId, step.params, columns);
       if (found.length) {
         problems++;
         process.stderr.write('Step ' + (i + 1) + ' (' + step.opId + '): ' + found.map(DL.noteText).join('; ') + '\n');
         columns = null;
+      } else if (!columns) {
+        say('Step ' + (i + 1) + ' (' + step.opId + '): the settings are right, but its columns are not known');
       } else {
         say('Step ' + (i + 1) + ' (' + step.opId + '): ok');
-        if (columns) columns = DL.predictColumns(step.opId, step.params, columns);
+        columns = DL.predictColumns(step.opId, step.params, columns);
+        if (!columns && unknownAfter < 0) unknownAfter = i + 1;
       }
     });
     if (problems) return fail(DL.pluralize(problems, 'step') + ' cannot run with these files.');
+    if (unknownAfter >= 0) {
+      say('The settings of every step are right. Step ' + unknownAfter + ' makes columns that are ' +
+        'only known when it runs, so the columns of the steps after it were not checked.');
+      return;
+    }
     say('The workflow can run on these files.');
     return;
   }
@@ -190,6 +212,7 @@ export async function main(argv: string[]): Promise<void> {
 
   // ---- dry run: everything but the writing ----
   if (a.dryRun) {
+    if (a.output) say('--output does nothing with --dry-run: nothing is written.');
     say('The result would hold ' + rows + ' and ' + cols + ': ' + run.table.columns.join(', ') + '.');
     say('Nothing was written.');
     return;
