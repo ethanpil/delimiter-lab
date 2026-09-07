@@ -54,7 +54,7 @@ const USAGE = [
 ].join('\n');
 
 // The value that follows an option. It must be there, and it must not be another option: -o
-// --quiet would else make a file named "--quiet", and --output= with nothing after it would send
+// --quiet else makes a file named "--quiet", and --output= with nothing after it sends
 // the answer to the screen and say that the work was done.
 function value(given: string | undefined, option: string, what: string): string {
   if (!given || (given.charAt(0) === '-' && given.length > 1)) throw new Error(option + ' needs ' + what + '.');

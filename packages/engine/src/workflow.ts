@@ -2,7 +2,7 @@
  *
  * A workflow is the whole contract between a person and the engine: the steps, the settings that
  * read the file, and the columns that the steps expect. The page, the command line and any other
- * caller must read and write that file in exactly one way, or the same workflow would mean two
+ * caller must read and write that file in exactly one way, or the same workflow means two
  * different things on two platforms.
  */
 import { DL } from './dl.js';

@@ -49,7 +49,7 @@
   /* ---------- Undo / redo ---------- */
 
   // withSource: the action also changes the settings of the source, so an undo must put them back.
-  // Without it an undo of a step would take away a delimiter or a heading answer that the person
+  // Without it an undo of a step takes away a delimiter or a heading answer that the person
   // chose after that step, and those answers have no undo entry of their own.
   Store.prototype.snapshot = function (withSource) {
     var snap = { workflow: this.state.workflow, selectedId: this.state.selectedId };
@@ -232,7 +232,7 @@
   Store.prototype.replaceWorkflow = function (wf) {
     this.pushHistory(true);
     // A step of an operation this build does not have keeps nothing when it is cleaned, and the
-    // next save would write that empty step back over the one on the disk. Such a step goes out,
+    // next save writes that empty step back over the one on the disk. Such a step goes out,
     // and the caller is told how many, as the session reader does.
     var all = wf.steps || [];
     var known = all.filter(function (s) { return s && DL.getOp(s.opId); });
@@ -339,7 +339,7 @@
     this.state.source.sheets = null;
     this.state.source.error = null;
     this.state.source.status = files.length ? 'loading' : 'empty';
-    // Before the event: a listener writes the session, and an empty sheet there would go to the disk.
+    // Before the event: a listener writes the session, and an empty sheet there goes to the disk.
     if (!keepSheet || !files.length) this.state.source.options.sheet = '';
     this.invalidateResultsFrom(0);
     this.emit('source');
@@ -428,14 +428,14 @@
         selectedId: this.state.selectedId,
         sourceOptions: this.state.source.options,
         sourceName: this.state.source.file ? this.state.source.file.name : null,
-        // The name alone is not the file. Two files can share a name, and the wrong one would
-        // come back beside steps that were built for the other.
+        // The name alone is not the file. Two files can share a name, and the wrong one
+        // comes back beside steps that were built for the other.
         sourceNames: this.state.source.files.map(function (f) { return f.name + ':' + f.size + ':' + f.lastModified; })
       }));
       this.sessionFailed = false;
     } catch (e) {
       // A store that is full keeps the value of the last write. The workspace that comes back
-      // would then be older than the work on the screen, and nothing would say so.
+      // is then older than the work on the screen, and nothing says so.
       if (!this.sessionFailed) { this.sessionFailed = true; U.toast(DL.t('wf.sessionNotKept'), 'warning'); }
     }
   };

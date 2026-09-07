@@ -11,12 +11,15 @@
 
   U.debounce = function (fn, ms) {
     var t = null;
+    var lastArgs = null, lastThis = null;
     var wrapped = function () {
-      var args = arguments, self = this;
+      lastArgs = arguments; lastThis = this;
       clearTimeout(t);
-      t = setTimeout(function () { t = null; fn.apply(self, args); }, ms);
+      t = setTimeout(function () { t = null; fn.apply(lastThis, lastArgs); }, ms);
     };
-    wrapped.flush = function () { if (t) { clearTimeout(t); t = null; fn(); } };
+    // The call that waits runs now, with the arguments it was given. Without them the function
+    // sees nothing, and a caller that passes any gets a different answer than it waited for.
+    wrapped.flush = function () { if (t) { clearTimeout(t); t = null; fn.apply(lastThis, lastArgs); } };
     wrapped.cancel = function () { clearTimeout(t); t = null; };
     return wrapped;
   };

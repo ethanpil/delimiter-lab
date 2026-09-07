@@ -17,7 +17,8 @@
   function SourceView(container, store, actions) {
     this.el = container;
     this.store = store;
-    this.actions = actions; // { openFile(file), reload(), loadSample() }
+    // { openFile, openFiles, addFiles, removeFile, moveFile, reload, loadSample }
+    this.actions = actions;
   }
 
   SourceView.prototype.render = function () {
@@ -102,7 +103,7 @@
 
   // The files of the source, with the rows that each one gave and a way to move or take one out.
   // The list element lives as long as the view. A drag holds a row of it, and a redraw in the
-  // middle of the drag would take that row away and stop the drag with no word to the user.
+  // middle of the drag takes that row away and stops the drag with no word to the user.
   SourceView.prototype.fileList = function () {
     var self = this;
     if (!this.filesEl) {

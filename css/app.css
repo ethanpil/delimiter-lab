@@ -208,7 +208,7 @@ body {
 .source-file {
   display: flex; align-items: center;
   padding: 4px 8px; border: 1px solid var(--dl-border);
-  background: var(--dl-surface); margin-bottom: -1px; /* the borders meet: a drop has no dead space */
+  background: var(--dl-surface); margin-bottom: -1px; /* the borders meet, so there is no gap between them */
 }
 .source-file:first-child { border-radius: 6px 6px 0 0; }
 .source-file:last-child { border-radius: 0 0 6px 6px; margin-bottom: 0; }

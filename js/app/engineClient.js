@@ -38,7 +38,9 @@
     this.worker.onerror = function (e) {
       self.fail(new Error('The processing engine stopped: ' + (e.message || 'unknown error') + '. Reload the page.'));
     };
-    if (this.maxCells) this.send({ type: 'config', maxCells: this.maxCells });
+    // The worker can die later, and every request that waits is refused then. This one has
+    // nobody waiting for it, so it takes its own answer.
+    if (this.maxCells) this.send({ type: 'config', maxCells: this.maxCells }).catch(function () { /* the restart reports it */ });
   };
 
   // Rejects every request, now and later, with the given error.

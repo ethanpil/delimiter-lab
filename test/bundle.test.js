@@ -60,7 +60,7 @@ test('the build brings every operation', () => {
 
 test('the build runs under the strict rules, as the module build does', () => {
   // Every file of the engine was strict before it became a package. An IIFE is not strict by
-  // itself, so the build says so at the top. Without it the two builds would not agree.
+  // itself, so the build says so at the top. Without it the two builds do not agree.
   assert.ok(/^"use strict";/.test(bundleText), 'the build must start with the strict directive');
 });
 

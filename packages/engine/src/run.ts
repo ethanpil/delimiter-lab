@@ -10,14 +10,14 @@ import { DL } from './dl.js';
  *   status  ok | warning | skipped | invalid | error
  *   table   the table that comes out, or null when nothing came out
  *   notes   what the step wants to say about the data
- *   error   the message of a step that could not run
+ *   error   the message of a step that cannot run
  *   ms      the time that the step took
  */
 DL.runStep = function (step, upstream) {
   var t0 = Date.now();
   if (step.skip) return { status: 'skipped', table: upstream, notes: [DL.SKIPPED_NOTE], error: null, ms: 0 };
   // The check and the work must see one object. To check a clean copy and then run the raw
-  // settings lets a value through that the check would refuse, and the step then gives a wrong
+  // settings lets a value through that the check refuses, and the step then gives a wrong
   // answer with the status ok. The cleaning is inside the try, because it reads settings that
   // come from a file and can throw.
   try {

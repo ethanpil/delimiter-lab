@@ -17,7 +17,7 @@
 
   // Reads the store. ok is false when the text is there but cannot be read. That must never look
   // like an empty store: every write puts the whole list back, so one write after a failed read
-  // would remove every workflow that the text still holds.
+  // removes every workflow that the text still holds.
   //
   // other holds the records that this build does not know, for example ones that a later build
   // wrote. They go back to the store untouched, so an older build cannot delete them.
@@ -39,7 +39,7 @@
     return W.list().filter(function (r) { return r.id === id; })[0] || null;
   };
 
-  // Puts the list back, with the records that this build does not know. A store that could not
+  // Puts the list back, with the records that this build does not know. A store that cannot
   // be read is never written over.
   function write(state, arr) {
     if (!state.ok) { U.toast(DL.t('wf.damaged'), 'danger'); return false; }
@@ -106,7 +106,7 @@
         if (cols.indexOf(c) >= 0) found++; else missing++;
       });
       cols = DL.predictColumns(steps[i].opId, params, cols);
-      if (!cols) return missing ? 'partial' : found ? 'partial' : 'unknown';
+      if (!cols) return (missing || found) ? 'partial' : 'unknown';
     }
     if (!missing) return 'full';
     return found ? 'partial' : 'none';

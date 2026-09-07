@@ -149,8 +149,8 @@
     loadToken++; // a load that is on its way must not make an empty source ready
     disarmStop();
     hideProgress();
-    previewKey = null;
-    grid.show(null, DL.t('preview.openFile'));
+    // store.removeSourceFile has emitted 'source' already, and the listener draws the empty
+    // preview. To draw it again here only clears the key that the next refresh reads.
   }
 
   // Writes the files of the source to the workspace store, and says when it cannot keep them.
@@ -268,7 +268,7 @@
     if (batchRunning || store.state.source.status === 'loading') return; // the batch or the load owns the bar, Cancel and the Stop timer
     cancelable = false;
     disarmStop();
-    if (!exporting && store.state.source.status !== 'loading') hideProgress();
+    if (!exporting) hideProgress();
   }
 
   // The steps in the shape that the worker reads. The engine says what that shape is, so the page
@@ -632,7 +632,7 @@
         store.setSourceOptions(DL.defaultSourceOptions());
         DL.fileStore.clear();
         engine.restart(); // the worker holds the table of the old file
-        // Undo cannot bring the file back, and it would put the settings of the old file on an empty
+        // Undo cannot bring the file back, and it puts the settings of the old file on an empty
         // screen. A half undo is worse than none.
         store.clearHistory();
         updateUndoButtons();
@@ -673,7 +673,7 @@
     var go = function () {
       store.replaceWorkflow(wf);
       // A step of an operation this build does not have goes out, and the person is told. Without
-      // a word, that step would come back empty and the next save would write the empty one down.
+      // a word, that step comes back empty and the next save writes the empty one down.
       if (store.droppedSteps) U.toast(DL.t('msg.stepsDropped', { n: DL.pluralize(store.droppedSteps, 'step') }), 'warning');
       if (then) then();
       if (wf.id) DL.workflows.touch(wf.id);
@@ -889,11 +889,11 @@
     function finish() {
       var done = items.filter(function (it) { return it.blob; });
       if (!done.length) { end(); DL.dialogs.batchReport(items); return; }
-      var oneAttention = items.some(function (it) { return it.error || (it.notes && it.notes.length); });
+      var attention = items.some(function (it) { return it.error || (it.notes && it.notes.length); });
       if (single) {
         end();
         U.downloadBlob(done[0].blob, outName);
-        if (oneAttention) DL.dialogs.batchReport(items);
+        if (attention) DL.dialogs.batchReport(items);
         else U.toast(DL.t('msg.downloaded', { name: outName, rows: DL.pluralize(done[0].rowCount, 'row') }), 'success');
         return;
       }
@@ -903,7 +903,7 @@
       engine.zip(done.map(function (it) { return { name: it.name, blob: it.blob }; })).then(function (msg) {
         end();
         U.downloadBlob(msg.blob, outName);
-        var attention = items.some(function (it) { return it.error || (it.notes && it.notes.length); });
+
         if (attention) DL.dialogs.batchReport(items);
         else U.toast(DL.t('msg.downloadedZip', { name: outName, files: DL.pluralize(done.length, 'file') }), 'success');
       }).catch(function (err) { if (token !== batchToken) return; end(); U.toast(err.message, 'danger'); });
@@ -1064,7 +1064,7 @@
   DL.fileStore.get().then(function (files) {
     // The two stores are written one after the other, and every tab of this browser writes the same
     // two. A file that does not belong to these steps stays closed. The name alone is not enough:
-    // two files can share a name, and the wrong one would open beside steps built for the other.
+    // two files can share a name, and the wrong one opens beside steps built for the other.
     var names = store.restoredSourceNames || [];
     var keyOf = function (f) { return f.name + ':' + f.size + ':' + f.lastModified; };
     var mine = files.length === names.length && files.every(function (f, i) { return keyOf(f) === names[i]; });

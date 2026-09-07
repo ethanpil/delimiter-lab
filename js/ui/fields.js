@@ -309,7 +309,7 @@
     if (!columns.length) return wrap(param, U.el('div', { class: 'text-secondary small', text: noColumnsMessage(ctx.columns) }), true);
     // A name of a column that the input does not have now has no box. It stays in the settings,
     // so it comes back when the column does, for example when an earlier step goes off. To write
-    // it away here would also write to the store in the middle of a draw, and this view cannot
+    // it away here also writes to the store in the middle of a draw, and this view cannot
     // take a change before it is built.
     var tbody = U.el('tbody');
     var inputs = new Map();

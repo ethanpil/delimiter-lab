@@ -149,7 +149,7 @@ readers.delimited = function (file, opts) {
       var data = results.data;
       // A file with mixed line endings leaves "\r" on the last value, but only when the parser
       // took "\n" as the line ending. When the parser took "\r\n", a "\r" at the end of the last
-      // value is part of the value, and to remove it would take a character out of the data.
+      // value is part of the value, and to remove it takes a character out of the data.
       var strayCR = results.meta && results.meta.linebreak === '\n';
       for (var i = 0; i < data.length; i++) {
         var row = data[i];
@@ -533,7 +533,7 @@ DL.readSource = function (files, opts) {
   if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + (files.length > 1 ? ' of each file.' : '.'));
   if (ragged) notes.push(DL.raggedNote(ragged));
   // The numbers of this file decide how every value in it is read. Without this the same column
-  // could be read at two scales: 1.234,56 as one thousand and 1.000 as one.
+  // can be read at two scales: 1.234,56 as one thousand and 1.000 as one.
   DL.numberStyle = DL.detectNumberStyle(table);
   if (DL.numberStyle === 'comma') notes.push('The numbers in this file write 1.234,56, so a comma is the decimal separator.');
   return {

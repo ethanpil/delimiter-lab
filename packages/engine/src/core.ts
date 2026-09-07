@@ -347,7 +347,7 @@ DL.toNumber = function (v) {
   if (s === '') return NaN;
   var n;
   // In a file that writes 1.234,56 a lone dot separates groups of three, so "1.000" is one
-  // thousand. The quick path would read it as one, so such a value goes to the rules below.
+  // thousand. The quick path reads it as one, so such a value goes to the rules below.
   var style = DL.numberStyle;
   var quick = !(style === 'comma' && s.indexOf('.') >= 0);
   if (quick && isPlainNumber(s)) { n = +s; return isFinite(n) ? n : NaN; }
@@ -472,6 +472,16 @@ DL.detectNumberStyle = function (table, sampleSize) {
   if (comma > dot * 3) return 'comma';
   if (dot > comma * 3) return 'dot';
   return '';
+};
+
+// Reads a date once for each different value. A column holds few different dates beside its rows.
+DL.memoDate = function (dayFirst) {
+  var cache = new Map();
+  return function (v) {
+    var t = cache.get(v);
+    if (t === undefined) { t = DL.toDate(v, dayFirst); if (cache.size < MEMO_LIMIT) cache.set(v, t); }
+    return t;
+  };
 };
 
 DL.DAY_FIRST = { key: 'dayFirst', label: 'Read 01/02/2024 as 1 February', type: 'boolean', default: false, help: 'Turn this on for day-first dates (common outside the USA). Dates with a four-digit year first are always read correctly. A value with a time zone, such as 2024-01-01T00:00:00Z, is converted to the local time of this computer.' };
@@ -861,8 +871,8 @@ DL.TableBuilder = function (opts) {
 
 DL.TableBuilder.prototype.add = function (row) {
   if (this.toSkip > 0) { this.toSkip--; return; }
-  // The header row comes first, even when it is empty. To drop it would make the first row of
-  // data the header: one row of the file would go, and every column would take a value as a name.
+  // The header row comes first, even when it is empty. To drop it makes the first row of
+  // data the header: one row of the file goes, and every column takes a value as a name.
   // DL.cleanHeaders gives a name to each column that the header row does not name.
   if (this.columns === null && this.headers) {
     this.columns = row.map(DL.cellText);
@@ -1403,10 +1413,6 @@ DL.RESULT_STATUS = {
 };
 
 DL.SKIPPED_NOTE = 'This step is turned off. Data passes through unchanged.';
-
-DL.resultHasTable = function (result) {
-  return !!(result && result.hasTable);
-};
 
 /* ---------- Input and output formats ---------- */
 

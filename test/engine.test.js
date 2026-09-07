@@ -128,7 +128,7 @@ test('padTrim op', () => {
   const r = run('padTrim', { columns: ['First'], trim: 'both', pad: 'left', length: 6, char: '*' }, people);
   assert.strictEqual(rowsOf(r.table)[1][0], '**Jane');
   // An empty value stays empty. This test asked for '******' before, which made a value that the
-  // file does not hold: a person who zero-pads a postcode would get 00000 for a missing one.
+  // file does not hold: a person who zero-pads a postcode gets 00000 for a missing one.
   assert.strictEqual(rowsOf(r.table)[2][0], '');
 });
 
@@ -236,7 +236,7 @@ test('unique op', () => {
 });
 
 // Sort and Filter must read a column of dates by one rule. Day-first was not an answer they
-// could give before, so a column could be read half day-first and half month-first.
+// had before, so a column was read half day-first and half month-first.
 test('sort and filter read dates day-first when asked', () => {
   const d = T(['D'], [['13/01/2024'], ['01/02/2024'], ['05/01/2024'], ['20/03/2024']]);
   const s1 = run('sort', { keys: [{ column: 'D', type: 'date', dir: 'asc' }], dayFirst: true }, d);

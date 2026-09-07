@@ -13,7 +13,7 @@
   F.MAX_BYTES = 100 * 1024 * 1024;
 
   // One connection for the page. Two transactions on one connection keep their order; two
-  // connections do not, and the file of the last write could be the older one.
+  // connections do not, and the file of the last write can be the older one.
   var dbp = null;
 
   // True when the database itself is wrong, not the work asked of it: a store that is not there

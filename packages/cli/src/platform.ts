@@ -40,8 +40,8 @@ export function openFile(path: string): NodeFile {
 
 // How many values the engine may hold. The page asks the browser how much memory the machine has;
 // here the answer comes from the heap that this runtime allows itself, at about 128 bytes for a
-// value. Without this the command would keep the limit that the engine starts with, which is a
-// limit for a browser, and would refuse files that the page reads without trouble.
+// value. Without this the command keeps the limit that the engine starts with, which is a
+// limit for a browser, and refuses files that the page reads without trouble.
 function cellBudget(): number {
   let limit = 4e9; // what a 64-bit runtime usually allows itself
   try { limit = v8.getHeapStatistics().heap_size_limit || limit; } catch (e) { /* keep the number above */ }

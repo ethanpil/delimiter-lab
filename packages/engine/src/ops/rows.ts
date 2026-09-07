@@ -78,14 +78,9 @@ DL.FILTER_OPERATORS = [
 // Makes a function(value) -> boolean for one condition.
 // A test on the parsed date of a value. Each different value is parsed once.
 function memoDate(test, dayFirst) {
-  var cache = new Map();
-  return function (v) {
-    var t = cache.get(v);
-    if (t === undefined) { t = DL.toDate(v, dayFirst); if (cache.size < 50000) cache.set(v, t); }
-    return test(t);
-  };
+  var read = DL.memoDate(dayFirst);
+  return function (v) { return test(read(v)); };
 }
-
 DL.buildCondition = function (c, opts) {
   var matchCase = !!(opts && opts.matchCase);
   var val = c.value == null ? '' : String(c.value);

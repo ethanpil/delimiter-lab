@@ -116,7 +116,7 @@
         U.el('div', { class: 'step-meta' }, [
           U.el('span', { class: 'status-dot status-' + status }),
           statusText,
-          // Only a step that takes time says how long. The others would be noise.
+          // Only a step that takes time says how long. The others are noise.
           (res && res.ms >= SLOW_MS)
             ? U.el('span', { class: 'step-time', title: DL.t('chain.tookTime'), text: U.formatMs(res.ms) })
             : null

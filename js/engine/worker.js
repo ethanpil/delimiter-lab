@@ -318,8 +318,8 @@ function tableFor(stepId) {
   if (state.cancelledFrom >= 0 && idx >= state.cancelledFrom) return null; // The run cancelled this step: no request computes it
   state.recent = [stepId].concat(state.recent.filter(function (id) { return id !== stepId; })).slice(0, 2);
   // The hash of every step of the chain as it is now. A result in the cache whose hash does not
-  // agree belongs to a chain that no longer exists: a run that threw before it could clear the
-  // cache leaves such results behind, and to give one back would show, count and write data that
+  // agree belongs to a chain that no longer exists: a run that threw before it clears the
+  // cache leaves such results behind, and to give one back shows, counts and writes data that
   // the settings of today do not make.
   var i;
   var hashes = [];

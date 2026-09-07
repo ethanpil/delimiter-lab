@@ -18,8 +18,8 @@ global.importScripts = function () {
     let text = fs.readFileSync(path.join(root, f.replace(/^\.\.\/\.\.\//, '')), 'utf8');
     if (/engine\.global/.test(f)) {
       // A small slice lets a test send a character across the edge of two slices. The name must
-      // point at one place only: a hook that lands on other code would leave the reader untested
-      // and the test would pass while proving nothing.
+      // point at one place only: a hook that lands on other code leaves the reader untested
+      // and the test passes while proving nothing.
       const hits = text.split('var SLICE = 8 * 1024 * 1024;').length - 1;
       if (hits !== 1) throw new Error('The reader slice size must appear once in the engine build, not ' + hits + '.');
       text = text.replace('var SLICE = 8 * 1024 * 1024;', 'var SLICE = globalThis.SLICE_OVERRIDE || 8 * 1024 * 1024;');
@@ -118,8 +118,8 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
 
   test('a character that crosses the edge of two slices stays whole', () => {
     // The reader takes the bytes in slices and decodes them with one decoder that carries its
-    // state from slice to slice. Without that, a character of several bytes on the edge would
-    // come out as two broken characters.
+    // state from slice to slice. Without that, a character of several bytes on the edge
+    // comes out as two broken characters.
     const name = 'Zo\u00eb Ma\u00f1ana \u65e5\u672c\u8a9e';
     let text = 'a,b\n';
     for (let i = 0; i < 400; i++) text += name + i + ',' + name + i + '\n';
@@ -329,7 +329,7 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
   });
 
   // Quotes keep one character apart from the data. Two characters cannot be kept apart: the file
-  // would read back with more columns than it was written with.
+  // reads back with more columns than it was written with.
   test('a separator of more than one character is refused', () => {
     assert.throws(() => DL.writeBytes(DL.fromRows(['a', 'b'], [['x|', '|y']]), { format: 'delimited', delimiter: '||' }),
       /one character/);
@@ -344,7 +344,7 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
   });
 
   // A file goes into the zip as a part, so that a batch of large files is never held in memory in
-  // full. The bytes of the zip must be the same either way, or the two platforms would differ.
+  // full. The bytes of the zip must be the same either way, or the two platforms differ.
   test('a zip of parts holds the same bytes as a zip of bytes', () => {
     const a = Buffer.from('x,y\n1,2\n');
     const b = Buffer.from('hello');

@@ -8,7 +8,7 @@
   DL.VERSION = '1.0';
   // The files carry this number, so that a browser takes the new ones after a change. The version
   // stays at 1.0 while the work continues, so on a computer for development each load gets its own
-  // number. Without it the browser would keep the files of the last load.
+  // number. Without it the browser keeps the files of the last load.
   var host = (root.location && root.location.hostname) || '';
   DL.BUILD = (host === 'localhost' || host === '127.0.0.1' || host === '') ? DL.VERSION + '.' + Date.now() : DL.VERSION;
   // Languages with a file in js/i18n/. English is always loaded; the page adds the language of the user.
