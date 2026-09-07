@@ -335,7 +335,7 @@
     engine.search(stepId, searchQuery, 2000).then(function (msg) {
       if (token !== searchToken) return;
       setSearchResult(msg.result.matches, msg.result.total);
-    }).catch(function (err) { U.toast(err.message, 'danger'); });
+    }).catch(function (err) { if (token !== searchToken) return; U.toast(err.message, 'danger'); });
   }
 
   function setSearchResult(matches, total) {
@@ -370,7 +370,7 @@
       if (grid.stepId !== stepId) { showMatches([], ''); return; }
       showMatches(r.matches, note.text + (r.total > r.matches.length ? DL.t('preview.firstShown', { shown: r.matches.length }) : ''));
       noteRowsShown = true;
-    }).catch(function (err) { U.toast(err.message, 'danger'); });
+    }).catch(function (err) { if (token !== searchToken) return; U.toast(err.message, 'danger'); });
   };
 
   function stepSearch(dir) {
@@ -517,6 +517,8 @@
         store.replaceWorkflow({ id: null, name: '', steps: [] });
         loadToken++; // a load that is on its way must not put its file on the empty screen
         batchToken++; // and a batch that is on its way must not go on with the new worker
+        searchToken++;
+        exportToken++;
         store.setSourceFile(null);
         store.setSourceOptions(DL.defaultSourceOptions());
         DL.fileStore.clear();
@@ -641,6 +643,8 @@
   }
 
   /* ---------- Download ---------- */
+  var exportToken = 0;
+
   function download() {
     grid.closeProfile();
     var st = store.state;
@@ -666,12 +670,19 @@
       lastFormatOptions = allOptions;
       showProgress(DL.t('progress.preparingDownload'), 20);
       exporting = true;
+      var token = ++exportToken;
       engine.exportStep(shown.stepId, options).then(function (msg) {
+        if (token !== exportToken) return;
         exporting = false;
         hideProgress();
         U.downloadBlob(msg.blob, fileName);
         U.toast(DL.t('msg.downloaded', { name: fileName, rows: DL.pluralize(msg.rowCount, 'row') }), 'success');
-      }).catch(function (err) { exporting = false; hideProgress(); U.toast(err.message, 'danger'); });
+      }).catch(function (err) {
+        if (token !== exportToken) return;
+        exporting = false;
+        hideProgress();
+        U.toast(err.message, 'danger');
+      });
     });
   }
 
