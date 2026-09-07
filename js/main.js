@@ -680,14 +680,14 @@
       exporting = true;
       var token = ++exportToken;
       engine.exportStep(shown.stepId, options).then(function (msg) {
+        exporting = false; // before the test of the token: the bar waits for this flag
         if (token !== exportToken) return;
-        exporting = false;
         hideProgress();
         U.downloadBlob(msg.blob, fileName);
         U.toast(DL.t('msg.downloaded', { name: fileName, rows: DL.pluralize(msg.rowCount, 'row') }), 'success');
       }).catch(function (err) {
-        if (token !== exportToken) return;
         exporting = false;
+        if (token !== exportToken) return;
         hideProgress();
         U.toast(err.message, 'danger');
       });
