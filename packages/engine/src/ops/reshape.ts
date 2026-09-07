@@ -113,7 +113,7 @@ DL.registerOp({
           throw new Error('"' + p.columnKey + '" has more than ' + MAX_PIVOT_COLUMNS + ' different values. Choose a column with fewer values.');
         }
         if ((keyNames.length + 1 + rowIdxs.length) * groupOrder.length > DL.maxCells) {
-          throw new Error('The result would have more than ' + DL.pluralize(DL.maxCells, 'cell') + ', which is too many for the browser. Choose fewer group columns or a key column with fewer values.');
+          throw new Error('The result would have more than ' + DL.pluralize(DL.maxCells, 'cell') + ', which is too many. Choose fewer group columns or a key column with fewer values.');
         }
         ks = keySlot[key] = keyNames.length;
         keyNames.push(key);
@@ -198,7 +198,7 @@ DL.registerOp({
         count++;
       }
     }
-    if (count * (keptIdxs.length + 2) > DL.maxCells) throw new Error('The result would have ' + DL.pluralize(count, 'row') + ', which is too many for the browser.');
+    if (count * (keptIdxs.length + 2) > DL.maxCells) throw new Error('The result would have ' + DL.pluralize(count, 'row') + ', which is too many.');
 
     // Pass 2: fill the output columns.
     var srcRow = new Uint32Array(count);

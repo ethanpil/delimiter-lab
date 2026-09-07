@@ -13,5 +13,16 @@ import { DL } from './index.js';
 var before = (self as any).DL;
 if (before) {
   Object.keys(before).forEach(function (key) { if (!(key in DL)) DL[key] = before[key]; });
+  // The build writes the version of the manifest into the engine, so the two agree. When they do
+  // not, the browser holds an engine from another version, which would give old answers with no
+  // sign of it. The manifest is what the page loaded its files with, so it wins, and the reason
+  // is said out loud.
+  if (before.VERSION && before.VERSION !== DL.VERSION) {
+    if (typeof console !== 'undefined') {
+      console.error('Delimiter Lab: the page is version ' + before.VERSION + ' but the engine is ' +
+        'version ' + DL.VERSION + '. Empty the cache of the browser, or run npm run build.');
+    }
+    DL.VERSION = before.VERSION;
+  }
 }
 (self as any).DL = DL;

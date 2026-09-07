@@ -265,9 +265,10 @@
     if (!exporting && store.state.source.status !== 'loading') hideProgress();
   }
 
-  // The steps in the shape that the worker reads.
+  // The steps in the shape that the worker reads. The engine says what that shape is, so the page
+  // and the dl command cannot drift apart.
   function workerSteps() {
-    return store.state.workflow.steps.map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
+    return DL.workerSteps(store.state.workflow.steps);
   }
 
   function runChain() {
@@ -638,7 +639,7 @@
   // screen and the file that is open do not change.
   function quickRunWorkflow(wf, files) {
     if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
-    var steps = (wf.steps || []).map(function (s) { return { id: s.id, opId: s.opId, params: s.params, skip: s.enabled === false }; });
+    var steps = DL.workerSteps(wf.steps);
     if (!steps.length) { U.toast(DL.t('msg.quickRunNoSteps'), 'info'); return; }
     var split = splitDataFiles(files);
     files = split.good;

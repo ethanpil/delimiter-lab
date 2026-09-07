@@ -297,10 +297,39 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
   });
   await flushTimers();
 
-  test('a batch beyond 4 GB is refused', () => {
-    const big = { name: 'a.csv', blob: { size: 5 * 1024 * 1024 * 1024 } };
+  test('a batch beyond 4 GB is refused before any file is read', () => {
+    let read = 0;
+    const big = { name: 'a.csv', blob: { size: 5 * 1024 * 1024 * 1024, slice() { read++; return null; } } };
     const r = send({ type: 'zip', entries: [big] });
     assert.strictEqual(r.type, 'error');
+    assert.strictEqual(read, 0);
+  });
+
+  // A file goes into the zip as a part, so that a batch of large files is never held in memory in
+  // full. The bytes of the zip must be the same either way, or the two platforms would differ.
+  test('a zip of parts holds the same bytes as a zip of bytes', () => {
+    const a = Buffer.from('x,y\n1,2\n');
+    const b = Buffer.from('hello');
+    const byBytes = DL.makeZip([
+      { name: 'a.csv', bytes: new Uint8Array(a) },
+      { name: 'süß.csv', bytes: new Uint8Array(b) }
+    ]);
+    const crcOf = (buf) => DL.crcEnd(DL.crcAdd(-1, new Uint8Array(buf)));
+    const byParts = DL.makeZip([
+      { name: 'a.csv', part: new Uint8Array(a), size: a.length, crc: crcOf(a) },
+      { name: 'süß.csv', part: new Uint8Array(b), size: b.length, crc: () => crcOf(b) }
+    ]);
+    const flat = (out) => Buffer.concat(out.chunks.map((c) => Buffer.from(c instanceof ArrayBuffer ? new Uint8Array(c) : c)));
+    assert.deepStrictEqual(flat(byParts), flat(byBytes));
+  });
+
+  // The checksum of a part is read in slices, so the answer must match the whole-file checksum.
+  test('a checksum made in parts matches one made at once', () => {
+    const buf = Buffer.from('The quick brown fox jumps over the lazy dog, twice over.');
+    let c = -1;
+    for (let at = 0; at < buf.length; at += 7) c = DL.crcAdd(c, new Uint8Array(buf.subarray(at, at + 7)));
+    assert.strictEqual(DL.crcEnd(c), DL.crcEnd(DL.crcAdd(-1, new Uint8Array(buf))));
+    if (zlib.crc32) assert.strictEqual(DL.crcEnd(c), zlib.crc32(buf));
   });
 
   await Promise.all(pending);

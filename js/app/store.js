@@ -128,7 +128,7 @@
     var steps = this.state.workflow.steps;
     var idx = afterId === 'source' ? -1 : this.stepIndex(afterId);
     if (afterId !== 'source' && idx < 0) idx = steps.length - 1;
-    var step = { id: U.uid(), opId: opId, params: DL.defaultParams(opId), enabled: true };
+    var step = { id: DL.uid(), opId: opId, params: DL.defaultParams(opId), enabled: true };
     steps.splice(idx + 1, 0, step);
     DL.initParams(opId, step.params, this.inputColumnsFor(step.id));
     this.invalidateResultsFrom(idx + 1);

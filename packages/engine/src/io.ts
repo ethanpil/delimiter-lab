@@ -30,7 +30,7 @@ function humanNumber(n) {
 }
 
 function tooLarge(cells) {
-  var err = new Error('This file is too large for your browser to work with smoothly. It has about ' + humanNumber(cells) +
+  var err = new Error('This file is too large to work with smoothly. It has about ' + humanNumber(cells) +
     ' values, and the safe limit on this computer is about ' + humanNumber(DL.maxCells) + '. Try splitting the file, or use a computer with more memory.');
   (err as any).tooLarge = true;
   return err;
@@ -71,7 +71,7 @@ function makeDecoder(encoding, notes) {
   try {
     return new TextDecoder(encoding);
   } catch (e) {
-    notes.push('The encoding "' + encoding + '" is not supported by this browser. UTF-8 was used.');
+    notes.push('The encoding "' + encoding + '" is not supported here. UTF-8 was used.');
     return new TextDecoder('utf-8');
   }
 }
@@ -238,26 +238,37 @@ var CRC_TABLE = (function () {
   return t;
 })();
 
-// CRC-32 of bytes.
-function crc32(bytes) {
-  var c = -1;
+// CRC-32 in parts. A caller starts with -1, adds the bytes of each part in turn, and ends with
+// crcEnd. A caller that holds a large file in slices can then make a checksum without holding the
+// whole file in memory.
+function crcAdd(c, bytes) {
   for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-  return (c ^ -1) >>> 0;
+  return c;
 }
+function crcEnd(c) { return (c ^ -1) >>> 0; }
+
+// CRC-32 of bytes that are all here.
+function crc32(bytes) { return crcEnd(crcAdd(-1, bytes)); }
 
 var ZIP_MAX_BYTES = 4 * 1024 * 1024 * 1024 - 1;
 var ZIP_MAX_ENTRIES = 65535;
 
-// Makes a zip from [{ name, bytes }], where bytes is a Uint8Array. The zip stores the files without
-// compression, because deflate needs a library or a stream that answers later. The chunks point at
-// the byte arrays that came in, so no file is copied.
+// Makes a zip from a list of files. A file comes as { name, bytes } with a Uint8Array, or as
+// { name, part, size, crc }, where part is something the platform can put in a file of its own,
+// such as a blob. The second shape lets a caller keep a large file where it is: the checksum comes
+// from crcAdd over slices, and nothing is copied into memory here. That crc may be a function,
+// which is called only after the size of the zip is known to be allowed, so a batch that is too
+// large is refused before any file is read.
+//
+// The zip stores the files without compression, because deflate needs a library or a stream that
+// answers later. The chunks point at what came in, so no file is copied.
 function makeZip(entries) {
   var encoder0 = new TextEncoder();
   var total = 22;
   entries.forEach(function (e) {
     var nameLen = encoder0.encode(e.name).length;
     if (nameLen > 65535) throw new Error('The file name "' + e.name.slice(0, 40) + '…" is too long for a zip file.');
-    total += e.bytes.length + 30 + 46 + 2 * nameLen;
+    total += (e.bytes ? e.bytes.length : e.size) + 30 + 46 + 2 * nameLen;
   });
   if (entries.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) {
     throw new Error('A zip file can hold at most ' + ZIP_MAX_ENTRIES + ' files and 4 GB. Apply the workflow to fewer files at one time.');
@@ -270,9 +281,9 @@ function makeZip(entries) {
   var central = [];
   var offset = 0;
   entries.forEach(function (e) {
-    var size = e.bytes.length;
+    var size = e.bytes ? e.bytes.length : e.size;
     var name = encoder.encode(e.name);
-    var crc = crc32(e.bytes);
+    var crc = e.bytes ? crc32(e.bytes) : (typeof e.crc === 'function' ? e.crc() : e.crc);
     var local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);
     local.setUint16(4, 20, true);       // version needed
@@ -285,7 +296,7 @@ function makeZip(entries) {
     local.setUint32(22, size, true);
     local.setUint16(26, name.length, true);
     local.setUint16(28, 0, true);
-    parts.push(local.buffer, name, e.bytes);
+    parts.push(local.buffer, name, e.bytes || e.part);
     central.push({ name: name, crc: crc, size: size, offset: offset });
     offset += 30 + name.length + size;
   });
@@ -384,7 +395,7 @@ writers.xlsx = function (table, o, format) {
     }
   }
   // The Excel writer needs several copies of the data in memory.
-  if (n * table.columns.length > DL.maxCells / 4) throw new Error('This table is too large for an Excel file in the browser. Use CSV for this data.');
+  if (n * table.columns.length > DL.maxCells / 4) throw new Error('This table is too large for an Excel file. Use CSV for this data.');
   var BLOCK = 20000;
   var ws = DL.platform.xlsx().utils.aoa_to_sheet(o.header !== false ? [table.columns] : [], { dense: true });
   var at = o.header !== false ? 1 : 0;
@@ -429,15 +440,10 @@ function writeBytes(table, o) {
   return writers[format.id](table, o, format);
 }
 
-// The same bytes as a Blob, which is what the page and the worker pass around.
-function writeTable(table, o) {
-  var out = writeBytes(table, o);
-  return new Blob(out.chunks, { type: out.mime });
-}
-
 DL.readers = readers;
 DL.writeBytes = writeBytes;
-DL.writeTable = writeTable;
+DL.crcAdd = crcAdd;
+DL.crcEnd = crcEnd;
 DL.makeZip = makeZip;
 DL.tooLarge = tooLarge;
 DL.raggedNote = RAGGED_NOTE;
@@ -469,9 +475,12 @@ DL.readSource = function (files, opts) {
   var share = many ? 90 / files.length : 0;
   for (var i = 0; i < files.length; i++) {
     var file = files[i];
-    if (many) DL.platform.scope(file.name + ' (' + (i + 1) + ' of ' + files.length + ')', share * i, share * (i + 1));
+    if (many) {
+      DL.platform.scope(file.name + ' (' + (i + 1) + ' of ' + files.length + ')', share * i, share * (i + 1));
+      DL.platform.progress('', 0); // the name of the file, before the reader says what it does
+    }
     var result = DL.readerFor(file.name)(file, opts);
-    // Each file adds to the cells that the browser must hold, so the limit is on the total.
+    // Each file adds to the cells that must be held, so the limit is on the total.
     cells += result.table.length * Math.max(1, result.table.columns.length);
     if (cells > DL.maxCells) throw DL.tooLarge(cells);
     tables.push(result.table);

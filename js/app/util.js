@@ -9,10 +9,6 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   };
 
-  U.uid = function () {
-    return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-  };
-
   U.debounce = function (fn, ms) {
     var t = null;
     var wrapped = function () {

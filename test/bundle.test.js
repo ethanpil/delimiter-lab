@@ -15,6 +15,7 @@ global.self = global;
 
 vm.runInThisContext(fs.readFileSync(path.join(root, 'js/manifest.js'), 'utf8'), { filename: 'manifest.js' });
 const manifestKeys = Object.keys(global.DL).slice();
+const manifestVersion = global.DL.VERSION;
 const bundlePath = path.join(root, 'dist/engine.global.js');
 assert.ok(fs.existsSync(bundlePath), 'dist/engine.global.js is missing. Run: npm run build');
 const bundleText = fs.readFileSync(bundlePath, 'utf8');
@@ -31,6 +32,12 @@ test('the build keeps what the manifest put on the name', () => {
   manifestKeys.forEach((k) => assert.ok(k in DL, 'the build dropped DL.' + k));
   assert.strictEqual(typeof DL.VERSION, 'string');
   assert.ok(Array.isArray(DL.FILES.engine));
+});
+
+test('the version of the build is the version of the manifest', () => {
+  // The build reads the number out of js/manifest.js. When the two differ, the page holds an engine
+  // from another version and can give old answers with no sign of it. Run: npm run build
+  assert.strictEqual(DL.VERSION, manifestVersion);
 });
 
 test('the build brings every operation', () => {

@@ -42,7 +42,7 @@
     var arr = W.list();
     var now = Date.now();
     var rec = {
-      id: wf.id || U.uid(),
+      id: wf.id || DL.uid(),
       name: wf.name,
       steps: wf.steps.map(cleanStep),
       columns: wf.columns || [],

@@ -556,7 +556,7 @@
     if (neg) out = parens ? "(" + out + ")" : "-" + out;
     return out;
   };
-  DL.collator = typeof Intl !== "undefined" && Intl.Collator ? new Intl.Collator(void 0, { numeric: true, sensitivity: "base" }) : null;
+  DL.collator = typeof Intl !== "undefined" && Intl.Collator ? new Intl.Collator("en", { numeric: true, sensitivity: "base" }) : null;
   DL.compareText = function(a, b) {
     if (DL.collator) return DL.collator.compare(a, b);
     return a < b ? -1 : a > b ? 1 : 0;
@@ -1482,7 +1482,7 @@
     return String(Math.round(n));
   }
   function tooLarge(cells) {
-    var err = new Error("This file is too large for your browser to work with smoothly. It has about " + humanNumber(cells) + " values, and the safe limit on this computer is about " + humanNumber(DL.maxCells) + ". Try splitting the file, or use a computer with more memory.");
+    var err = new Error("This file is too large to work with smoothly. It has about " + humanNumber(cells) + " values, and the safe limit on this computer is about " + humanNumber(DL.maxCells) + ". Try splitting the file, or use a computer with more memory.");
     err.tooLarge = true;
     return err;
   }
@@ -1519,7 +1519,7 @@
     try {
       return new TextDecoder(encoding);
     } catch (e) {
-      notes.push('The encoding "' + encoding + '" is not supported by this browser. UTF-8 was used.');
+      notes.push('The encoding "' + encoding + '" is not supported here. UTF-8 was used.');
       return new TextDecoder("utf-8");
     }
   }
@@ -1680,10 +1680,15 @@
     }
     return t;
   })();
-  function crc32(bytes) {
-    var c = -1;
+  function crcAdd(c, bytes) {
     for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 255] ^ c >>> 8;
+    return c;
+  }
+  function crcEnd(c) {
     return (c ^ -1) >>> 0;
+  }
+  function crc32(bytes) {
+    return crcEnd(crcAdd(-1, bytes));
   }
   var ZIP_MAX_BYTES = 4 * 1024 * 1024 * 1024 - 1;
   var ZIP_MAX_ENTRIES = 65535;
@@ -1693,7 +1698,7 @@
     entries.forEach(function(e) {
       var nameLen = encoder0.encode(e.name).length;
       if (nameLen > 65535) throw new Error('The file name "' + e.name.slice(0, 40) + '\u2026" is too long for a zip file.');
-      total += e.bytes.length + 30 + 46 + 2 * nameLen;
+      total += (e.bytes ? e.bytes.length : e.size) + 30 + 46 + 2 * nameLen;
     });
     if (entries.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) {
       throw new Error("A zip file can hold at most " + ZIP_MAX_ENTRIES + " files and 4 GB. Apply the workflow to fewer files at one time.");
@@ -1706,9 +1711,9 @@
     var central = [];
     var offset = 0;
     entries.forEach(function(e) {
-      var size = e.bytes.length;
+      var size = e.bytes ? e.bytes.length : e.size;
       var name = encoder.encode(e.name);
-      var crc = crc32(e.bytes);
+      var crc = e.bytes ? crc32(e.bytes) : typeof e.crc === "function" ? e.crc() : e.crc;
       var local = new DataView(new ArrayBuffer(30));
       local.setUint32(0, 67324752, true);
       local.setUint16(4, 20, true);
@@ -1721,7 +1726,7 @@
       local.setUint32(22, size, true);
       local.setUint16(26, name.length, true);
       local.setUint16(28, 0, true);
-      parts.push(local.buffer, name, e.bytes);
+      parts.push(local.buffer, name, e.bytes || e.part);
       central.push({ name, crc, size, offset });
       offset += 30 + name.length + size;
     });
@@ -1812,7 +1817,7 @@
         if (get(i).length > 32767) throw new Error("Row " + (i + 1) + ' of column "' + table.columns[c] + '" has more than 32,767 characters. Excel cannot hold it. Use CSV for this data.');
       }
     }
-    if (n * table.columns.length > DL.maxCells / 4) throw new Error("This table is too large for an Excel file in the browser. Use CSV for this data.");
+    if (n * table.columns.length > DL.maxCells / 4) throw new Error("This table is too large for an Excel file. Use CSV for this data.");
     var BLOCK = 2e4;
     var ws = DL.platform.xlsx().utils.aoa_to_sheet(o.header !== false ? [table.columns] : [], { dense: true });
     var at = o.header !== false ? 1 : 0;
@@ -1852,13 +1857,10 @@
     var format = DL.outputFormatById(o.format) || DL.outputFormats[0];
     return writers[format.id](table, o, format);
   }
-  function writeTable(table, o) {
-    var out = writeBytes(table, o);
-    return new Blob(out.chunks, { type: out.mime });
-  }
   DL.readers = readers;
   DL.writeBytes = writeBytes;
-  DL.writeTable = writeTable;
+  DL.crcAdd = crcAdd;
+  DL.crcEnd = crcEnd;
   DL.makeZip = makeZip;
   DL.tooLarge = tooLarge;
   DL.raggedNote = RAGGED_NOTE;
@@ -1883,7 +1885,10 @@
     var share = many ? 90 / files.length : 0;
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
-      if (many) DL.platform.scope(file.name + " (" + (i + 1) + " of " + files.length + ")", share * i, share * (i + 1));
+      if (many) {
+        DL.platform.scope(file.name + " (" + (i + 1) + " of " + files.length + ")", share * i, share * (i + 1));
+        DL.platform.progress("", 0);
+      }
       var result = DL.readerFor(file.name)(file, opts);
       cells += result.table.length * Math.max(1, result.table.columns.length);
       if (cells > DL.maxCells) throw DL.tooLarge(cells);
@@ -4114,7 +4119,7 @@
             throw new Error('"' + p.columnKey + '" has more than ' + MAX_PIVOT_COLUMNS + " different values. Choose a column with fewer values.");
           }
           if ((keyNames.length + 1 + rowIdxs.length) * groupOrder.length > DL.maxCells) {
-            throw new Error("The result would have more than " + DL.pluralize(DL.maxCells, "cell") + ", which is too many for the browser. Choose fewer group columns or a key column with fewer values.");
+            throw new Error("The result would have more than " + DL.pluralize(DL.maxCells, "cell") + ", which is too many. Choose fewer group columns or a key column with fewer values.");
           }
           ks = keySlot[key] = keyNames.length;
           keyNames.push(key);
@@ -4204,7 +4209,7 @@
           count++;
         }
       }
-      if (count * (keptIdxs.length + 2) > DL.maxCells) throw new Error("The result would have " + DL.pluralize(count, "row") + ", which is too many for the browser.");
+      if (count * (keptIdxs.length + 2) > DL.maxCells) throw new Error("The result would have " + DL.pluralize(count, "row") + ", which is too many.");
       var srcRow = new Uint32Array(count);
       var names = new Array(count);
       var values = new Array(count);
@@ -4518,6 +4523,12 @@
     Object.keys(before).forEach(function(key) {
       if (!(key in DL)) DL[key] = before[key];
     });
+    if (before.VERSION && before.VERSION !== DL.VERSION) {
+      if (typeof console !== "undefined") {
+        console.error("Delimiter Lab: the page is version " + before.VERSION + " but the engine is version " + DL.VERSION + ". Empty the cache of the browser, or run npm run build.");
+      }
+      DL.VERSION = before.VERSION;
+    }
   }
   self.DL = DL;
 })();

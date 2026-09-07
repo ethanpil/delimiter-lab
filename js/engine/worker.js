@@ -104,11 +104,30 @@ function handle(msg) {
 // stays between from and to. One file of a list then owns one part of the bar.
 var progressScope = null;
 
-// The zip of the engine takes bytes, so that every platform can make one. A browser worker reads
-// a blob without waiting, so the change from blobs to bytes happens here.
+// The bytes of a table as a blob, which is what the page and the worker pass around. The engine
+// gives the bytes, because only a browser has a Blob.
+function writeBlob(table, o) {
+  var out = DL.writeBytes(table, o);
+  return new Blob(out.chunks, { type: out.mime });
+}
+
+// A zip of the files that a batch made. Each file stays a blob: its checksum is read in slices and
+// the blob itself goes into the zip, so a batch of many large files is never held in memory in
+// full. The engine takes the size and the checksum in place of the bytes.
+var CRC_SLICE = 8 * 1024 * 1024;
 function zipBlob(entries) {
   var out = DL.makeZip(entries.map(function (e) {
-    return { name: e.name, bytes: new Uint8Array(new FileReaderSync().readAsArrayBuffer(e.blob)) };
+    return {
+      name: e.name, part: e.blob, size: e.blob.size,
+      crc: function () {
+        var c = -1;
+        for (var at = 0; at < e.blob.size; at += CRC_SLICE) {
+          var end = Math.min(e.blob.size, at + CRC_SLICE);
+          c = DL.crcAdd(c, new Uint8Array(new FileReaderSync().readAsArrayBuffer(e.blob.slice(at, end))));
+        }
+        return DL.crcEnd(c);
+      }
+    };
   }));
   return new Blob(out.chunks, { type: out.mime });
 }
@@ -575,7 +594,7 @@ function batchFile(msg) {
     var bad = run.results[run.failedAt];
     return { error: bad.error || bad.notes[0], step: run.failedAt + 1, notes: notes };
   }
-  return { blob: DL.writeTable(run.table, msg.output || {}), rowCount: run.table.length, notes: notes };
+  return { blob: writeBlob(run.table, msg.output || {}), rowCount: run.table.length, notes: notes };
 }
 
 // Writers by output format id. Each gives a Blob.
@@ -583,5 +602,5 @@ function batchFile(msg) {
 function exportStep(msg, reply) {
   var table = tableFor(msg.stepId);
   if (!table) { reply({ type: 'error', message: 'There is no data to download for this step.' }); return; }
-  reply({ type: 'exported', blob: DL.writeTable(table, msg.options || {}), rowCount: table.length });
+  reply({ type: 'exported', blob: writeBlob(table, msg.options || {}), rowCount: table.length });
 }

@@ -600,7 +600,7 @@ DL.formatNumber = function (n, dec, thousands, decimalSep, prefix, suffix, paren
 /* ---------- Comparison ---------- */
 
 DL.collator = (typeof Intl !== 'undefined' && Intl.Collator)
-  ? new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+  ? new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
   : null;
 
 DL.compareText = function (a, b) {
