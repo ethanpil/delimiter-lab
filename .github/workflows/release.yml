@@ -125,6 +125,10 @@ jobs:
           bash .github/smoke.sh ./out/dl-macos-universal
           # The runner has an Apple silicon chip. When it can also run Intel code, the Intel half
           # is checked too, so that the file is known to work on both kinds of Mac.
+          #
+          # The Intel half says "CPU lacks AVX support, strange crashes may occur" in this check.
+          # Rosetta does not give AVX to the code it runs. A real Intel Mac has AVX, so the message
+          # belongs to the check and not to the file. Do not change the build for it.
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "--- the Intel half"
             arch -x86_64 ./out/dl-macos-universal --version
