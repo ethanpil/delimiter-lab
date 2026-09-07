@@ -16,7 +16,7 @@
     var self = this;
     this.dead = null;
     try {
-      this.worker = new Worker('js/engine/worker.js?v=' + DL.VERSION);
+      this.worker = new Worker('js/engine/worker.js?v=' + DL.BUILD);
     } catch (e) {
       // A browser refuses a worker from a file:// address or under a strict content security policy.
       this.worker = { postMessage: function () {}, terminate: function () {} };
