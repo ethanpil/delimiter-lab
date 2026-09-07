@@ -30,9 +30,11 @@ DL.registerOp({
     var res = renameColumns(table.columns, p.map);
     var dup = duplicateNames(res.columns);
     if (dup.length) throw new Error('Two columns would be named "' + dup[0] + '".');
-    // A copy of the list, not the list itself. Two tables that share it let a write on one
-    // reach the other, and the results of the chain are held and shared.
-    return { table: DL.makeTable(res.columns, table.cols.slice(), table.length), notes: ['Renamed ' + DL.pluralize(res.count, 'column') + '.'] };
+    // The same list, on purpose. DL.col writes a column it materializes back into the list, and
+    // the worker pairs the columns of two steps by identity to see that a column was renamed and
+    // not made new. A copy here breaks that pairing, and Rename then marks every row as changed.
+    // No operation writes into the list of another table, so the sharing is safe.
+    return { table: DL.makeTable(res.columns, table.cols, table.length), notes: ['Renamed ' + DL.pluralize(res.count, 'column') + '.'] };
   }
 });
 

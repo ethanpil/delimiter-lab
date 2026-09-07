@@ -64,4 +64,15 @@ if "${dl[@]}" "$work/bad.json" "$work/in.csv" --validate --quiet 2>/dev/null; th
   echo "::error::a workflow that names a column that is not there must fail"; exit 1
 fi
 
+# A workflow that holds code must not run without the answer that allows it.
+cat > "$work/code.json" <<'JSON'
+{ "format": "delimiter-lab-workflow", "version": 1, "name": "Code", "columns": ["name"], "sourceOptions": null,
+  "steps": [ { "id": "s1", "opId": "javascript", "params": { "code": "return { name: 1 };", "output": "name" }, "enabled": true } ] }
+JSON
+if "${dl[@]}" "$work/code.json" "$work/in.csv" -o "$work/code.csv" --quiet 2>/dev/null; then
+  echo "::error::a workflow with a Custom JavaScript step must not run without --allow-code"; exit 1
+fi
+"${dl[@]}" "$work/code.json" "$work/in.csv" -o "$work/code.csv" --allow-code --quiet
+test -s "$work/code.csv" || { echo "::error::--allow-code did not run the workflow"; exit 1; }
+
 echo "the binary reads, runs and writes"

@@ -330,18 +330,14 @@
     } else if (lastComma >= 0) {
       var commas = s.split(",").length - 1;
       var after = s.length - lastComma - 1;
-      if (style === "dot") {
-        if (groupsOf3(s, ",")) s = s.replace(/,/g, "");
-        else return NaN;
-      } else if (style === "comma" && commas === 1) s = s.replace(",", ".");
+      if (style === "dot" && groupsOf3(s, ",")) s = s.replace(/,/g, "");
+      else if (style === "comma" && commas === 1) s = s.replace(",", ".");
       else if (commas === 1 && after !== 3) s = s.replace(",", ".");
       else if (groupsOf3(s, ",")) s = s.replace(/,/g, "");
       else return NaN;
     } else if (lastDot >= 0) {
-      if (style === "comma") {
-        if (groupsOf3(s, ".")) s = s.replace(/\./g, "");
-        else return NaN;
-      } else if (s.indexOf(".") !== lastDot) {
+      if (style === "comma" && groupsOf3(s, ".")) s = s.replace(/\./g, "");
+      else if (s.indexOf(".") !== lastDot) {
         if (!groupsOf3(s, ".")) return NaN;
         s = s.replace(/\./g, "");
       }
@@ -399,6 +395,8 @@
           else dot++;
           continue;
         }
+        var sep = lc >= 0 ? "," : ".";
+        if (v.split(sep).length > 2) continue;
         var at = lc >= 0 ? lc : ld;
         var run = v.length - at - 1;
         if (run === 3 || run === 0) continue;
@@ -787,12 +785,13 @@
       this.toSkip--;
       return;
     }
-    if (this.columns === null && this.headers) {
+    var blank = this.dropEmpty && DL.isBlankRow(row);
+    if (this.columns === null && this.headers && !(blank && row.length <= 1)) {
       this.columns = row.map(DL.cellText);
       this.expected = row.length;
       return;
     }
-    if (this.dropEmpty && DL.isBlankRow(row)) return;
+    if (blank) return;
     if (row.length === 1 && row[0] === "" && this.expected > 1) row = [];
     if (this.expected < 0) this.expected = row.length;
     else if (row.length !== this.expected && row.length !== 0) this.ragged++;
@@ -1247,10 +1246,10 @@
     });
     return params;
   };
-  DL.validateParams = function(opId, params, inputColumns) {
+  DL.validateParams = function(opId, params, inputColumns, clean) {
     var op = DL.getOp(opId);
     if (!op) return ['Unknown operation "' + opId + '".'];
-    params = DL.cleanParams(opId, params || {});
+    if (clean !== true) params = DL.cleanParams(opId, params || {});
     var problems = [];
     var cols = inputColumns || null;
     op.params.forEach(function(p) {
@@ -1480,7 +1479,7 @@
     if (step.skip) return { status: "skipped", table: upstream, notes: [DL.SKIPPED_NOTE], error: null, ms: 0 };
     try {
       var params = DL.cleanParams(step.opId, step.params || {});
-      var problems = DL.validateParams(step.opId, params, upstream.columns);
+      var problems = DL.validateParams(step.opId, params, upstream.columns, true);
       if (problems.length) return { status: "invalid", table: null, notes: problems, error: null, ms: 0 };
       var res = DL.runOp(step.opId, params, upstream);
       return { status: res.status, table: res.table, notes: res.notes, error: null, ms: Date.now() - t0 };
@@ -1873,10 +1872,16 @@
       }
     }
     if (n * table.columns.length > DL.maxCells / 4) throw new Error("This table is too large for an Excel file. Use CSV for this data.");
+    var comma = DL.numberStyle === "comma";
     var numeric = function(v) {
       if (v === "" || v.length > 20) return v;
       var c2 = v.charCodeAt(0);
       if (!(c2 >= 48 && c2 <= 57) && c2 !== 45 && c2 !== 46) return v;
+      if (comma) {
+        var g = DL.toNumber(v);
+        if (!isFinite(g)) return v;
+        return v.indexOf(",") >= 0 || v.indexOf(".") >= 0 || String(g) === v ? g : v;
+      }
       var x = Number(v);
       return isFinite(x) && String(x) === v ? x : v;
     };
@@ -2545,7 +2550,7 @@
         else if (trim === "left") v = v.replace(/^\s+/, "");
         else if (trim === "right") v = v.replace(/\s+$/, "");
         if (collapse) v = v.replace(/\s{2,}/g, " ");
-        if (DL.isBlank(v)) return v;
+        if (DL.isBlank(v) && ch !== " ") return v;
         var missing = pad === "none" ? 0 : len - DL.charCount(v);
         if (missing > 0) v = pad === "left" ? ch.repeat(missing) + v : v + ch.repeat(missing);
         return v;
@@ -3292,7 +3297,7 @@
       var res = renameColumns(table.columns, p.map);
       var dup = duplicateNames(res.columns);
       if (dup.length) throw new Error('Two columns would be named "' + dup[0] + '".');
-      return { table: DL.makeTable(res.columns, table.cols.slice(), table.length), notes: ["Renamed " + DL.pluralize(res.count, "column") + "."] };
+      return { table: DL.makeTable(res.columns, table.cols, table.length), notes: ["Renamed " + DL.pluralize(res.count, "column") + "."] };
     }
   });
   function renameColumns(cols, map) {
@@ -4336,7 +4341,7 @@
     { value: "unique", label: "must be unique in the column (case and spaces at the ends do not count)", needs: "none" }
   ];
   var EMPTY_MATTERS = { notEmpty: true, isEmpty: true, noWhitespace: true };
-  DL.buildVerifyRule = function(table, rule) {
+  DL.buildVerifyRule = function(table, rule, dayFirst) {
     var col = DL.col(table, DL.requireCol(table, rule.column));
     var val = rule.value == null ? "" : String(rule.value);
     var n = DL.toNumber(val);
@@ -4372,7 +4377,7 @@
         };
         break;
       case "isDate":
-        var readDate = DL.memoDate(false);
+        var readDate = DL.memoDate(dayFirst);
         test = function(v) {
           var t = readDate(v);
           return t === t;
@@ -4496,6 +4501,7 @@
     keywords: "validate check quality rules email",
     params: [
       { key: "rules", label: "Rules", type: "rules" },
+      DL.DAY_FIRST,
       {
         key: "action",
         label: "Then",
@@ -4520,7 +4526,7 @@
     apply: function(table, p) {
       var n = table.length;
       var rules = p.rules.map(function(r) {
-        return DL.buildVerifyRule(table, r);
+        return DL.buildVerifyRule(table, r, !!p.dayFirst);
       });
       var failCounts = rules.map(function() {
         return 0;
@@ -4557,11 +4563,11 @@
       var k = lookup ? Number(lookup.rule) : -1;
       if (!p.rules[k]) return { matches: [], total: 0 };
       if (p.action === "passed") return { matches: [], total: 0, removed: true };
-      var rule = DL.buildVerifyRule(table, p.rules[k]);
+      var rule = DL.buildVerifyRule(table, p.rules[k], !!p.dayFirst);
       var others = p.action === "failed" ? p.rules.filter(function(r, j2) {
         return j2 !== k;
       }).map(function(r) {
-        return DL.buildVerifyRule(table, r);
+        return DL.buildVerifyRule(table, r, !!p.dayFirst);
       }) : [];
       var col = DL.requireCol(table, p.rules[k].column);
       var matches = [];

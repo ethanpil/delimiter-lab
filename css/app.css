@@ -53,6 +53,8 @@ body {
   overflow: hidden;
   background: var(--dl-surface-2);
   font-size: 14px;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---------- Header ---------- */
@@ -77,9 +79,11 @@ body {
 .app-progress .progress { flex: 1; height: 8px; }
 
 /* ---------- Layout ---------- */
+.app-header { flex: 0 0 auto; }
 .app-body {
   display: flex;
-  height: calc(100% - var(--dl-header-h));
+  flex: 1 1 auto;
+  min-height: 0; /* a flex item does not shrink below its content without this */
 }
 .app-sidebar {
   width: var(--dl-sidebar-w);
@@ -370,6 +374,7 @@ kbd { font-size: 11px; }
     height: auto;
     min-height: var(--dl-header-h);
     flex-wrap: wrap;
+    flex: 0 0 auto;
     row-gap: 4px;
     padding-top: 4px;
     padding-bottom: 4px;

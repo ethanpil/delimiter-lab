@@ -27,6 +27,8 @@ var state = {
   source: null,          // table { columns, cols, length }
   sourceInfo: null,      // { fileName, rowCount, notes, ... }
   sourceKey: '',         // identifies the loaded file and options in step hashes
+  numberStyle: '',       // how the open file writes its numbers; a batch reads another file and must not change it
+  hashes: null,          // stepId -> chain hash, from the last run; a preview then does not hash the chain again
   steps: [],             // [{ id, opId, params, skip }]
   cache: new Map(),      // stepId -> entry (see makeEntry)
   pinned: [],            // step ids on screen: their tables stay in memory
@@ -63,6 +65,9 @@ function drain() {
 }
 
 function handle(msg) {
+  // A batch reads another file and sets the style of that file on the engine. Put the style of
+  // the open file back before any work on it, or its numbers are read at the wrong scale.
+  DL.numberStyle = state.numberStyle;
   var reply = function (payload) {
     payload.requestId = msg.requestId;
     self.postMessage(payload);
@@ -150,6 +155,8 @@ function loadFile(msg, reply) {
   var read = DL.readSource(files, msg.options || {});
   state.source = read.table;
   state.sourceKey = read.key;
+  state.numberStyle = DL.numberStyle; // DL.readSource read it out of this file
+  state.hashes = null;
   state.sourceInfo = read.info;
   reply({ type: 'loaded', info: state.sourceInfo });
 }
@@ -170,7 +177,7 @@ function hashOf(str) {
 function stepHash(step, upstreamHash) {
   var op = DL.getOp(step.opId);
   var extra = op && op.hashExtra ? op.hashExtra(step.params) : '';
-  return hashOf(upstreamHash + '|' + step.opId + '|' + (step.skip ? 'skip' : '') + '|' + JSON.stringify(step.params) + '|' + extra);
+  return hashOf(upstreamHash + '|' + step.opId + '|' + (step.skip ? 'skip' : '') + '|' + JSON.stringify(step.params) + '|' + extra + '|' + state.numberStyle);
 }
 
 // Gives the position of a step id in the chain, or -1.
@@ -246,6 +253,7 @@ var CANCELLED_NOTE = 'The run was cancelled. Change a setting or turn a step off
 // a cancel message can stop the run before the next step.
 function runChain(msg, done) {
   state.steps = msg.steps || [];
+  state.hashes = null;
   state.pinned = msg.protect || [];
   state.cancelRun = !!msg.cancelled;
   state.cancelledFrom = -1;
@@ -256,6 +264,7 @@ function runChain(msg, done) {
   var blocked = null;
   var cancelled = false;
   var live = new Set();
+  var chainHashes = [];
   var progressAt = Date.now();
   var i = 0;
 
@@ -277,6 +286,7 @@ function runChain(msg, done) {
       var step = state.steps[i];
       live.add(step.id);
       var h = stepHash(step, upstreamHash);
+      chainHashes.push(h);
       var entry;
       if (!blocked) {
         entry = state.cache.get(step.id);
@@ -304,6 +314,7 @@ function runChain(msg, done) {
       // After 50 ms of work, let the message queue run so a cancel message can arrive.
       if (Date.now() - sliceStart > 50 && i < state.steps.length && !blocked) { setTimeout(stepLoop, 0); return; }
     }
+    state.hashes = chainHashes;
     finish();
   }
   stepLoop();
@@ -322,9 +333,12 @@ function tableFor(stepId) {
   // cache leaves such results behind, and to give one back shows, counts and writes data that
   // the settings of today do not make.
   var i;
-  var hashes = [];
-  var h = state.sourceKey;
-  for (i = 0; i <= idx; i++) { h = stepHash(state.steps[i], h); hashes.push(h); }
+  var hashes = state.hashes;
+  if (!hashes || hashes.length < idx + 1) {
+    hashes = [];
+    var h = state.sourceKey;
+    for (i = 0; i <= idx; i++) { h = stepHash(state.steps[i], h); hashes.push(h); }
+  }
   var entry = state.cache.get(stepId);
   if (entry && entry.table && entry.hash === hashes[idx]) { touch(entry); return entry.table; }
   // Recompute from the nearest upstream result that is still in memory and still belongs.
@@ -589,15 +603,20 @@ function batchFile(msg) {
   var read = DL.readSource([msg.file], msg.options || {});
   var table = read.table;
   var notes = read.info.notes.slice();
+  var batchStyle = DL.numberStyle; // the style of THIS file, for the steps below
   var run = DL.runWorkflow(table, msg.steps || []);
   run.results.forEach(function (r, i) {
     if (r.status === 'warning') r.notes.forEach(function (n) { notes.push('Step ' + (i + 1) + ': ' + DL.noteText(n)); });
   });
   if (!run.table) {
     var bad = run.results[run.failedAt];
+    DL.numberStyle = state.numberStyle; // the open file owns the engine again
     return { error: bad.error || bad.notes[0], step: run.failedAt + 1, notes: notes };
   }
-  return { blob: writeBlob(run.table, msg.output || {}), rowCount: run.table.length, notes: notes };
+  if (batchStyle !== DL.numberStyle) DL.numberStyle = batchStyle; // a step must not change it
+  var out = { blob: writeBlob(run.table, msg.output || {}), rowCount: run.table.length, notes: notes };
+  DL.numberStyle = state.numberStyle; // the open file owns the engine again
+  return out;
 }
 
 // Writers by output format id. Each gives a Blob.

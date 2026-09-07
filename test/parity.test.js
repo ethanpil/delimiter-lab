@@ -49,8 +49,26 @@ const STEPS = [
   { id: 's5', opId: 'sort', params: { keys: [{ column: 'name', type: 'auto', dir: 'asc' }] }, enabled: true }
 ];
 
+// A file that writes 1.234,56. The page and the command must read it the same way.
+const INPUT_DE = [
+  'name;city;amount;when',
+  'ada;London;1.234,56;15/01/2024',
+  'bo;Berlin;1.000;02/02/2024',
+  'cy;Wien;12,345;03/03/2024',
+  'di;Bonn;9,90;04/04/2024',
+  'ed;Graz;2.500,00;05/05/2024',
+  'fi;Linz;0,75;06/06/2024'
+].join('\n') + '\n';
+
+// A file whose header row has no names, and a value that really ends with a carriage return.
+const INPUT_ODD = 'a,b\r\n1,"ends with CR\r"\r\n2,"plain"\r\n';
+
 const aPath = path.join(tmp, 'a.csv');
 const bPath = path.join(tmp, 'b.csv');
+const dePath = path.join(tmp, 'de.csv');
+const oddPath = path.join(tmp, 'odd.csv');
+fs.writeFileSync(dePath, INPUT_DE);
+fs.writeFileSync(oddPath, INPUT_ODD);
 fs.writeFileSync(aPath, INPUT_A);
 fs.writeFileSync(bPath, INPUT_B);
 
@@ -74,6 +92,14 @@ const PLAIN = workflow(STEPS);
 // sides once differed: the command kept the whole path.
 const STACKED = workflow(STEPS, { multiFile: 'stack', fileNameColumn: true });
 const WITH_OFF_STEP = workflow(STEPS.map((s, i) => (i === 1 ? Object.assign({}, s, { enabled: false }) : s)));
+// The numbers of the German file go through Format Numbers, which writes them back.
+const GERMAN = workflow([
+  { id: 'g1', opId: 'numFormat', params: { columns: ['amount'], decimals: 2, thousands: ',' }, enabled: true },
+  { id: 'g2', opId: 'sort', params: { keys: [{ column: 'amount', type: 'number', dir: 'asc' }] }, enabled: true }
+], { delimiter: 'custom', customDelimiter: ';' });
+
+const PASS_THROUGH = workflow([{ id: 'p1', opId: 'case', params: { columns: ['a'], mode: 'upper' }, enabled: true }]);
+
 const CANNOT_RUN = workflow([
   { id: 's1', opId: 'case', params: { columns: ['no such column'], mode: 'upper' }, enabled: true }
 ]);
@@ -277,8 +303,25 @@ function sameBytes(fromBrowser, fromCli, what) {
     sameBytes(fromBrowser, fromCli, 'a batch');
   });
 
-  await test('a batch gives the same bytes as the command for one plain file', async () => {
-    sameBytes(await browserBatchBytes(aPath, 'csv', PLAIN), cliBytes([aPath], 'csv', PLAIN), 'a plain batch');
+  // A file that writes 1.234,56 is read by the rule of that file, on both platforms.
+  await test('a file with a comma for a decimal reads the same on both sides', async () => {
+    const fromBrowser = await browserBytes([dePath], 'csv', GERMAN);
+    const fromCli = cliBytes([dePath], 'csv', GERMAN);
+    const text = fromBrowser.toString('utf8');
+    assert.match(text, /1,234\.56/, 'the German amounts were not read as numbers');
+    assert.match(text, /1,000\.00/, '1.000 must be one thousand in this file');
+    sameBytes(fromBrowser, fromCli, 'a comma-decimal file');
+  });
+
+  await test('a batch of that file also agrees with the command', async () => {
+    sameBytes(await browserBatchBytes(dePath, 'csv', GERMAN), cliBytes([dePath], 'csv', GERMAN), 'a German batch');
+  });
+
+  // A header row with no names, and a carriage return that belongs to a value.
+  await test('an odd file reads the same on both sides', async () => {
+    const fromBrowser = await browserBytes([oddPath], 'csv', PASS_THROUGH);
+    assert.match(fromBrowser.toString('utf8'), /ends with CR\r/, 'the carriage return in the value was lost');
+    sameBytes(fromBrowser, cliBytes([oddPath], 'csv', PASS_THROUGH), 'a file with a CR in a value');
   });
 
   await test('the values themselves came through, not two empty files', async () => {

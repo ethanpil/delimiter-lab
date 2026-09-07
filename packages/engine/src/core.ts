@@ -379,13 +379,13 @@ DL.toNumber = function (v) {
     // When the file says which separator it uses, that answer holds for every value in it.
     // Without it: one comma with exactly 3 digits after it separates groups ("1,234"), another
     // single comma is a decimal separator ("1,5"), and many commas must all separate groups of 3.
-    if (style === 'dot') { if (groupsOf3(s, ',')) s = s.replace(/,/g, ''); else return NaN; }
+    if (style === 'dot' && groupsOf3(s, ',')) s = s.replace(/,/g, '');
     else if (style === 'comma' && commas === 1) s = s.replace(',', '.');
     else if (commas === 1 && after !== 3) s = s.replace(',', '.');
     else if (groupsOf3(s, ',')) s = s.replace(/,/g, '');
     else return NaN;
   } else if (lastDot >= 0) {
-    if (style === 'comma') { if (groupsOf3(s, '.')) s = s.replace(/\./g, ''); else return NaN; }
+    if (style === 'comma' && groupsOf3(s, '.')) s = s.replace(/\./g, '');
     else if (s.indexOf('.') !== lastDot) {
       if (!groupsOf3(s, '.')) return NaN; // 1.234.567
       s = s.replace(/\./g, '');
@@ -460,6 +460,8 @@ DL.detectNumberStyle = function (table, sampleSize) {
       if (lc < 0 && ld < 0) continue;
       if (!/\d/.test(v)) continue;
       if (lc >= 0 && ld >= 0) { if (lc > ld) comma++; else dot++; continue; }
+      var sep = lc >= 0 ? ',' : '.';
+      if (v.split(sep).length > 2) continue; // 31.03.2024 and 1.234.567 look the same here
       var at = lc >= 0 ? lc : ld;
       var run = v.length - at - 1;
       if (run === 3 || run === 0) continue;           // 1,234 and "end." say nothing
@@ -871,15 +873,17 @@ DL.TableBuilder = function (opts) {
 
 DL.TableBuilder.prototype.add = function (row) {
   if (this.toSkip > 0) { this.toSkip--; return; }
-  // The header row comes first, even when it is empty. To drop it makes the first row of
-  // data the header: one row of the file goes, and every column takes a value as a name.
-  // DL.cleanHeaders gives a name to each column that the header row does not name.
-  if (this.columns === null && this.headers) {
+  // A blank line and a header row with no names are not the same row. An empty line gives one
+  // empty value; a header row of ",," gives one for each column. So a blank first row with more
+  // than one value is the header, and DL.cleanHeaders names its columns; a blank line before the
+  // header is dropped, as any blank line is.
+  var blank = this.dropEmpty && DL.isBlankRow(row);
+  if (this.columns === null && this.headers && !(blank && row.length <= 1)) {
     this.columns = row.map(DL.cellText);
     this.expected = row.length;
     return;
   }
-  if (this.dropEmpty && DL.isBlankRow(row)) return;
+  if (blank) return;
   // A blank line that the user keeps is a row of empty values, not a ragged row.
   if (row.length === 1 && row[0] === '' && this.expected > 1) row = [];
   if (this.expected < 0) this.expected = row.length;
@@ -1330,10 +1334,12 @@ DL.initParams = function (opId, params, columns) {
 
 // Gives a list of plain-language problems, or [] when the step can run.
 // inputColumns === null means that the columns are not known: only the settings are checked.
-DL.validateParams = function (opId, params, inputColumns) {
+// clean: the caller has already cleaned these settings, so this does not clean them again. A
+// second cleaning gives a number field a different type than the first one did.
+DL.validateParams = function (opId, params, inputColumns, clean) {
   var op = DL.getOp(opId);
   if (!op) return ['Unknown operation "' + opId + '".'];
-  params = DL.cleanParams(opId, params || {}); // the checks read the same shapes as apply()
+  if (clean !== true) params = DL.cleanParams(opId, params || {}); // the checks read the same shapes as apply()
   var problems = [];
   var cols = inputColumns || null;
   op.params.forEach(function (p) {

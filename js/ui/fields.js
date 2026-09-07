@@ -317,6 +317,11 @@
       var input = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: hasOwn.call(map, c) ? map[c] : '', placeholder: c, spellcheck: 'false' });
       input.addEventListener('input', function () {
         if (input.value.trim()) map[c] = input.value; else delete map[c];
+        // The names of columns that this input does not have go now. A person is editing, so the
+        // change is theirs; to do it while the panel draws would send a change into a view that
+        // is not built. Kept names would else make the workflow look like a partial fit for every
+        // file, and nothing on the screen can remove them.
+        Object.keys(map).forEach(function (k) { if (columns.indexOf(k) < 0) delete map[k]; });
         ctx.onChange(Object.assign(Object.create(null), map), { merge: true });
       });
       inputs.set(c, input);

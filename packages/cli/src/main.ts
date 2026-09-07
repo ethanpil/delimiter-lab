@@ -138,6 +138,16 @@ export async function main(argv: string[]): Promise<void> {
     return fail('The workflow file "' + a.workflow + '" is not right: ' + e.message);
   }
 
+  // A workflow file travels from person to person. A Custom JavaScript step in one is code, and
+  // it runs here with every right this command has: the files of the machine and the network. The
+  // page asks before it runs such a step; a terminal has nobody to ask, so it refuses and names
+  // the answer that allows it. --validate runs no step, so it needs no answer.
+  const code = (workflow.steps || []).filter(function (st: any) { return st && st.opId === 'javascript' && st.enabled !== false; });
+  if (code.length && !a.allowCode && !a.validate) {
+    return fail('This workflow holds ' + DL.pluralize(code.length, 'Custom JavaScript step') +
+      ', which is code from the file "' + a.workflow + '". Read it first. To run it: --allow-code');
+  }
+
   // ---- the files ----
   const files: NodeFile[] = [];
   for (const name of a.inputs) {
@@ -147,16 +157,6 @@ export async function main(argv: string[]): Promise<void> {
     catch (e: any) { return fail('The file "' + name + '" could not be read: ' + e.message); }
   }
 
-  // A workflow file travels from person to person. A Custom JavaScript step in one is code, and
-  // it runs here with every right this command has: the files of the machine and the network. The
-  // page asks before it runs such a step; a terminal has nobody to ask, so it refuses and names
-  // the answer that allows it.
-  const code = (workflow.steps || []).filter(function (st: any) { return st && st.opId === 'javascript' && st.enabled !== false; });
-  if (code.length && !a.allowCode) {
-    return fail('This workflow holds ' + DL.pluralize(code.length, 'Custom JavaScript step') +
-      ', which is code from the file "' + a.workflow + '". Read it first. To run it: --allow-code');
-  }
-
   // The settings of the workflow read every file. More than one file is one source, one file
   // after the other, which is what one output asks for.
   const options = DL.cleanSourceOptions(workflow.sourceOptions || {});
@@ -164,6 +164,13 @@ export async function main(argv: string[]): Promise<void> {
 
   let format: any;
   try { format = formatFor(a); } catch (e: any) { return fail(e.message); }
+  // A file named .xlsx that holds CSV helps nobody.
+  if (a.output && a.format) {
+    const byName = DL.outputFormats.filter(function (f: any) { return f.extension === path.extname(a.output as string).toLowerCase(); })[0];
+    if (byName && byName.id !== format.id) {
+      say('The name "' + a.output + '" says ' + byName.id + ', and --format says ' + format.id + '. Writing ' + format.id + '.');
+    }
+  }
 
   // ---- read ----
   let source: any;

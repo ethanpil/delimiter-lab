@@ -425,7 +425,9 @@ DL.registerOp({
       else if (trim === 'left') v = v.replace(/^\s+/, '');
       else if (trim === 'right') v = v.replace(/\s+$/, '');
       if (collapse) v = v.replace(/\s{2,}/g, ' ');
-      if (DL.isBlank(v)) return v; // an empty value stays empty: to pad it makes a value the file does not hold
+      // An empty value takes spaces, which line a column up, but not another character. To put
+      // 00000 in an empty postcode makes a value that the file does not hold.
+      if (DL.isBlank(v) && ch !== ' ') return v;
       // The length counts characters, so an emoji pad character or value counts as one.
       var missing = pad === 'none' ? 0 : len - DL.charCount(v);
       if (missing > 0) v = pad === 'left' ? ch.repeat(missing) + v : v + ch.repeat(missing);

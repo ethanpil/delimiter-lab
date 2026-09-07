@@ -408,10 +408,19 @@ writers.xlsx = function (table, o, format) {
   // Excel holds a number as a number. The table keeps only text, so a value that reads as a
   // number and writes back exactly the same becomes a number here. A value such as 007 or
   // 1,234.50 does not write back the same, so it stays text and keeps every character.
+  var comma = DL.numberStyle === 'comma';
   var numeric = function (v) {
     if (v === '' || v.length > 20) return v;
     var c = v.charCodeAt(0);
     if (!(c >= 48 && c <= 57) && c !== 45 && c !== 46) return v; // must start with a digit, - or .
+    if (comma) {
+      // The file writes 1.234,56, so a plain Number() reads 1.234 as one and not as one thousand.
+      // A value with a separator takes the answer of the reader; one without it must still write
+      // back the same, so 007 keeps its characters.
+      var g = DL.toNumber(v);
+      if (!isFinite(g)) return v;
+      return (v.indexOf(',') >= 0 || v.indexOf('.') >= 0 || String(g) === v) ? g : v;
+    }
     var x = Number(v);
     return (isFinite(x) && String(x) === v) ? x : v;
   };

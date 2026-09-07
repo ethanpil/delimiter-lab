@@ -232,10 +232,11 @@
     showProgress(DL.t('progress.readingFile'), 2);
     armStop();
     engine.load(src.files, src.options).then(function (msg) {
-      // The timer of a load that another load took over must go too, or it puts a message about
-      // work that is running on a screen where nothing runs.
-      disarmStop();
+      // Only the load that still owns the screen puts the timer away. One timer serves every
+      // load, and a load that another one took over would else disarm the timer of that other
+      // load, which then runs a large file with no way to stop it.
       if (token !== loadToken) return;
+      disarmStop();
       hideProgress();
       restoredLoad = false;
       store.setSourceInfo(msg.info);
@@ -716,7 +717,9 @@
       U.confirm({ title: DL.t('msg.replaceTitle'), message: DL.t('msg.replaceMessage'), yes: DL.t('msg.replace') }, go);
     };
     // A workflow with code gets its own warning first. The question about saving must not hide it.
-    if ((wf.steps || []).some(function (s) { return s.opId === 'javascript'; })) {
+    // A step that is turned off does not run, so it does not need the question. The dl command
+    // asks the same way.
+    if ((wf.steps || []).some(function (s) { return s && s.opId === 'javascript' && s.enabled !== false; })) {
       U.confirm({ title: DL.t('msg.applyTitle'), message: DL.t('msg.codeWarning'), yes: DL.t('common.use'), danger: true }, ask);
       return;
     }

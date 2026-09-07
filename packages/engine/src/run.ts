@@ -22,7 +22,7 @@ DL.runStep = function (step, upstream) {
   // come from a file and can throw.
   try {
     var params = DL.cleanParams(step.opId, step.params || {});
-    var problems = DL.validateParams(step.opId, params, upstream.columns);
+    var problems = DL.validateParams(step.opId, params, upstream.columns, true);
     if (problems.length) return { status: 'invalid', table: null, notes: problems, error: null, ms: 0 };
     var res = DL.runOp(step.opId, params, upstream);
     return { status: res.status, table: res.table, notes: res.notes, error: null, ms: Date.now() - t0 };

@@ -82,6 +82,10 @@ dl workflow.json input.csv --validate        # check the workflow against the fi
 Everything that `dl` says about its work goes to standard error, so a pipe carries only data. It
 answers 0 when the work is done and 1 when it is not.
 
+The command writes with the default settings of the format: a byte order mark, CRLF line endings,
+and a semicolon for `delimited`. A workflow file does not hold the settings of the Download dialog,
+so the page and the command give the same bytes at those defaults and not at others.
+
 More than one input file is read as one Data Source, one file after the other, with the settings
 that the workflow holds. Columns go by name.
 

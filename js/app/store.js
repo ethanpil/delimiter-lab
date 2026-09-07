@@ -5,6 +5,7 @@
   var U = DL.util;
 
   var SESSION_KEY = 'dl.session.v1';
+  var WRITER_KEY = 'dl.tab.v1';
   var MAX_HISTORY = 100;
 
   function Store() {
@@ -28,8 +29,14 @@
     this.redoStack = [];
     this.savedSnapshot = null; // the workflow as it was last saved
     // Every tab of this browser writes one session. This name says which tab wrote it last, so a
-    // tab can see that another one owns the workspace now and say so before work is lost.
-    this.writerId = DL.uid();
+    // tab can see that another one owns the workspace now and say so before work is lost. It
+    // lives in sessionStorage, which belongs to one tab and stays through a reload: with a new
+    // name at each load, a single tab warns about itself every time.
+    this.writerId = null;
+    try {
+      this.writerId = sessionStorage.getItem(WRITER_KEY);
+      if (!this.writerId) { this.writerId = DL.uid(); sessionStorage.setItem(WRITER_KEY, this.writerId); }
+    } catch (e) { this.writerId = DL.uid(); } // no sessionStorage: the warning is then only best effort
     this.restoreSession();
   }
 
@@ -48,17 +55,15 @@
 
   /* ---------- Undo / redo ---------- */
 
-  // withSource: the action also changes the settings of the source, so an undo must put them back.
-  // Without it an undo of a step takes away a delimiter or a heading answer that the person
-  // chose after that step, and those answers have no undo entry of their own.
-  Store.prototype.snapshot = function (withSource) {
-    var snap = { workflow: this.state.workflow, selectedId: this.state.selectedId };
-    if (withSource) snap.sourceOptions = this.state.source.options;
-    return JSON.stringify(snap);
+  // Undo holds the steps and the selection, and nothing else. The settings of the source have no
+  // undo entry of their own, so to put them back with a step takes away an answer that the person
+  // chose later. Applying a workflow sets those settings and reads the file again itself.
+  Store.prototype.snapshot = function () {
+    return JSON.stringify({ workflow: this.state.workflow, selectedId: this.state.selectedId });
   };
 
-  Store.prototype.pushHistory = function (withSource) {
-    this.undoStack.push(this.snapshot(withSource));
+  Store.prototype.pushHistory = function () {
+    this.undoStack.push(this.snapshot());
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift();
     this.redoStack.length = 0;
     this.lastEditKey = null; // the next edit starts a new undo entry
@@ -84,19 +89,12 @@
     this.state.dirty = this.workflowSnapshot() !== this.savedSnapshot;
     this.emit('steps');
     this.emit('workflow');
-    // Only an entry that holds them: an applied workflow. The panel and the reader both listen
-    // for this, so the form on the screen and the file agree.
-    if (data.sourceOptions && JSON.stringify(data.sourceOptions) !== JSON.stringify(this.state.source.options)) {
-      this.state.source.options = data.sourceOptions;
-      this.emit('sourceOptions');
-    }
   };
 
   Store.prototype.undo = function () {
     if (!this.undoStack.length) return;
-    var back = this.undoStack.pop();
-    this.redoStack.push(this.snapshot(back.indexOf('"sourceOptions"') >= 0));
-    this.applySnapshot(back);
+    this.redoStack.push(this.snapshot());
+    this.applySnapshot(this.undoStack.pop());
   };
 
   Store.prototype.redo = function () {

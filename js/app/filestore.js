@@ -21,7 +21,10 @@
   // on its own, and without a way back every file the person opens says that it cannot be kept.
   function brokenDb(err) {
     var name = err && err.name;
-    return name === 'NotFoundError' || name === 'VersionError' || name === 'InvalidStateError';
+    // Not InvalidStateError: that is a connection which has just closed, which this module does
+    // to itself in onversionchange and onclose. To remove the database for it takes away a file
+    // that is not damaged, and one tab that repairs makes every other tab close and repair too.
+    return name === 'NotFoundError' || name === 'VersionError';
   }
 
   var repaired = false;

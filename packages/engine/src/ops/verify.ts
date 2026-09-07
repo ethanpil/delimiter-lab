@@ -35,7 +35,7 @@ DL.VERIFY_RULES = [
 var EMPTY_MATTERS = { notEmpty: true, isEmpty: true, noWhitespace: true };
 
 // Gives { label, test(rowIndex) -> boolean } for one rule on a table column.
-DL.buildVerifyRule = function (table, rule) {
+DL.buildVerifyRule = function (table, rule, dayFirst) {
   var col = DL.col(table, DL.requireCol(table, rule.column));
   var val = rule.value == null ? '' : String(rule.value);
   var n = DL.toNumber(val);
@@ -50,7 +50,7 @@ DL.buildVerifyRule = function (table, rule) {
     case 'isInteger': test = function (v) { var x = num(v); return !isNaN(x) && Math.floor(x) === x; }; break;
     case 'noNumbers': test = function (v) { return !/\d/.test(v); }; break;
     case 'isDate':
-      var readDate = DL.memoDate(false); // each different value parses once
+      var readDate = DL.memoDate(dayFirst); // each different value parses once
       test = function (v) { var t = readDate(v); return t === t; };
       break;
     case 'isEmail': test = function (v) { return EMAIL_RE.test(v.trim()); }; break;
@@ -106,6 +106,7 @@ DL.registerOp({
   keywords: 'validate check quality rules email',
   params: [
     { key: 'rules', label: 'Rules', type: 'rules' },
+    DL.DAY_FIRST,
     { key: 'action', label: 'Then', type: 'select', default: 'flag',
       options: [
         { value: 'flag', label: 'Keep all rows and add a "Problems" column' },
@@ -120,7 +121,7 @@ DL.registerOp({
   },
   apply: function (table, p) {
     var n = table.length;
-    var rules = p.rules.map(function (r) { return DL.buildVerifyRule(table, r); });
+    var rules = p.rules.map(function (r) { return DL.buildVerifyRule(table, r, !!p.dayFirst); });
     var failCounts = rules.map(function () { return 0; });
     var failedRows = 0;
     var flag = p.action === 'flag';
@@ -156,9 +157,9 @@ DL.registerOp({
     var k = lookup ? Number(lookup.rule) : -1;
     if (!p.rules[k]) return { matches: [], total: 0 };
     if (p.action === 'passed') return { matches: [], total: 0, removed: true };
-    var rule = DL.buildVerifyRule(table, p.rules[k]);
+    var rule = DL.buildVerifyRule(table, p.rules[k], !!p.dayFirst);
     // With "keep only rows with problems", the output row of a row depends on the other rules too.
-    var others = p.action === 'failed' ? p.rules.filter(function (r, j) { return j !== k; }).map(function (r) { return DL.buildVerifyRule(table, r); }) : [];
+    var others = p.action === 'failed' ? p.rules.filter(function (r, j) { return j !== k; }).map(function (r) { return DL.buildVerifyRule(table, r, !!p.dayFirst); }) : [];
     var col = DL.requireCol(table, p.rules[k].column);
     var matches = [];
     var total = 0;
