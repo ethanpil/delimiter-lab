@@ -329,6 +329,40 @@ test('sort text uses ranks with direction and empties', () => {
   assert.deepStrictEqual(rowsOf(r2.table).map((x) => x[0]), ['', 'a', 'b', 'B', 'c']);
 });
 
+test('stackTables puts tables one after the other and matches columns by name', () => {
+  const mk = (columns, rows) => DL.makeTable(columns, columns.map((_, c) => rows.map((r) => r[c])), rows.length);
+  const a = mk(['name', 'city'], [['Ada', 'London'], ['Alan', 'Cambridge']]);
+  const b = mk(['name', 'city'], [['Grace', 'New York']]);
+  const one = DL.stackTables([a, b], ['a.csv', 'b.csv']);
+  assert.deepStrictEqual(one.table.columns, ['name', 'city']);
+  assert.strictEqual(one.table.length, 3);
+  assert.deepStrictEqual(rowsOf(one.table), [['Ada', 'London'], ['Alan', 'Cambridge'], ['Grace', 'New York']]);
+  assert.deepStrictEqual(one.notes, []);
+
+  // A column that only one file has: the other rows are empty, and a note names the file.
+  const c = mk(['name', 'age'], [['Kay', '31']]);
+  const two = DL.stackTables([a, c], ['a.csv', 'c.csv']);
+  assert.deepStrictEqual(two.table.columns, ['name', 'city', 'age']);
+  assert.deepStrictEqual(rowsOf(two.table), [['Ada', 'London', ''], ['Alan', 'Cambridge', ''], ['Kay', '', '31']]);
+  assert.strictEqual(two.notes.length, 2);
+  assert.ok(two.notes[0].indexOf('a.csv') === 1, two.notes[0]);
+  assert.ok(two.notes[0].indexOf('age') > 0, two.notes[0]);
+  assert.ok(two.notes[1].indexOf('c.csv') === 1, two.notes[1]);
+
+  // A different order of the same names is the same column.
+  const d = mk(['city', 'name'], [['Paris', 'Zoe']]);
+  assert.deepStrictEqual(rowsOf(DL.stackTables([a, d], ['a', 'd']).table),
+    [['Ada', 'London'], ['Alan', 'Cambridge'], ['Zoe', 'Paris']]);
+
+  // One table comes back as it is; no table gives an empty table.
+  assert.strictEqual(DL.stackTables([a], ['a']).table, a);
+  assert.strictEqual(DL.stackTables([], []).table.length, 0);
+
+  // An empty table adds no rows.
+  const empty = mk(['name', 'city'], []);
+  assert.strictEqual(DL.stackTables([a, empty], ['a', 'e']).table.length, 2);
+});
+
 test('TableBuilder skips rows at the bottom', () => {
   const rows = [['a', 'b'], ['1', 'x'], ['2', 'y'], ['3', 'z'], ['total', '-']];
   const build = (opts) => { const b = new DL.TableBuilder(opts); rows.forEach((r) => b.add(r)); return b.finish(); };

@@ -846,6 +846,52 @@
     return DL.makeTable(DL.cleanHeaders(names), this.cols, n);
   };
 
+  // Puts tables one after the other into one table. A column goes to the column of the same name.
+  // A column that a table does not have is empty for the rows of that table. names[i] is the name of
+  // the file that gave tables[i]; it goes into the notes.
+  DL.stackTables = function (tables, names) {
+    if (!tables.length) return { table: DL.makeTable([], [], 0), notes: [] };
+    if (tables.length === 1) return { table: tables[0], notes: [] };
+    var columns = [];
+    var indexOf = Object.create(null);
+    var total = 0;
+    var i, c, r;
+    for (i = 0; i < tables.length; i++) {
+      total += tables[i].length;
+      for (c = 0; c < tables[i].columns.length; c++) {
+        var name = tables[i].columns[c];
+        if (!(name in indexOf)) { indexOf[name] = columns.length; columns.push(name); }
+      }
+    }
+    var cols = new Array(columns.length);
+    for (c = 0; c < columns.length; c++) cols[c] = new Array(total);
+    var notes = [];
+    var at = 0;
+    for (i = 0; i < tables.length; i++) {
+      var t = tables[i];
+      var have = Object.create(null);
+      for (c = 0; c < t.columns.length; c++) have[t.columns[c]] = c;
+      var missing = [];
+      for (c = 0; c < columns.length; c++) {
+        var from = have[columns[c]];
+        var out = cols[c];
+        if (from === undefined) {
+          missing.push(columns[c]);
+          for (r = 0; r < t.length; r++) out[at + r] = '';
+        } else {
+          var src = DL.col(t, from);
+          for (r = 0; r < t.length; r++) out[at + r] = src[r];
+        }
+      }
+      if (missing.length) {
+        notes.push('"' + (names && names[i] ? names[i] : 'File ' + (i + 1)) + '" does not have ' +
+          DL.pluralize(missing.length, 'column') + ': ' + missing.join(', ') + '. Those values are empty.');
+      }
+      at += t.length;
+    }
+    return { table: DL.makeTable(columns, cols, total), notes: notes };
+  };
+
   /* ---------- Rule lists (shared by Filter, Verify and Sort) ---------- */
 
   DL.findOption = function (list, value) {
@@ -1220,6 +1266,9 @@
   };
 
   var headerOption = { key: 'headers', label: 'First row holds the column names', type: 'boolean', default: true, help: 'Turn this off if the first row is data. Columns are then named "Column 1", "Column 2", …' };
+  var multiFileOption = { key: 'multiFile', label: 'Many files', type: 'select', default: 'batch',
+    help: 'Batch: each file goes through the steps on its own and the results download together. Stack: the files become one Data Source, one after the other.',
+    options: [{ value: 'batch', label: 'Work on each file on its own (batch)' }, { value: 'stack', label: 'Put the files together (stack)' }] };
   var skipRowsOption = { key: 'skipRows', label: 'Skip rows at the top', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file starts with notes or a title before the real header row.' };
   var skipRowsBottomOption = { key: 'skipRowsBottom', label: 'Skip rows at the bottom', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file ends with totals, notes or an empty block. The last rows go away.' };
 
@@ -1230,6 +1279,7 @@
       label: 'Delimited text (CSV, TSV, …)',
       extensions: DL.DELIMITED_EXTENSIONS,
       options: [
+        multiFileOption,
         headerOption,
         skipRowsOption,
         skipRowsBottomOption,
@@ -1249,6 +1299,7 @@
       extensions: DL.SPREADSHEET_EXTENSIONS,
       hasSheets: true,
       options: [
+        multiFileOption,
         headerOption,
         skipRowsOption,
         skipRowsBottomOption,
