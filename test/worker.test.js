@@ -15,7 +15,14 @@ global.importScripts = function () {
     if (/manifest/.test(f)) { vm.runInThisContext(fs.readFileSync(path.join(root, 'js/manifest.js'), 'utf8')); continue; }
     if (/papaparse/.test(f)) { global.Papa = require(path.join(root, 'vendor/papaparse.min.js')); continue; }
     if (/xlsx/.test(f)) { global.XLSX = require(path.join(root, 'vendor/xlsx.full.min.js')); continue; }
-    vm.runInThisContext(fs.readFileSync(path.join(root, f.replace(/^\.\.\/\.\.\//, '')), 'utf8'), { filename: f });
+    let text = fs.readFileSync(path.join(root, f.replace(/^\.\.\/\.\.\//, '')), 'utf8');
+    if (/engine\.global/.test(f)) {
+      const before = text;
+      // A small slice lets a test send a character across the edge of two slices.
+      text = text.replace('var SLICE = 8 * 1024 * 1024;', 'var SLICE = globalThis.SLICE_OVERRIDE || 8 * 1024 * 1024;');
+      if (text === before) throw new Error('The reader slice size was not found in the engine build.');
+    }
+    vm.runInThisContext(text, { filename: f });
   }
 };
 class FakeFile extends Blob {
@@ -31,8 +38,6 @@ const posted = [];
 global.postMessage = (m) => posted.push(m);
 let src = fs.readFileSync(path.join(root, 'js/engine/worker.js'), 'utf8');
 src = src.replace(/importScripts\.apply\(self[\s\S]*?\}\)\);/, "importScripts.apply(self, ['../../vendor/papaparse.min.js'].concat(DL.FILES.engine, DL.FILES.ops));");
-src = src.replace('var SLICE = 8 * 1024 * 1024;\n  var offset', 'var SLICE = global.SLICE_OVERRIDE || 8 * 1024 * 1024;\n  var offset');
-if (!/SLICE_OVERRIDE/.test(src)) throw new Error('The reader slice size was not found.');
 vm.runInThisContext(src, { filename: 'worker.js' });
 
 let passed = 0, failed = 0;
@@ -107,6 +112,28 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     assert.strictEqual(ok.type, 'loaded');
     assert.deepStrictEqual(ok.info.columns, ['a1', 'a2', 'b1', 'b2']);
     assert.strictEqual(ok.info.rowCount, rows * 2);
+  });
+
+  test('a character that crosses the edge of two slices stays whole', () => {
+    // The reader takes the bytes in slices and decodes them with one decoder that carries its
+    // state from slice to slice. Without that, a character of several bytes on the edge would
+    // come out as two broken characters.
+    const name = 'Zo\u00eb Ma\u00f1ana \u65e5\u672c\u8a9e';
+    let text = 'a,b\n';
+    for (let i = 0; i < 400; i++) text += name + i + ',' + name + i + '\n';
+    globalThis.SLICE_OVERRIDE = 64;   // many slices, and most edges fall inside a character
+    try {
+      const r = send({ type: 'load', file: new FakeFile(text, 'wide.csv'), options: {} });
+      assert.strictEqual(r.type, 'loaded');
+      assert.strictEqual(r.info.rowCount, 400);
+      const got = rows(send({ type: 'slice', stepId: 'source', start: 0, count: 400 }).data);
+      for (let i = 0; i < 400; i++) {
+        assert.strictEqual(got[i][0], name + i, 'row ' + i + ' came back broken');
+      }
+      assert.ok(!JSON.stringify(got).includes('\ufffd'), 'no value may hold a replacement character');
+    } finally {
+      globalThis.SLICE_OVERRIDE = 0;
+    }
   });
 
   test('load stacks many files into one source', () => {

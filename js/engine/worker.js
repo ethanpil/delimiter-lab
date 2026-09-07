@@ -11,7 +11,14 @@ importScripts.apply(self, ['../../vendor/papaparse.min.js' + V].concat(DL.FILES.
 var xlsxLoaded = false;
 function ensureXlsx() {
   if (!xlsxLoaded) { importScripts('../../vendor/xlsx.full.min.js' + V); xlsxLoaded = true; }
+  return XLSX;
 }
+
+// How the engine reads files and says what it is doing, in a browser worker.
+DL.platform.readBuffer = function (blob) { return new FileReaderSync().readAsArrayBuffer(blob); };
+DL.platform.papa = Papa;
+DL.platform.xlsx = ensureXlsx;
+DL.platform.progress = function (phase, percent) { progress(phase, percent); };
 
 var state = {
   source: null,          // table { columns, cols, length }
@@ -60,7 +67,7 @@ function handle(msg) {
   try {
     switch (msg.type) {
       case 'config': DL.maxCells = msg.maxCells; state.cacheBudgetCells = msg.maxCells * 3; reply({ type: 'ok' }); break;
-      case 'sheets': reply({ type: 'sheets', sheets: sheetNames(msg.file) }); break;
+      case 'sheets': reply({ type: 'sheets', sheets: DL.sheetNames(msg.file) }); break;
       case 'load':
         try { loadFile(msg, reply); } finally { progressScope = null; } // a throw must not leave the label
         break;
@@ -75,7 +82,7 @@ function handle(msg) {
       case 'slice': reply({ type: 'slice', stepId: msg.stepId, data: getSlice(msg) }); break;
       case 'export': exportStep(msg, reply); break;
       case 'batch': reply({ type: 'batch', result: batchFile(msg) }); break;
-      case 'zip': reply({ type: 'zip', blob: makeZip(msg.entries) }); break;
+      case 'zip': reply({ type: 'zip', blob: DL.makeZip(msg.entries) }); break;
       case 'columnInfo': reply({ type: 'columnInfo', stepId: msg.stepId, info: columnInfo(msg) }); break;
       case 'columnStats': reply({ type: 'columnStats', stepId: msg.stepId, col: msg.col, stats: columnStats(msg) }); break;
       case 'diffSummary': reply({ type: 'diffSummary', stepId: msg.stepId, summary: diffSummary(msg) }); break;
@@ -102,208 +109,6 @@ function progress(phase, percent) {
   self.postMessage({ type: 'progress', phase: phase, percent: Math.round(percent) });
 }
 
-function humanNumber(n) {
-  if (n >= 999500) return (Math.round(n / 1e5) / 10) + ' million';
-  if (n >= 1e3) return Math.round(n / 1e3) + ' thousand';
-  return String(Math.round(n));
-}
-
-function tooLarge(cells) {
-  var err = new Error('This file is too large for your browser to work with smoothly. It has about ' + humanNumber(cells) +
-    ' values, and the safe limit on this computer is about ' + humanNumber(DL.maxCells) + '. Try splitting the file, or use a computer with more memory.');
-  err.tooLarge = true;
-  return err;
-}
-
-/* ---------- Loading ---------- */
-
-function readBuffer(blob) {
-  return new FileReaderSync().readAsArrayBuffer(blob);
-}
-
-// Reads a small sample to detect the text encoding.
-function detectEncoding(file) {
-  var bytes = new Uint8Array(readBuffer(file.slice(0, 1024 * 1024)));
-  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return 'utf-8';
-  if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) return 'utf-16le';
-  if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) return 'utf-16be';
-  // Many zero bytes in the sample point to UTF-16 without a byte order mark. Zero bytes at odd
-  // positions come from little-endian text (ASCII letters are "x 0"); at even positions from big-endian.
-  var zerosOdd = 0, zerosEven = 0;
-  var span = Math.min(bytes.length, 4096);
-  for (var i = 0; i < span; i++) if (bytes[i] === 0) { if (i % 2) zerosOdd++; else zerosEven++; }
-  if (zerosOdd + zerosEven > span / 8 && zerosOdd + zerosEven >= 8) return zerosEven > zerosOdd ? 'utf-16be' : 'utf-16le';
-  try {
-    // Cut the sample so that a multi-byte character at the end does not count as an error.
-    var end = bytes.length;
-    var cut = 0;
-    while (cut < 4 && end > 0 && (bytes[end - 1] & 0xC0) === 0x80) { end--; cut++; }
-    if (end > 0 && (bytes[end - 1] & 0x80)) end--;
-    new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, end));
-    return 'utf-8';
-  } catch (e) {
-    return 'windows-1252';
-  }
-}
-
-function makeDecoder(encoding, notes) {
-  try {
-    return new TextDecoder(encoding);
-  } catch (e) {
-    notes.push('The encoding "' + encoding + '" is not supported by this browser. UTF-8 was used.');
-    return new TextDecoder('utf-8');
-  }
-}
-
-// Readers by input format id. Each gives { table, notes, meta }.
-var readers = {};
-
-// A minimal Node-style stream. PapaParse reads text chunks from it and keeps row boundaries intact.
-function TextStream() {
-  this.readable = true;
-  this.handlers = {};
-}
-TextStream.prototype.read = function () {};
-TextStream.prototype.pause = function () {};
-TextStream.prototype.resume = function () {};
-TextStream.prototype.on = function (event, fn) { this.handlers[event] = fn; };
-TextStream.prototype.removeListener = function (event) { delete this.handlers[event]; };
-TextStream.prototype.emit = function (event, arg) { if (this.handlers[event]) this.handlers[event](arg); };
-
-// Finds the column separator from the first lines of the text. The count does not include skipped and blank lines.
-function guessDelimiter(text, quoteChar, skipLines) {
-  var sample = text.slice(0, 65536).replace(/\r\n?/g, '\n'); // one line ending for the sample
-  var cut = sample.lastIndexOf('\n');
-  if (cut > 0 && text.length > 65536) sample = sample.slice(0, cut);
-  for (var i = 0; i < skipLines; i++) {
-    var nl = sample.indexOf('\n');
-    if (nl < 0) break;
-    sample = sample.slice(nl + 1);
-  }
-  var res = Papa.parse(sample, { quoteChar: quoteChar, escapeChar: quoteChar, skipEmptyLines: 'greedy', preview: 50 });
-  var failed = res.errors.some(function (e) { return e.type === 'Delimiter'; });
-  return failed ? '' : res.meta.delimiter;
-}
-
-function delimiterOf(opts) {
-  var d = opts.delimiter;
-  if (d === 'custom') d = opts.customDelimiter;
-  if (!d || d === 'auto') return '';
-  return DL.unescapeText(d);
-}
-
-// Estimates the size from the first part of the file. Stops early when the file is too big.
-function checkSize(file, decoder, delimiter, quoteChar) {
-  var sampleBytes = Math.min(file.size, file.size < 50 * 1024 * 1024 ? 1024 * 1024 : 4 * 1024 * 1024);
-  if (sampleBytes === file.size) return;
-  var text = new TextDecoder(decoder.encoding).decode(readBuffer(file.slice(0, sampleBytes)));
-  var cut = text.lastIndexOf('\n');
-  if (cut > 0) text = text.slice(0, cut);
-  var cfg = { quoteChar: quoteChar, escapeChar: quoteChar, skipEmptyLines: true };
-  if (delimiter) cfg.delimiter = delimiter;
-  var res = Papa.parse(text, cfg);
-  var cells = 0;
-  for (var i = 0; i < res.data.length; i++) cells += res.data[i].length;
-  var projected = cells * (file.size / Math.max(1, sampleBytes));
-  if (projected > DL.maxCells * 1.3) throw tooLarge(projected);
-}
-
-readers.delimited = function (file, opts) {
-  var notes = [];
-  var encoding = opts.encoding && opts.encoding !== 'auto' ? opts.encoding : detectEncoding(file);
-  var decoder = makeDecoder(encoding, notes);
-  var delimiter = delimiterOf(opts);
-  var quoteChar = opts.quoteChar === 'none' ? '\u0000' : (opts.quoteChar || '"');
-  checkSize(file, decoder, delimiter, quoteChar);
-
-  var builder = new DL.TableBuilder(opts);
-  var errors = { quotes: 0, delimiter: 0, other: 0 };
-  var stopped = null;
-  var config = {
-    quoteChar: quoteChar,
-    escapeChar: quoteChar,
-    skipEmptyLines: false,
-    chunk: function (results, parser) {
-      var data = results.data;
-      for (var i = 0; i < data.length; i++) {
-        var row = data[i];
-        // A file with mixed line endings leaves "\r" on the last value when the parser guessed "\n".
-        var lastCell = row[row.length - 1];
-        if (typeof lastCell === 'string' && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
-        builder.add(row);
-      }
-      var errs = results.errors;
-      for (var k = 0; k < errs.length; k++) {
-        if (errs[k].type === 'Quotes') errors.quotes++;
-        else if (errs[k].type !== 'FieldMismatch' && errs[k].type !== 'Delimiter') errors.other++;
-      }
-      if (builder.cells > DL.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
-    }
-  };
-  // Decode the bytes in slices with one streaming decoder, so that multi-byte characters
-  // that cross a slice boundary stay intact. PapaParse joins partial rows across chunks.
-  var SLICE = 8 * 1024 * 1024;
-  var offset = 0;
-  var stream = new TextStream();
-  var started = false;
-  while (offset < file.size && !stopped) {
-    var end = Math.min(file.size, offset + SLICE);
-    var text = decoder.decode(readBuffer(file.slice(offset, end)), { stream: end < file.size });
-    offset = end;
-    if (!started) {
-      started = true;
-      if (!delimiter) {
-        delimiter = guessDelimiter(text, quoteChar, Math.max(0, Number(opts.skipRows) || 0));
-        if (!delimiter) { errors.delimiter++; delimiter = ','; }
-      }
-      config.delimiter = delimiter;
-      Papa.parse(stream, config);
-    }
-    stream.emit('data', text);
-    progress('Reading file', Math.min(99, Math.round(100 * offset / file.size)));
-  }
-  if (stopped) throw stopped;
-  if (started) stream.emit('end');
-
-  var table = builder.finish();
-  if (errors.quotes) notes.push(DL.pluralize(errors.quotes, 'value') + ' had unbalanced quotes. Check the text delimiter setting if data looks wrong.');
-  if (errors.other) notes.push(DL.pluralize(errors.other, 'problem') + ' found while reading the file.');
-  if (errors.delimiter && table.columns.length === 1) notes.push('The column separator could not be detected. Choose it in the options if the data looks wrong.');
-  return { table: table, notes: notes, ragged: builder.ragged, meta: { encoding: encoding, delimiter: delimiter } };
-};
-
-function readWorkbook(file, sheetsOnly) {
-  ensureXlsx();
-  return XLSX.read(readBuffer(file), { type: 'array', cellDates: true, dense: true, bookSheets: !!sheetsOnly });
-}
-
-function sheetNames(file) {
-  return readWorkbook(file, true).SheetNames;
-}
-
-readers.spreadsheet = function (file, opts) {
-  progress('Reading workbook', 10);
-  var wb = readWorkbook(file, false);
-  var found = !opts.sheet || wb.SheetNames.indexOf(opts.sheet) >= 0;
-  var sheetName = found ? opts.sheet || wb.SheetNames[0] : wb.SheetNames[0];
-  var notes = found ? [] : ['Sheet "' + opts.sheet + '" is not in this workbook. The first sheet "' + sheetName + '" was read.'];
-  var ws = wb.Sheets[sheetName];
-  progress('Reading sheet "' + sheetName + '"', 40);
-  var raw = ws ? XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: true }) : [];
-  wb = null;
-  var builder = new DL.TableBuilder(opts);
-  for (var i = 0; i < raw.length; i++) {
-    builder.add(raw[i]);
-    raw[i] = null;
-    if (builder.cells > DL.maxCells) throw tooLarge(builder.cells * (raw.length / (i + 1)));
-  }
-  progress('Reading sheet "' + sheetName + '"', 95);
-  return { table: builder.finish(), notes: notes, ragged: 0, meta: { sheet: sheetName } };
-};
-
-function RAGGED_NOTE(count) {
-  return DL.pluralize(count, 'row') + ' had a different number of values than the header. Missing values were left empty and extra values were kept in new columns.';
-}
 
 function loadFile(msg, reply) {
   var files = msg.files || (msg.file ? [msg.file] : []);
@@ -331,10 +136,10 @@ function loadFile(msg, reply) {
       progressScope = { label: file.name + ' (' + (i + 1) + ' of ' + files.length + ')', from: share * i, to: share * (i + 1) };
       progress('', 0); // the name of the file, before the reader says what it does
     }
-    var result = readers[DL.inputFormatFor(file.name).id](file, opts);
+    var result = DL.readerFor(file.name)(file, opts);
     // Each file adds to the cells that the browser must hold, so the limit is on the total.
     cells += result.table.length * Math.max(1, result.table.columns.length);
-    if (cells > DL.maxCells) throw tooLarge(cells);
+    if (cells > DL.maxCells) throw DL.tooLarge(cells);
     tables.push(result.table);
     names.push(file.name);
     each.push({ name: file.name, size: file.size, rowCount: result.table.length });
@@ -351,7 +156,7 @@ function loadFile(msg, reply) {
   if (tables.length > 1 || stackOpts.fileColumn) {
     var shape = DL.stackedShape(tables, stackOpts);
     var stackedCells = shape.rows * Math.max(1, shape.columns.length);
-    if (stackedCells > DL.maxCells) throw tooLarge(stackedCells);
+    if (stackedCells > DL.maxCells) throw DL.tooLarge(stackedCells);
   }
   if (many) progress('Putting the files together', 92);
   var stacked = DL.stackTables(tables, names, stackOpts);
@@ -359,7 +164,7 @@ function loadFile(msg, reply) {
   for (var m = 0; m < stacked.notes.length; m++) notes.push(stacked.notes[m]);
   var skip = Math.max(0, Number(opts.skipRows) || 0);
   if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + (files.length > 1 ? ' of each file.' : '.'));
-  if (ragged) notes.push(RAGGED_NOTE(ragged));
+  if (ragged) notes.push(DL.raggedNote(ragged));
   state.source = table;
   state.sourceKey = key + JSON.stringify(opts);
   state.sourceInfo = {
@@ -408,18 +213,11 @@ function makeEntry(hash, status, table, notes, error, ms) {
 
 function touch(entry) { entry.lastUsed = ++state.useCounter; }
 
-// Runs one step on its input table. Checks the settings against the real input columns first.
+// Runs one step and puts the answer in the shape that the cache holds. DL.runStep() decides what
+// running a step means; the worker only adds the hash and the age.
 function computeStep(step, upstream, h) {
-  var t0 = Date.now();
-  if (step.skip) return makeEntry(h, 'skipped', upstream, [DL.SKIPPED_NOTE]);
-  var problems = DL.validateParams(step.opId, step.params, upstream.columns);
-  if (problems.length) return makeEntry(h, 'invalid', null, problems);
-  try {
-    var res = DL.runOp(step.opId, step.params, upstream);
-    return makeEntry(h, res.status, res.table, res.notes, null, Date.now() - t0);
-  } catch (err) {
-    return makeEntry(h, 'error', null, [], err && err.message ? err.message : String(err), Date.now() - t0);
-  }
+  var r = DL.runStep(step, upstream);
+  return makeEntry(h, r.status, r.table, r.notes, r.error, r.ms);
 }
 
 function resultOf(step, entry) {
@@ -812,225 +610,25 @@ function findRows(msg) {
 function batchFile(msg) {
   var file = msg.file;
   var format = DL.inputFormatFor(file.name);
-  var read = readers[format.id](file, msg.options || {});
+  var read = DL.readers[format.id](file, msg.options || {});
   var table = read.table;
   var notes = read.notes.slice();
-  if (read.ragged) notes.push(RAGGED_NOTE(read.ragged));
-  var steps = msg.steps || [];
-  for (var i = 0; i < steps.length; i++) {
-    var entry = computeStep(steps[i], table, '');
-    if (!entry.table) return { error: entry.error || entry.notes[0], step: i + 1, notes: notes };
-    if (entry.status === 'warning') entry.notes.forEach(function (n) { notes.push('Step ' + (i + 1) + ': ' + DL.noteText(n)); });
-    table = entry.table;
-  }
-  return { blob: writeTable(table, msg.output || {}), rowCount: table.length, notes: notes };
-}
-
-/* ---------- Zip (store only, no compression) ---------- */
-
-var CRC_TABLE = (function () {
-  var t = new Int32Array(256);
-  for (var n = 0; n < 256; n++) {
-    var c = n;
-    for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c;
-  }
-  return t;
-})();
-
-// CRC-32 of a blob, read in slices so that the whole file is not in memory at one time.
-function crc32(blob) {
-  var c = -1;
-  var SLICE = 8 * 1024 * 1024;
-  for (var at = 0; at < blob.size; at += SLICE) {
-    var bytes = new Uint8Array(readBuffer(blob.slice(at, Math.min(blob.size, at + SLICE))));
-    for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-  }
-  return (c ^ -1) >>> 0;
-}
-
-var ZIP_MAX_BYTES = 4 * 1024 * 1024 * 1024 - 1;
-var ZIP_MAX_ENTRIES = 65535;
-
-// Makes a zip file from [{ name, blob }]. The zip stores the files without compression, because
-// deflate needs a library or an asynchronous stream. The zip refers to the blobs, so no file is copied.
-function makeZip(entries) {
-  var encoder0 = new TextEncoder();
-  var total = 22;
-  entries.forEach(function (e) {
-    var nameLen = encoder0.encode(e.name).length;
-    if (nameLen > 65535) throw new Error('The file name "' + e.name.slice(0, 40) + '…" is too long for a zip file.');
-    total += e.blob.size + 30 + 46 + 2 * nameLen;
+  if (read.ragged) notes.push(DL.raggedNote(read.ragged));
+  var run = DL.runWorkflow(table, msg.steps || []);
+  run.results.forEach(function (r, i) {
+    if (r.status === 'warning') r.notes.forEach(function (n) { notes.push('Step ' + (i + 1) + ': ' + DL.noteText(n)); });
   });
-  if (entries.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) {
-    throw new Error('A zip file can hold at most ' + ZIP_MAX_ENTRIES + ' files and 4 GB. Apply the workflow to fewer files at one time.');
+  if (!run.table) {
+    var bad = run.results[run.failedAt];
+    return { error: bad.error || bad.notes[0], step: run.failedAt + 1, notes: notes };
   }
-  var now = new Date();
-  var dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
-  var dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
-  var encoder = new TextEncoder();
-  var parts = [];
-  var central = [];
-  var offset = 0;
-  entries.forEach(function (e) {
-    var size = e.blob.size;
-    var name = encoder.encode(e.name);
-    var crc = crc32(e.blob);
-    var local = new DataView(new ArrayBuffer(30));
-    local.setUint32(0, 0x04034b50, true);
-    local.setUint16(4, 20, true);       // version needed
-    local.setUint16(6, 0x0800, true);   // flags: UTF-8 names
-    local.setUint16(8, 0, true);        // method: store
-    local.setUint16(10, dosTime, true);
-    local.setUint16(12, dosDate, true);
-    local.setUint32(14, crc, true);
-    local.setUint32(18, size, true);
-    local.setUint32(22, size, true);
-    local.setUint16(26, name.length, true);
-    local.setUint16(28, 0, true);
-    parts.push(local.buffer, name, e.blob);
-    central.push({ name: name, crc: crc, size: size, offset: offset });
-    offset += 30 + name.length + size;
-  });
-  var centralStart = offset;
-  central.forEach(function (c) {
-    var h = new DataView(new ArrayBuffer(46));
-    h.setUint32(0, 0x02014b50, true);
-    h.setUint16(4, 20, true);           // version made by
-    h.setUint16(6, 20, true);           // version needed
-    h.setUint16(8, 0x0800, true);
-    h.setUint16(10, 0, true);
-    h.setUint16(12, dosTime, true);
-    h.setUint16(14, dosDate, true);
-    h.setUint32(16, c.crc, true);
-    h.setUint32(20, c.size, true);
-    h.setUint32(24, c.size, true);
-    h.setUint16(28, c.name.length, true);
-    h.setUint16(30, 0, true);           // extra length
-    h.setUint16(32, 0, true);           // comment length
-    h.setUint16(34, 0, true);           // disk number
-    h.setUint16(36, 0, true);           // internal attributes
-    h.setUint32(38, 0, true);           // external attributes
-    h.setUint32(42, c.offset, true);
-    parts.push(h.buffer, c.name);
-    offset += 46 + c.name.length;
-  });
-  var end = new DataView(new ArrayBuffer(22));
-  end.setUint32(0, 0x06054b50, true);
-  end.setUint16(4, 0, true);
-  end.setUint16(6, 0, true);
-  end.setUint16(8, central.length, true);
-  end.setUint16(10, central.length, true);
-  end.setUint32(12, offset - centralStart, true);
-  end.setUint32(16, centralStart, true);
-  end.setUint16(20, 0, true);
-  parts.push(end.buffer);
-  return new Blob(parts, { type: 'application/zip' });
+  return { blob: DL.writeTable(run.table, msg.output || {}), rowCount: run.table.length, notes: notes };
 }
-
-/* ---------- Export ---------- */
 
 // Writers by output format id. Each gives a Blob.
-var writers = {};
-
-// Writes a value for a delimited file. A value gets quotes when it holds the delimiter, a quote, a
-// line break, a byte order mark or a space at an end, or always when quoteAll is on.
-function quoteValue(v, delimiter, quoteAll) {
-  var needs = quoteAll || v.indexOf(delimiter) >= 0 || v.indexOf('"') >= 0 || v.indexOf('\n') >= 0 || v.indexOf('\r') >= 0 ||
-    v.indexOf('\ufeff') >= 0 || (v.length > 0 && (v.charCodeAt(0) === 32 || v.charCodeAt(v.length - 1) === 32));
-  return needs ? '"' + v.replace(/"/g, '""') + '"' : v;
-}
-
-function writeDelimited(table, o, delimiter, mime) {
-  var n = table.length;
-  var w = table.columns.length;
-  var newline = o.newline === 'lf' ? '\n' : '\r\n';
-  var quoteAll = !!o.quoteAll;
-  var chunks = [];
-  if (o.bom !== false) chunks.push('\ufeff');
-  if (o.header !== false) chunks.push(table.columns.map(function (c) { return quoteValue(c, delimiter, quoteAll); }).join(delimiter) + newline);
-  var get = [];
-  for (var c = 0; c < w; c++) get.push(DL.cellGetter(table, c));
-  // Write in blocks so that memory stays low for large tables.
-  var BLOCK = 50000;
-  for (var start = 0; start < n; start += BLOCK) {
-    var end = Math.min(n, start + BLOCK);
-    var lines = new Array(end - start);
-    for (var i = start; i < end; i++) {
-      var line = '';
-      for (c = 0; c < w; c++) line += (c ? delimiter : '') + quoteValue(get[c](i), delimiter, quoteAll);
-      lines[i - start] = line;
-    }
-    chunks.push(lines.join(newline) + newline);
-    if (n > BLOCK) progress('Preparing download', Math.round(100 * end / n));
-  }
-  return new Blob(chunks, { type: mime });
-}
-
-writers.csv = function (table, o, format) { return writeDelimited(table, o, ',', format.mime); };
-writers.tsv = function (table, o, format) { return writeDelimited(table, o, '\t', format.mime); };
-writers.delimited = function (table, o, format) {
-  var d = DL.unescapeText(o.delimiter) || ';';
-  if (d.indexOf('"') >= 0 || d.indexOf('\n') >= 0 || d.indexOf('\r') >= 0) throw new Error('The separator cannot be a quote or a line break.');
-  return writeDelimited(table, o, d, format.mime);
-};
-
-writers.xlsx = function (table, o, format) {
-  ensureXlsx();
-  var n = table.length;
-  if (n > 1048575) throw new Error('Excel files can hold at most 1,048,576 rows. Use CSV for this data.');
-  if (table.columns.length > 16384) throw new Error('Excel files can hold at most 16,384 columns. Use CSV for this data.');
-  for (var c = 0; c < table.columns.length; c++) {
-    var get = DL.cellGetter(table, c);
-    for (var i = 0; i < n; i++) {
-      if (get(i).length > 32767) throw new Error('Row ' + (i + 1) + ' of column "' + table.columns[c] + '" has more than 32,767 characters. Excel cannot hold it. Use CSV for this data.');
-    }
-  }
-  // The Excel writer needs several copies of the data in memory.
-  if (n * table.columns.length > DL.maxCells / 4) throw new Error('This table is too large for an Excel file in the browser. Use CSV for this data.');
-  var BLOCK = 20000;
-  var ws = XLSX.utils.aoa_to_sheet(o.header !== false ? [table.columns] : [], { dense: true });
-  var at = o.header !== false ? 1 : 0;
-  for (var start = 0; start < n; start += BLOCK) {
-    var end = Math.min(n, start + BLOCK);
-    XLSX.utils.sheet_add_aoa(ws, DL.rowsSlice(table, start, end), { origin: at + start });
-    progress('Building Excel file', Math.round(60 * end / n));
-  }
-  var wb = XLSX.utils.book_new();
-  var sheetName = DL.cleanName(o.sheetName, 'Data').replace(/[:\\\/?*\[\]]/g, '_').replace(/^'+|'+$/g, '').slice(0, 31) || 'Data';
-  if (sheetName.toLowerCase() === 'history') sheetName = 'History_'; // Excel reserves this name
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  progress('Building Excel file', 80);
-  var out = XLSX.write(wb, { type: 'array', bookType: 'xlsx', compression: true });
-  return new Blob([out], { type: format.mime });
-};
-
-writers.json = function (table, o, format) {
-  var n = table.length;
-  var cols = table.columns;
-  var parts = ['['];
-  var pretty = !!o.pretty;
-  var keys = cols.map(function (c) { return JSON.stringify(c) + (pretty ? ': ' : ':'); });
-  var get = [];
-  for (var c = 0; c < cols.length; c++) get.push(DL.cellGetter(table, c));
-  for (var i = 0; i < n; i++) {
-    var obj = pretty ? '\n  {' : '{';
-    for (c = 0; c < cols.length; c++) obj += (c ? (pretty ? ',\n    ' : ',') : (pretty ? '\n    ' : '')) + keys[c] + JSON.stringify(get[c](i));
-    obj += pretty ? '\n  }' : '}';
-    parts.push((i ? ',' : '') + obj);
-  }
-  parts.push((pretty ? '\n' : '') + ']');
-  return new Blob(parts, { type: format.mime });
-};
-
-// Writes a table in the output format of the options. Gives a Blob.
-function writeTable(table, o) {
-  var format = DL.outputFormatById(o.format) || DL.outputFormats[0];
-  return writers[format.id](table, o, format);
-}
 
 function exportStep(msg, reply) {
   var table = tableFor(msg.stepId);
   if (!table) { reply({ type: 'error', message: 'There is no data to download for this step.' }); return; }
-  reply({ type: 'exported', blob: writeTable(table, msg.options || {}), rowCount: table.length });
+  reply({ type: 'exported', blob: DL.writeTable(table, msg.options || {}), rowCount: table.length });
 }

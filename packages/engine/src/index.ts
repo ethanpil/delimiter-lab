@@ -5,6 +5,8 @@
  */
 import { DL } from './dl.js';
 import './core.js';
+import './run.js';
+import './io.js';
 import './ops/text.js';
 import './ops/rows.js';
 import './ops/columns.js';
