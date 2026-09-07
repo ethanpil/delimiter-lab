@@ -362,7 +362,7 @@ kbd { font-size: 11px; }
 
 /* A narrow screen, such as a telephone. The header needs about 720px on one line. With less than
    that, and with a body that does not scroll, Download and the buttons beside it went off the
-   screen: a person could open a file and then had no way to take the answer. The header takes two
+   screen: a person opened a file and then had no way to take the answer. The header takes two
    lines here, and the name of the workflow gives its width to the buttons. */
 @media (max-width: 760px) {
   :root { --dl-sidebar-w: 180px; }

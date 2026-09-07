@@ -34,7 +34,8 @@ delimiterlab (CLI)     run, validate, describe; packaged as a single binary     
 - Done: `DL.parseWorkflow`, `DL.normalizeStep` and `DL.workflowToJSON` hold the workflow file format, so the page and the command read a workflow the same way.
 - Publish a JSON Schema for the workflow file. Keep the format version in the file. Add a migration hook per operation for future setting changes.
 - Done: the collator has the fixed name `en`, so a sort gives one order on every machine. `test/parity.test.js` compares the bytes of the page and of the command for the same workflow.
-- Publish a JSON Schema for the workflow file, and make the day-first option for dates explicit.
+- Done: the day-first answer is one setting, `DL.DAY_FIRST`, on Format Dates, Date Math, Sort and Filter.
+- Publish a JSON Schema for the workflow file.
 
 ### 2. IO package
 
@@ -57,7 +58,8 @@ dl workflow.json input.csv --validate        # check the workflow against the fi
 
 - The exit code is 0 when the work is done and 1 when it is not. Everything the command says goes to standard error, so a pipe carries only data.
 - `bun build --compile` makes one file for Linux, macOS and Windows. `.github/workflows/release.yml` builds them, joins the two Mac builds into one file, and makes a deb, an rpm and an apk. A program in any language calls the command as a subprocess.
-- Still open: a JSON report for the notes and the problems, and a flag that refuses a workflow with a Custom JavaScript step.
+- Done: the command refuses a workflow with a Custom JavaScript step, and --allow-code lets one run.
+- Still open: a JSON report for the notes and the problems.
 
 ### 4. Embeddable interface
 

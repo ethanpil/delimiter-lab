@@ -5,6 +5,21 @@ history of the development before that.
 
 ## 1.0 (in development)
 
+- Change: Pad / Trim leaves an empty value empty. It made a value the file does not hold, such as 00000 for a missing postcode (d0f3d68).
+- Change: the numbers of a file are read by the separator that file uses. A file that writes 1.234,56 gives 1000 for 1.000 (e2a915e).
+- Change: an Excel file holds a number as a number, so SUM works. A value such as 007 stays text (e2a915e).
+- Change: an output separator of more than one character is refused. Such a file read back with more columns than it was written with (e2a915e).
+- Change: the dl command refuses a workflow with a Custom JavaScript step. --allow-code lets one run (8a1a026).
+- Add: Sort and Filter have the day-first setting that Format Dates has (d0f3d68).
+- Add: the page works on a narrow screen. Below 760 pixels the header takes two lines (8a1a026).
+- Fix: a damaged store of saved workflows no longer loses every workflow at the next save (96713f9).
+- Fix: a preview, a profile and a download no longer show data that the settings of today do not make (8b7052a).
+- Fix: a batch keeps the column with the name of the file, as the dl command does (8b7052a).
+- Fix: an empty header row no longer takes the first row of data as the header (e2a915e).
+- Fix: a second batch no longer takes away the one that runs (cd25a04).
+- Fix: a tick on one column no longer takes away a column that the file does not have (cd25a04).
+- Fix: the workspace database is made again when it is broken (96713f9).
+- Fix: an undo of a step no longer takes away the source settings (96713f9).
 - Add: the dl command runs a workflow on files from a terminal (d89b7c9).
 - Add: a release gives the dl command for Linux, macOS and Windows, with deb, rpm and apk packages (5660420, d8ded69, 9df4a20).
 - Change: the engine is TypeScript in packages/engine. One build serves the page, the worker and the command, so no platform has its own copy (b6b97c1, ed36ff6, 69a9bbe).

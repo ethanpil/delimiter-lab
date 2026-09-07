@@ -689,7 +689,7 @@ DL.sortKey = function (s) {
       var ei = si;
       while (ei < n && s.charCodeAt(ei) >= 48 && s.charCodeAt(ei) <= 57) ei++;
       var len = ei - si;
-      if (len > 16) return null; // 48 + 17 is "A": a longer run would sort as a letter
+      if (len > 16) return null; // 48 + 17 is "A": a longer run sorts as a letter
       out += s.slice(last, i) + String.fromCharCode(48 + len) + s.slice(si, ei);
       last = i = ei;
     } else if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 32) {

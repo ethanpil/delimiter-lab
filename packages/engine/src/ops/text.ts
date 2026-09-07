@@ -425,7 +425,7 @@ DL.registerOp({
       else if (trim === 'left') v = v.replace(/^\s+/, '');
       else if (trim === 'right') v = v.replace(/\s+$/, '');
       if (collapse) v = v.replace(/\s{2,}/g, ' ');
-      if (DL.isBlank(v)) return v; // an empty value stays empty: to pad it would invent a value
+      if (DL.isBlank(v)) return v; // an empty value stays empty: to pad it makes a value the file does not hold
       // The length counts characters, so an emoji pad character or value counts as one.
       var missing = pad === 'none' ? 0 : len - DL.charCount(v);
       if (missing > 0) v = pad === 'left' ? ch.repeat(missing) + v : v + ch.repeat(missing);

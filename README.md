@@ -8,6 +8,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 
 - Reads CSV, TSV, text files with any separator, and Excel workbooks (with sheet selection).
 - Detects the encoding and the column separator automatically. You can change both.
+- Reads the numbers of a file by the separator that file uses. A file that writes 1.234,56 gives 1000 for 1.000, and a file that writes 1,234.56 gives 1. The reader says when it finds a comma file.
 - Builds a chain of steps. Each step reads the output of the step before it.
 - Shows a preview of each step. You can download the result of any step.
 - Shows a profile of a column (type, empty cells, different values, smallest and largest, most common values) when you click its name.
@@ -70,6 +71,7 @@ dl workflow.json input.csv --validate        # check the workflow against the fi
 | `--format <id>` | `csv`, `tsv`, `delimited`, `xlsx` or `json`. Without it the format comes from the name of the output file, or `csv`. |
 | `--dry-run` | Run every step and write nothing. Says what the result would hold. |
 | `--validate` | Check the settings of each step against the columns that the files really have, then stop. |
+| `--allow-code` | Let a Custom JavaScript step run. Such a step is code from the workflow file, and it runs with the rights of this command. Without this the command refuses such a workflow. |
 | `-q`, `--quiet` | Say nothing except errors. |
 | `-h`, `--help` | Show the options. |
 | `-v`, `--version` | Show the version. |
