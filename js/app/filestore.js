@@ -61,11 +61,14 @@
 
   var writes = 0; // counts the writes, so that a write that fails knows if it is still the last one
 
-  // Keeps the file. Gives true when the file is in the store, and false when it is not.
-  F.put = function (file) {
+  // Keeps the files. Gives true when they are in the store, and false when they are not.
+  F.put = function (files) {
     var mine = ++writes;
-    if (!file || file.size > F.MAX_BYTES) return F.clear().then(function () { return false; });
-    return run('readwrite', function (s) { return s.put(file, KEY); })
+    var list = files ? [].concat(files) : [];
+    var bytes = 0;
+    for (var i = 0; i < list.length; i++) bytes += list[i].size;
+    if (!list.length || bytes > F.MAX_BYTES) return F.clear().then(function () { return false; });
+    return run('readwrite', function (s) { return s.put(list, KEY); })
       .then(function () { return true; })
       .catch(function () {
         // A write that fails leaves the file of the last time, and that file does not belong to the
@@ -75,15 +78,16 @@
       });
   };
 
-  // Gives the file back, or null.
+  // Gives the files back. An empty list means that the store holds nothing for this browser.
   F.get = function () {
     return run('readonly', function (s) { return s.get(KEY); })
       .then(function (rec) {
-        if (rec instanceof Blob) return rec;
+        if (Array.isArray(rec) && rec.length && rec[0] instanceof Blob) return rec;
+        if (rec instanceof Blob) return [rec]; // one file, from a version before the list
         if (rec) F.clear(); // a record of an older shape has no use, and it holds space
-        return null;
+        return [];
       })
-      .catch(function () { return null; });
+      .catch(function () { return []; });
   };
 
   F.clear = function () {
