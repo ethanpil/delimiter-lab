@@ -383,7 +383,8 @@
           this.state.dirty = true;
         }
       }
-      if (data.sourceOptions) this.state.source.options = Object.assign(DL.cleanSourceOptions(data.sourceOptions), { sheet: '' });
+      // The sheet stays. The workspace opens the same workbook again at the same sheet.
+      if (data.sourceOptions) this.state.source.options = DL.cleanSourceOptions(data.sourceOptions);
     } catch (e) { /* a broken session is ignored */ }
   };
 

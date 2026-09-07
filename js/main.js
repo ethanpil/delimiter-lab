@@ -88,13 +88,16 @@
 
   var MAX_FILE_BYTES = 1.5 * 1024 * 1024 * 1024; // browsers cannot read a larger file into memory
 
-  function openFile(file) {
+  // opts.sheet opens a workbook at that sheet. setSourceFile() empties the sheet, so it goes back after.
+  function openFile(file, opts) {
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
       U.toast(DL.t('msg.fileTooBig'), 'danger');
       return;
     }
+    opts = opts || {};
     store.setSourceFile(file);
+    if (opts.sheet) store.setSourceOptions({ sheet: opts.sheet });
     DL.fileStore.put(file); // the workspace comes back after a reload
     if (DL.inputFormatFor(file.name).hasSheets) {
       var token = ++loadToken;
@@ -920,7 +923,7 @@
   DL.fileStore.get().then(function (file) {
     if (file && !store.state.source.file) {
       U.toast(DL.t('msg.workspaceBack', { name: file.name }), 'info');
-      openFile(file);
+      openFile(file, { sheet: store.state.source.options.sheet });
     } else if (store.restoredSourceName && store.state.workflow.steps.length) {
       U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
     }
