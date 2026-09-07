@@ -8,42 +8,55 @@
   var NAME = 'dl.workspace.v1';
   var STORE = 'file';
   var KEY = 'current';
-  // A larger file makes the reload slow, and some browsers copy the bytes. Such a file is not kept.
+  // A larger file makes the reload slow, and some browsers write the bytes again. Such a file stays out.
   var MAX_BYTES = 100 * 1024 * 1024;
 
   var F = DL.fileStore = {};
+  F.MAX_BYTES = MAX_BYTES;
+
+  // One connection for the page. Two transactions on one connection keep their order; two
+  // connections do not, and the file of the last write could be the older one.
+  var dbp = null;
 
   function open() {
-    return new Promise(function (resolve, reject) {
-      if (!root.indexedDB) { reject(new Error('no IndexedDB')); return; }
+    if (dbp) return dbp;
+    dbp = new Promise(function (resolve, reject) {
+      if (!root.indexedDB) { reject(new Error('This browser has no IndexedDB.')); return; }
       var req = root.indexedDB.open(NAME, 1);
-      req.onupgradeneeded = function () {
-        if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
-      };
+      req.onupgradeneeded = function () { req.result.createObjectStore(STORE); };
       req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { reject(req.error || new Error('IndexedDB is not available')); };
-      req.onblocked = function () { reject(new Error('IndexedDB is blocked')); };
+      req.onerror = function () { reject(req.error || new Error('IndexedDB is not available.')); };
+      req.onblocked = function () { reject(new Error('IndexedDB is blocked.')); };
     });
+    dbp.catch(function () { dbp = null; }); // a connection that failed must not stay
+    return dbp;
   }
 
   function run(mode, action) {
     return open().then(function (db) {
       return new Promise(function (resolve, reject) {
-        var tx = db.transaction(STORE, mode);
-        var out = action(tx.objectStore(STORE));
-        tx.oncomplete = function () { db.close(); resolve(out && out.result); };
-        tx.onerror = function () { db.close(); reject(tx.error); };
-        tx.onabort = function () { db.close(); reject(tx.error); };
+        var out;
+        try {
+          var tx = db.transaction(STORE, mode);
+          out = action(tx.objectStore(STORE));
+          tx.oncomplete = function () { resolve(out && out.result); };
+          tx.onerror = function () { reject(tx.error); };
+          tx.onabort = function () { reject(tx.error); };
+        } catch (e) {
+          // The connection closes, or the store is not there. Give the connection up and close it,
+          // because no handler of the transaction can do it now.
+          dbp = null;
+          try { db.close(); } catch (e2) { /* it is closed already */ }
+          reject(e);
+        }
       });
     });
   }
 
-  F.MAX_BYTES = MAX_BYTES;
-
   // Keeps the file. Gives true when the file is in the store, and false when it is not.
   F.put = function (file) {
     if (!file || file.size > MAX_BYTES) return F.clear().then(function () { return false; });
-    return run('readwrite', function (s) { return s.put({ file: file, name: file.name, at: Date.now() }, KEY); })
+    return run('readwrite', function (s) { return s.put(file, KEY); })
       .then(function () { return true; })
       // A write that fails leaves the file of the last time. That file does not belong to the steps
       // on the screen, so it must go.
@@ -53,7 +66,7 @@
   // Gives the file back, or null.
   F.get = function () {
     return run('readonly', function (s) { return s.get(KEY); })
-      .then(function (rec) { return rec && rec.file ? rec.file : null; })
+      .then(function (rec) { return rec instanceof Blob ? rec : null; }) // a record of an older shape gives null
       .catch(function () { return null; });
   };
 
