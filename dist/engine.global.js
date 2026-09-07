@@ -1470,10 +1470,11 @@
   DL.runStep = function(step, upstream) {
     var t0 = Date.now();
     if (step.skip) return { status: "skipped", table: upstream, notes: [DL.SKIPPED_NOTE], error: null, ms: 0 };
-    var problems = DL.validateParams(step.opId, step.params, upstream.columns);
-    if (problems.length) return { status: "invalid", table: null, notes: problems, error: null, ms: 0 };
     try {
-      var res = DL.runOp(step.opId, step.params, upstream);
+      var params = DL.cleanParams(step.opId, step.params || {});
+      var problems = DL.validateParams(step.opId, params, upstream.columns);
+      if (problems.length) return { status: "invalid", table: null, notes: problems, error: null, ms: 0 };
+      var res = DL.runOp(step.opId, params, upstream);
       return { status: res.status, table: res.table, notes: res.notes, error: null, ms: Date.now() - t0 };
     } catch (err) {
       return { status: "error", table: null, notes: [], error: err && err.message ? err.message : String(err), ms: Date.now() - t0 };

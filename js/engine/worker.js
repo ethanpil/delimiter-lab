@@ -317,25 +317,28 @@ function tableFor(stepId) {
   if (idx < 0) return null;
   if (state.cancelledFrom >= 0 && idx >= state.cancelledFrom) return null; // The run cancelled this step: no request computes it
   state.recent = [stepId].concat(state.recent.filter(function (id) { return id !== stepId; })).slice(0, 2);
-  var entry = state.cache.get(stepId);
-  if (entry && entry.table) { touch(entry); return entry.table; }
-  // Recompute from the nearest upstream result that is still in memory.
-  var upstream = state.source;
-  var upstreamHash = state.sourceKey;
-  var start = 0;
+  // The hash of every step of the chain as it is now. A result in the cache whose hash does not
+  // agree belongs to a chain that no longer exists: a run that threw before it could clear the
+  // cache leaves such results behind, and to give one back would show, count and write data that
+  // the settings of today do not make.
   var i;
+  var hashes = [];
+  var h = state.sourceKey;
+  for (i = 0; i <= idx; i++) { h = stepHash(state.steps[i], h); hashes.push(h); }
+  var entry = state.cache.get(stepId);
+  if (entry && entry.table && entry.hash === hashes[idx]) { touch(entry); return entry.table; }
+  // Recompute from the nearest upstream result that is still in memory and still belongs.
+  var upstream = state.source;
+  var start = 0;
   for (i = idx - 1; i >= 0; i--) {
     var e = state.cache.get(state.steps[i].id);
-    if (e && e.table) { upstream = e.table; upstreamHash = e.hash; start = i + 1; break; }
+    if (e && e.table && e.hash === hashes[i]) { upstream = e.table; start = i + 1; break; }
   }
   for (i = start; i <= idx; i++) {
-    var step = state.steps[i];
-    var h = stepHash(step, upstreamHash);
-    var ne = computeStep(step, upstream, h);
+    var ne = computeStep(state.steps[i], upstream, hashes[i]);
     if (!ne.table) return null;
-    state.cache.set(step.id, ne);
+    state.cache.set(state.steps[i].id, ne);
     upstream = ne.table;
-    upstreamHash = h;
   }
   enforceBudget([]);
   return upstream;
@@ -580,12 +583,12 @@ function findRows(msg) {
 // Gives { blob, rowCount, notes } or { error, step, notes } where step is the 1-based number of the step that failed.
 // The notes hold the reader notes and the notes of the steps that gave a warning.
 function batchFile(msg) {
-  var file = msg.file;
-  var format = DL.inputFormatFor(file.name);
-  var read = DL.readers[format.id](file, msg.options || {});
+  // DL.readSource is the one way a file becomes a table. To call a reader here in place of it
+  // left out the column with the name of the file, the note about skipped rows and the check on
+  // the number of cells, so a batch and the dl command gave different answers for one workflow.
+  var read = DL.readSource([msg.file], msg.options || {});
   var table = read.table;
-  var notes = read.notes.slice();
-  if (read.ragged) notes.push(DL.raggedNote(read.ragged));
+  var notes = read.info.notes.slice();
   var run = DL.runWorkflow(table, msg.steps || []);
   run.results.forEach(function (r, i) {
     if (r.status === 'warning') r.notes.forEach(function (n) { notes.push('Step ' + (i + 1) + ': ' + DL.noteText(n)); });

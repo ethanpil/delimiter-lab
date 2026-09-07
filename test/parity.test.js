@@ -163,6 +163,22 @@ async function browserBytes(files, format, wfPath) {
   return Buffer.from(await out.blob.arrayBuffer());
 }
 
+// The batch message reads one file and runs the whole workflow in the worker. It is the path
+// behind "Apply to files" and behind Run a file in the workflow list.
+async function browserBatchBytes(file, format, wfPath) {
+  const wf = global.DL.parseWorkflow(fs.readFileSync(wfPath, 'utf8'));
+  const reply = await sendAsync({
+    type: 'batch',
+    file: new BrowserFile(fs.readFileSync(file), path.basename(file)),
+    options: global.DL.cleanSourceOptions(wf.sourceOptions || {}),
+    steps: global.DL.workerSteps(wf.steps),
+    output: Object.assign(global.DL.defaultFormatOptions(global.DL.outputFormatById(format)), { format: format })
+  });
+  assert.ok(reply && reply.result, 'the batch gave no reply');
+  assert.ok(!reply.result.error, 'the batch could not run: ' + reply.result.error);
+  return Buffer.from(await reply.result.blob.arrayBuffer());
+}
+
 /* ---------- the terminal side ---------- */
 
 function cliBytes(files, format, wfPath) {
@@ -250,6 +266,19 @@ function sameBytes(fromBrowser, fromCli, what) {
     assert.strictEqual(cli.code, 1, 'the command must answer with a failure');
     assert.ok(cli.said.indexOf(browserSaid) >= 0,
       'the two sides said different things:\n  page: ' + browserSaid + '\n  dl:   ' + cli.said);
+  });
+
+  // The batch path once called a reader of its own in place of DL.readSource, so it left out the
+  // column with the name of the file. The command kept the column and the page did not.
+  await test('a batch gives the same bytes as the command, for a stacked source', async () => {
+    const fromBrowser = await browserBatchBytes(aPath, 'csv', STACKED);
+    const fromCli = cliBytes([aPath], 'csv', STACKED);
+    assert.match(fromBrowser.toString('utf8'), /(^|\n)"?a\.csv/, 'the batch left out the name of the file');
+    sameBytes(fromBrowser, fromCli, 'a batch');
+  });
+
+  await test('a batch gives the same bytes as the command for one plain file', async () => {
+    sameBytes(await browserBatchBytes(aPath, 'csv', PLAIN), cliBytes([aPath], 'csv', PLAIN), 'a plain batch');
   });
 
   await test('the values themselves came through, not two empty files', async () => {
