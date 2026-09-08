@@ -247,7 +247,7 @@ number and a `v` in front:
 git tag v1.0 && git push origin v1.0
 ```
 
-The tag starts the release build. It stops when the tag and `js/manifest.js` do not agree, and when
+The tag starts the release build. It stops when the tag and `js/manifest.js` do not agree, or when
 the committed engine is not the build of its source. It builds the `dl` command for Linux, macOS
 and Windows and makes the deb, the rpm and the apk for both chips. It builds the desktop application
 on a Mac and on a Windows machine, and starts the application on each with `--smoke`. It makes the
@@ -256,7 +256,7 @@ the instructions to install it.
 
 To try the build without a release, start the workflow by hand from the Actions page. Give the
 tag. Give the branch as `ref`. Set `publish` to off. That dry run writes nothing to the releases
-page: the files go to the `release-files` artifact, and the notes go to the summary of the run. A
+page. The files go to the `release-files` artifact, and the notes go to the summary of the run. A
 run takes the workflow from the branch that starts it, so start it from the branch when the workflow
 changed. A run with `ref` and `publish` on stops at once: a branch is not the tag.
 

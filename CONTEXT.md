@@ -4,7 +4,7 @@ This document is for the developers who maintain and extend Delimiter Lab. It te
 
 ## 1. What the application is
 
-Delimiter Lab is a static web application. It reads a CSV, TSV, text or Excel file in the browser, applies a chain of steps (operations) to the data, shows a preview of each step and downloads the result. No data leaves the computer. The page has no server and no build step of its own: GitHub Pages serves the files as they are, so the build of the engine is committed. The application is plain ES5 JavaScript (no classes, no arrow functions, no modules) with Bootstrap 5.3 for the user interface. That rule is for the page and the worker. `scripts/` and `desktop/` run in Node, and `packages/` is TypeScript; they use the modern syntax. Vendor libraries are pinned copies in `vendor/`: Bootstrap 5.3.3, Bootstrap Icons, PapaParse 5.4.1 and SheetJS 0.20.3.
+Delimiter Lab is a static web application. It reads a CSV, TSV, text or Excel file in the browser, applies a chain of steps (operations) to the data, shows a preview of each step and downloads the result. No data leaves the computer. The page has no server and no build step of its own. GitHub Pages serves the files as they are, so the build of the engine is committed. The application is plain ES5 JavaScript (no classes, no arrow functions, no modules) with Bootstrap 5.3 for the user interface. That rule is for the page and the worker. `scripts/` and `desktop/` run in Node, and `packages/` is TypeScript; they use the modern syntax. Vendor libraries are pinned copies in `vendor/`: Bootstrap 5.3.3, Bootstrap Icons, PapaParse 5.4.1 and SheetJS 0.20.3.
 
 The published copy runs on GitHub Pages at https://ethanpil.github.io/delimiter-lab/, built from the `master` branch at the root. A push to `master` publishes the change. Every path in the application is relative, so the subfolder of the Pages address works; do not add a path that starts with `/`.
 
@@ -15,20 +15,20 @@ The version in `js/manifest.js` is 1.0. `CHANGELOG.md` lists the changes with th
 | Task | Command |
 | --- | --- |
 | Run the application | `python -m http.server 8765` in the project folder, then open `http://localhost:8765`. The Web Worker does not start from a `file://` address; the page shows a clear message then. `.claude/launch.json` holds this server for the coding assistant. |
-| Run the desktop application | In `desktop/`: `npm install`, then `npm start`. `npm start -- --smoke` loads the page, asks the worker for its memory, and stops with 0, or with 1 after an error or 60 seconds. The check on a push runs that under xvfb on Linux, with `--no-sandbox`. |
+| Run the desktop application | In `desktop/`: `npm install`, then `npm start`. `npm start -- --smoke` loads the page and asks the worker for its memory. It stops with 0, or with 1 after an error or 60 seconds. The check on a push runs that under xvfb on Linux, with `--no-sandbox`. |
 | Build the desktop application | In `desktop/`: `npm run build`. It makes two disk images on a Mac, or an installer and a zip on Windows, in `desktop/out/`. The names carry the version of the manifest. |
 | Debug handle | Open the page with `?debug`. `window.DLApp` then gives `store`, `engine`, `grid`, `openFile(file)` and `openFiles(files)`. |
 | Build the engine | `npm install`, then `npm run build`. It writes `dist/engine.global.js` (the page and the worker), `dist/engine.mjs` and `dist/dl.mjs` (the `dl` command). Only the first is in the repository. |
 | Run every test | `npm test`. It builds first, then runs the four sets below. |
 | Run the engine tests | `node test/engine.test.js` (82 tests) |
 | Run the worker tests | `node test/worker.test.js` (24 tests; loads the real worker in Node with a fake File and the real PapaParse and SheetJS) |
-| Run the tests of the build | `node test/bundle.test.js` (8 tests). The page loads the manifest and then the build; these hold that pair to its promises. One test checks that every file of the manifest is on disk with the same letters. |
+| Run the tests of the build | `node test/bundle.test.js` (8 tests). The page loads the manifest and then the build; these hold that pair to its promises. One test checks that every file that the page names is on disk with the same letters. |
 | Run the parity tests | `node test/parity.test.js` (9 tests; one workflow through the worker of the page and through the `dl` command; the bytes must agree) |
 | Check the types | `npm run typecheck` |
 | Make test data | `node test/make-data.js 300000` writes `test/data/` (the `big*.csv` files are ignored by git) |
 | Run the benchmark | `node test/bench.js 1200000` |
 | Check the text keys | Write a small Node script that collects every `DL.t('key'` in `js/` and every `data-i18n*` attribute in `index.html`, loads `js/i18n/en.js` with a stub `DL.registerLocale`, and reports missing and unused keys. Zero of both is the rule. |
-| Release | Set `DL.VERSION` in `js/manifest.js` and run `npm run build`. Close the changelog section with the hashes. Commit "Release x.y", then push the tag `vX.Y`. The tag starts `.github/workflows/release.yml`. It stops when the tag and the manifest do not agree, or when the committed engine is not the build of its source. A run by hand with `ref` set to a branch and `publish` off is a dry run that writes nothing to the releases page; see README "Release". |
+| Release | Set `DL.VERSION` in `js/manifest.js` and run `npm run build`. Close the changelog section with the hashes. Commit "Release x.y", then push the tag `vX.Y`. The tag starts `.github/workflows/release.yml`. It stops when the tag and the manifest do not agree, or when the committed engine is not the build of its source. A run by hand with `ref` set to a branch and `publish` off is a dry run. It writes nothing to the releases page. See README "Release". |
 
 Run `npm test` before every commit. There is no test runner; each file counts its own results and sets the exit code. `npm test` builds first, so a change to the engine that is not built cannot pass.
 
@@ -157,6 +157,9 @@ The worker has no access to `DL.t`. Its notes and progress phases are English by
 - **Texts.** Every user-visible text goes through `DL.t('key', vars)` with the key in `js/i18n/en.js`, or through a `data-i18n`, `data-i18n-title`, `data-i18n-placeholder` or `data-i18n-label` attribute in `index.html`. `{name}` placeholders are replaced from `vars`; a missing key shows the key. The page loads `js/i18n/<lang>.js` when `DL.LOCALES` lists the language of `?lang=` or of the browser; the locale file activates itself in `DL.registerLocale`; `document.documentElement.lang` follows. Engine texts (operation names, settings, notes, status labels, plural words, reader notes) stay English by design and the README lists them.
 - **Theme.** `css/app.css` defines color tokens on `:root` and overrides them under `[data-bs-theme="dark"]`; the inline script in `index.html` sets the theme before the first paint from `dl.theme` or the system preference. Do not write literal colors in the CSS or in JavaScript; use a token. The `no-tip` class marks buttons with `data-bs-toggle` that must not get the delegated tooltip (Bootstrap refuses two instances on one element). Tooltips show on hover and on focus.
 
+- **The desktop edition** (`desktop/main.js`) is Electron around the same page, unchanged. It supplies the tree of `dist/web` at `app://delimiter-lab/`: a scheme that is `standard` and `secure`, so relative paths, the worker, the storage and `navigator.deviceMemory` work as on the web, and `DL.BUILD` is the version. The page sits next to the application as `resources/web`, not in the asar. One application runs at a time; a second start brings the first window to the front. Downloads get the Save dialog of the system. Web links open in the browser of the system. An input gets a menu on a right click. The version comes from `js/manifest.js` through `desktop/build.mjs`, and the Mac build gets an ad-hoc signature, because there is no certificate.
+- **Check the desktop edition by hand before a release**, on the built application, because no test drives the window: open a file by the button and by a drop; download a result and export a workflow (a Save dialog, then the file); open the Help dialog and click a link (the browser of the system opens, the window stays); close and start again (the workspace comes back); start it a second time (the first window comes to the front); paste into a text field with the right mouse button.
+
 ## 9. Conventions
 
 - Readme, changelog, documents, comments and commit messages are in ASD-STE100 Simplified Technical English: short sentences (about 20 words), active voice, one instruction per sentence, no fragments, no idioms, American spelling ("color").
@@ -217,6 +220,12 @@ These came from measured failures. Each one changed the design.
 - **A usage limit kills background agents mid-work.** Their partial results are lost; record what came back and relaunch the same prompts.
 - **Raw control characters in source files.** A raw NUL byte makes git treat the file as binary; write `\u0000`.
 - **The line-ending policy is LF** (`.gitattributes`). Editors on Windows must not write CRLF. `test/data/*` is the one exception: those files keep their own bytes, because `contacts.csv` is written with CRLF on purpose and `euro-1252.csv` is not UTF-8.
+
+- **Two release files end in `windows-x64.zip`** (the dl zip and the desktop zip). A pattern in the release notes must match one file only; `pick()` stops on two.
+- **A Windows program with a window does not hold the console.** A shell continues before it ends. The release checks the packaged application with `Start-Process -Wait` and reads its exit code.
+- **Ubuntu 24.04 does not give a user namespace to a program without a profile.** The sandbox of Chromium needs one, so the check on a push runs Electron with `--no-sandbox`.
+- **An Intel build under Rosetta starts slowly.** The check gives the worker 60 seconds; a run on a GitHub runner took 15. The smoke line says how long it took.
+- **`--smoke` in a second application on the same workspace passes without a check.** The check therefore runs on a workspace of its own in the temp directory. The next check removes the last one, because Chromium holds it open to the end.
 
 ## 12. Open items
 
