@@ -12,7 +12,7 @@ on:
         description: 'The tag to build, for example v1.0'
         required: true
       ref:
-        description: 'The branch or commit to build. Empty takes the tag. Give a branch for a rehearsal.'
+        description: 'The branch or commit to build. Empty takes the tag. Give a branch for a rehearsal, with publish off.'
         required: false
         default: ''
       publish:
@@ -30,17 +30,31 @@ concurrency:
   group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
+env:
+  # What every job checks out. A run by hand takes the ref that it names, or the tag. A push
+  # takes the tag that was pushed.
+  REF: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+
 jobs:
   # ---------------------------------------------------------------- one build for every platform
   binaries:
     name: Build the binaries
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
+      # A branch is not the tag. A run that builds a branch must not put its files on the release
+      # of the tag, so it stops here, in seconds, and not after the builds.
+      - name: A run of a branch is a rehearsal
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.publish }}
+        run: |
+          echo "::error::ref names a branch, so this run does not build the tag. Turn publish off, or leave ref empty."
+          exit 1
+
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+          ref: ${{ env.REF }}
 
       - uses: actions/setup-node@v4
         with:
@@ -54,6 +68,15 @@ jobs:
       # that says the command and the page give the same answer.
       - name: Tests
         run: npm test
+
+      # The desktop application and the web edition take the committed engine, and the dl command
+      # takes the build that the tests made. The two must be the same, or the editions differ.
+      - name: The committed engine matches its source
+        run: |
+          if ! git diff --quiet --exit-code -- dist/engine.global.js; then
+            echo "::error::dist/engine.global.js does not match packages/engine/src. Run: npm run build"
+            exit 1
+          fi
 
       # The name of the tag never reaches the shell as text, so nothing in it can run.
       - name: The version of the tag and the version of the application must agree
@@ -112,10 +135,11 @@ jobs:
     name: Check the Mac binaries
     needs: binaries
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+          ref: ${{ env.REF }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -150,10 +174,11 @@ jobs:
     name: Check the Windows binary
     needs: binaries
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+          ref: ${{ env.REF }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -178,7 +203,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+          ref: ${{ env.REF }}
 
       # The desktop application is an npm project of its own, with its own lock file.
       - uses: actions/setup-node@v4
@@ -187,20 +212,11 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      # Electron is a download of about 100 MB for each chip. The cache keeps it between runs.
-      # The key holds the lock file, so a new version of Electron makes a new cache.
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Caches/electron
-            ~/Library/Caches/electron-builder
-          key: electron-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
-
       - name: Install
         run: npm ci
         working-directory: desktop
 
-      # The build stages the page first: the engine is committed, so this needs no npm ci at the
+      # The build stages the page first. The engine is committed, so this needs no npm ci at the
       # root. One command makes the disk image for each chip.
       - name: Build
         run: npm run build
@@ -208,7 +224,7 @@ jobs:
 
       # The names come from electron-builder.yml, with the version of js/manifest.js, as the dl
       # files are named. A wrong name stops the run here and not at the release.
-      - name: The files have the names that the notes of the release expect
+      - name: The names of the files match the notes of the release
         run: |
           set -euo pipefail
           ls -la desktop/out
@@ -219,7 +235,6 @@ jobs:
       # both work. The runner has an Apple silicon chip, so that build runs as it is. The Intel
       # build runs under Rosetta when the runner has it, as the check of the dl command does.
       - name: Check that the application starts
-        timeout-minutes: 5
         run: |
           set -euo pipefail
           echo "--- Apple silicon"
@@ -231,13 +246,13 @@ jobs:
             echo "::warning::This runner cannot run Intel code, so the Intel application was not checked."
           fi
 
-      # Only the two disk images. electron-builder also writes a .blockmap and a latest-mac.yml
-      # for automatic updates, which this application does not have.
+      # Only the two disk images. A disk image is compressed, so the artifact is not compressed again.
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-macos
           path: desktop/out/delimiter-lab-*.dmg
           if-no-files-found: error
+          compression-level: 0
           retention-days: 7
           overwrite: true
 
@@ -252,7 +267,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+          ref: ${{ env.REF }}
 
       - uses: actions/setup-node@v4
         with:
@@ -260,23 +275,15 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~\AppData\Local\electron\Cache
-            ~\AppData\Local\electron-builder\Cache
-          key: electron-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
-
       - name: Install
         run: npm ci
         working-directory: desktop
 
-      # One command stages the page and makes the installer and the zip.
       - name: Build
         run: npm run build
         working-directory: desktop
 
-      - name: The files have the names that the notes of the release expect
+      - name: The names of the files match the notes of the release
         shell: bash
         run: |
           set -euo pipefail
@@ -284,21 +291,19 @@ jobs:
           test -f "desktop/out/delimiter-lab-$VERSION-windows-x64-setup.exe"
           test -f "desktop/out/delimiter-lab-$VERSION-windows-x64.zip"
 
-      # A Windows program with a window does not hold the console that started it, so a shell can
-      # go on before the program ends and lose its answer. Start-Process -Wait waits for the end
-      # and gives the exit code back. The exit code is the answer.
+      # A Windows program with a window does not hold the console that started it. A shell can
+      # continue before the program ends and not get the exit code. Start-Process -Wait waits for
+      # the end and returns the exit code. The two files hold what the program said.
       - name: Check that the application starts
-        timeout-minutes: 5
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath "desktop\out\win-unpacked\Delimiter Lab.exe" -ArgumentList '--smoke' -Wait -PassThru
+          $p = Start-Process -FilePath "desktop\out\win-unpacked\Delimiter Lab.exe" -ArgumentList '--smoke' -Wait -PassThru -RedirectStandardOutput smoke.out -RedirectStandardError smoke.err
+          Get-Content smoke.out, smoke.err
           if ($p.ExitCode -ne 0) {
             Write-Host "::error::The application did not start. Exit code $($p.ExitCode)."
             exit 1
           }
-          Write-Host "the application starts, loads the page and starts the worker"
 
-      # Only the installer and the zip.
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows
@@ -306,6 +311,7 @@ jobs:
             desktop/out/delimiter-lab-*-setup.exe
             desktop/out/delimiter-lab-*.zip
           if-no-files-found: error
+          compression-level: 0
           retention-days: 7
           overwrite: true
 
@@ -314,17 +320,13 @@ jobs:
     name: Make the packages
     needs: [binaries, macos, windows, desktop-macos, desktop-windows]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       VERSION: ${{ needs.binaries.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
-
-      # The stage script runs on Node and nothing else. The engine is committed, so no npm ci.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+          ref: ${{ env.REF }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -384,13 +386,15 @@ jobs:
 
       # The web edition is the tree that GitHub Pages serves, as one zip. The archive is made from
       # inside dist/web, so index.html is at its root and not in a folder. The last line holds
-      # that promise.
+      # that promise. The stage script runs on the Node of the runner, and the engine is
+      # committed, so this needs no npm ci. grep reads the whole list: with -q it would stop at
+      # the first line, and unzip would then stop with an error on a long list.
       - name: Pack the web edition
         run: |
           set -euo pipefail
           node scripts/stage-web.mjs
           (cd dist/web && zip -qr "../../release/delimiter-lab-$VERSION-web.zip" .)
-          unzip -Z1 "release/delimiter-lab-$VERSION-web.zip" | grep -qx index.html
+          unzip -Z1 "release/delimiter-lab-$VERSION-web.zip" | grep -x index.html > /dev/null
           ls -la release
 
       # Only the files, so that a directory cannot stop the step half way. The list of checksums
@@ -404,11 +408,14 @@ jobs:
           cat SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
 
+      # The files are compressed already, so the artifact is not compressed again. A release
+      # keeps the files on its page, so the artifact does not have to stay long.
       - uses: actions/upload-artifact@v4
         with:
           name: release-files
           path: release/*
-          retention-days: 30
+          compression-level: 0
+          retention-days: 7
           overwrite: true
 
   # ---------------------------------------------------------------- the release itself
@@ -416,6 +423,7 @@ jobs:
     name: Publish the release
     needs: [binaries, packages]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     env:
@@ -430,8 +438,8 @@ jobs:
       # The names of the packages come from nfpm, so the instructions read the names off the files
       # that were really built. A name that is not there stops the step, because instructions that
       # name a file nobody can download are worse than no instructions. Two names are as bad as
-      # none: the dl zip and the desktop zip both end in windows-x64.zip, so every pattern must
-      # match one file only.
+      # none. The dl zip and the desktop zip both end in windows-x64.zip, so every pattern must
+      # match one file only. The notes also go to the summary of the run, where a rehearsal reads them.
       - name: Write the notes
         run: |
           set -euo pipefail
@@ -473,10 +481,10 @@ jobs:
             echo "- Apple silicon: [$dmgArm]($base/$dmgArm)"
             echo "- Intel: [$dmgIntel]($base/$dmgIntel)"
             echo
-            echo "Open the file and drag Delimiter Lab to Applications. Apple has not notarized the"
+            echo "Open the file. Drag Delimiter Lab to Applications. Apple has not notarized the"
             echo "application, so the first start stops with a message. Then open System Settings >"
-            echo "Privacy & Security, find Delimiter Lab near the bottom, and click Open Anyway."
-            echo "Or take the mark off the application from a terminal, and start it again:"
+            echo "Privacy & Security. Find Delimiter Lab near the bottom of the page. Click Open Anyway."
+            echo "Or remove the quarantine attribute from a terminal, then start the application again:"
             echo '```'
             echo "xattr -dr com.apple.quarantine \"/Applications/Delimiter Lab.app\""
             echo '```'
@@ -484,14 +492,14 @@ jobs:
             echo "### Windows"
             echo
             echo "- Installer: [$winSetup]($base/$winSetup)"
-            echo "- Without installation: [$winZip]($base/$winZip). Open it and start \`Delimiter Lab.exe\`."
+            echo "- Without installation: [$winZip]($base/$winZip). Unpack it. Start \`Delimiter Lab.exe\` in the folder."
             echo
             echo "The application is not signed, so SmartScreen says \"Windows protected your PC\" at"
             echo "the first start. Click \"More info\", then \"Run anyway\"."
             echo
             echo "## Web edition"
             echo
-            echo "[$web]($base/$web) holds the page as files. Unpack it and serve the folder from any"
+            echo "[$web]($base/$web) holds the page as files. Unpack it. Serve the folder from any"
             echo "web server:"
             echo '```'
             echo "unzip $web -d delimiter-lab"
@@ -571,18 +579,9 @@ jobs:
             echo "sha256sum -c SHA256SUMS.txt --ignore-missing"
             echo '```'
           } > notes.md
-          cat notes.md
-
-      # A rehearsal reads the notes here, because the publish step does not run.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-notes
-          path: notes.md
-          retention-days: 30
-          overwrite: true
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
 
       # tag_name is given, because a run started by hand has a branch and not a tag.
-      # A run started by hand with publish off stops before this step: that is the rehearsal.
       - name: Publish
         if: ${{ github.event_name == 'push' || inputs.publish }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
