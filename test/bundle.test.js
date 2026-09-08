@@ -53,6 +53,21 @@ test('index.html asks for the version that the manifest holds', () => {
   });
 });
 
+test('every file that the manifest lists is on disk, with the same letters', () => {
+  // GitHub Pages serves the files of the repository as they are. A file that the manifest names
+  // and that is not there, or that has other letters in its name, gives a page that loads nothing
+  // after it, and no test reads the app, ui, main and locale files. Windows and macOS find a file
+  // whose case differs; the server of GitHub Pages does not, so the names are compared as text.
+  const onDisk = new Set();
+  ['js', 'dist'].forEach((dir) => {
+    fs.readdirSync(path.join(root, dir), { recursive: true }).forEach((f) => onDisk.add(dir + '/' + f.split(path.sep).join('/')));
+  });
+  const needed = ['js/engine/worker.js']
+    .concat(...Object.values(DL.FILES))
+    .concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js'));
+  needed.forEach((f) => assert.ok(onDisk.has(f), f + ' is in js/manifest.js but not on disk with these letters'));
+});
+
 test('the build brings every operation', () => {
   assert.strictEqual(DL.ops.length, 27);
   assert.strictEqual(DL.getOp('unpivot').id, 'unpivot');

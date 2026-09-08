@@ -15,6 +15,3 @@ packaging/dl
 
 # Large files that test/make-data.js generates when they are needed
 test/data/big*.csv
-
-# The desktop application takes a copy of the page from scripts/stage-web.mjs
-desktop/app/
