@@ -52,7 +52,7 @@ jobs:
   # The desktop application must start on every push. This makes no installer, which takes
   # minutes on each platform. It starts the application from the source in desktop/ and asks it
   # to check itself. The --smoke flag loads the page, starts the worker, and stops with 0 or 1.
-  # The packaged application, with its own resources path, is checked by the release only.
+  # Only the release checks the packaged application, which has its own resources path.
   desktop:
     name: The desktop application starts
     runs-on: ubuntu-latest
@@ -73,7 +73,7 @@ jobs:
       # The runner has no display, so xvfb-run gives the application one that is not shown. Ubuntu
       # 24.04 stops a program without a profile from making a user namespace. The sandbox of
       # Chromium needs one, so the sandbox is off in this check only. The check is about the page
-      # and the worker, not the sandbox. The engine is committed, so the page stages with no build.
+      # and the worker, not the sandbox. The engine is committed, so the stage script runs with no build.
       - name: Check that the application starts
         working-directory: desktop
         run: xvfb-run -a npm start -- --smoke --no-sandbox

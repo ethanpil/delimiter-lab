@@ -16,7 +16,7 @@ on:
         required: false
         default: ''
       publish:
-        description: 'Publish the release. Off for a dry run: the run builds and checks everything, and writes nothing to the releases page.'
+        description: 'Publish the release. Turn it off for a dry run. The run then builds and checks everything, and writes nothing to the releases page.'
         type: boolean
         default: true
 
@@ -45,7 +45,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       # A branch is not the tag. A run that builds a branch must not put its files on the release
-      # of the tag, so it stops here, in seconds, and not after the builds.
+      # of the tag. It stops here, in seconds, and not after the builds.
       - name: A run of a branch is a dry run
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.publish }}
         run: |
@@ -246,7 +246,7 @@ jobs:
             echo "::warning::This runner cannot run Intel code, so the Intel application was not checked."
           fi
 
-      # Only the two disk images. A disk image is compressed, so the artifact is not compressed again.
+      # The artifact holds the two disk images only. A disk image is compressed, so the artifact is not compressed again.
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-macos
@@ -384,11 +384,11 @@ jobs:
           cd ..
           ls -la release
 
-      # The web edition is the tree that GitHub Pages serves, as one zip. The archive is made from
-      # inside dist/web, so index.html is at its root and not in a folder. The last line holds
-      # that promise. The stage script runs on the Node of the runner, and the engine is
-      # committed, so this needs no npm ci. grep reads the whole list: with -q it would stop at
-      # the first line, and unzip would then stop with an error on a long list.
+      # The web edition is the tree that GitHub Pages serves, as one zip. zip runs in dist/web, so
+      # index.html is at the root of the archive and not in a folder. The last line holds that
+      # promise. The stage script runs on the Node of the runner, and the engine is committed, so
+      # this needs no npm ci. grep reads the whole list. With -q it would stop at the first line,
+      # and unzip would then stop with an error on a long list.
       - name: Pack the web edition
         run: |
           set -euo pipefail
