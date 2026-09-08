@@ -1,0 +1,45 @@
+# electron-builder makes the installers from main.js and the page in dist/web.
+# The version and the names of the files are not here: build.mjs reads the version from
+# js/manifest.js and passes them in.
+appId: io.github.ethanpil.delimiter-lab
+productName: Delimiter Lab
+directories:
+  output: out
+files:
+  - main.js
+# The page goes next to the application, not into it, so the files stay as they are.
+# main.js reads them from process.resourcesPath/web.
+extraResources:
+  - from: ../dist/web
+    to: web
+asar: true
+npmRebuild: false
+icon: icon.png
+# Nothing is sent anywhere. The release workflow puts the files on GitHub itself.
+publish: null
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  # There is no Apple certificate. An Apple silicon Mac does not start an application without a
+  # signature at all, and electron-builder does not sign by itself, so "-" asks for an ad-hoc
+  # signature. Ad-hoc and the hardened runtime do not go together, and there is nothing to notarize.
+  identity: "-"
+  hardenedRuntime: false
+  notarize: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # No .blockmap file: there is no updater.
+  differentialPackage: false
