@@ -57,7 +57,7 @@ dl workflow.json input.csv --validate        # check the workflow against the fi
 ```
 
 - The exit code is 0 when the work is done and 1 when it is not. Everything the command says goes to standard error, so a pipe carries only data.
-- `bun build --compile` makes one file for Linux, macOS and Windows. `.github/workflows/release.yml` builds them, joins the two Mac builds into one file, and makes a deb, an rpm and an apk. A program in any language calls the command as a subprocess.
+- `bun build --compile` makes one file for Linux, macOS and Windows. `.github/workflows/release.yml` builds them, one file for each Mac chip, and makes a deb, an rpm and an apk. A program in any language calls the command as a subprocess.
 - Done: the command refuses a workflow with a Custom JavaScript step, and --allow-code lets one run.
 - Still open: a JSON report for the notes and the problems.
 

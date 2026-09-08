@@ -5,6 +5,12 @@ history of the development before that.
 
 ## 1.0 (in development)
 
+- Add: a desktop application for macOS and Windows. It is the page in a window of its own, with no browser and no server (3509b4b, 3429880, 1d00ec7).
+- Add: a release carries the page as a zip, for a copy on your own web server (8f02163, 05a9f97, b66c5a1).
+- Add: the release builds the desktop application on a Mac and on a Windows machine, and starts each build once. A run by hand with publish off is a rehearsal (b66c5a1, 1e8e6f8).
+- Add: the check on a push starts the desktop application once (b66c5a1).
+- Fix: the page said "Another tab has this workspace open" at every new start that came after a saved session (60bb775).
+- Fix: a second desktop application on the same workspace lost its work. One runs at a time (3429880).
 - Change: Pad / Trim leaves an empty value empty. It made a value the file does not hold, such as 00000 for a missing postcode (d0f3d68).
 - Change: the numbers of a file are read by the separator that file uses. A file that writes 1.234,56 gives 1000 for 1.000 (e2a915e).
 - Change: an Excel file holds a number as a number, so SUM works. A value such as 007 stays text (e2a915e).

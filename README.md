@@ -52,6 +52,34 @@ Note: The Web Worker needs a web server. Most browsers do not start workers from
 The page runs with no build. A change to the engine needs one, because the page and the worker load
 `dist/engine.global.js`, which the build makes from `packages/engine/src`. See "Build and test".
 
+A release carries the same files as `delimiter-lab-<version>-web.zip`, for a copy on your own
+server without git. The release says how to unpack and serve it.
+
+## The desktop application
+
+The same page runs in a window of its own on macOS and Windows, without a browser and without a
+web server. It is the page and the engine inside Electron, so it gives the same answer as the
+page and as the `dl` command. No data leaves the computer.
+
+Take it from the [releases page](https://github.com/ethanpil/delimiter-lab/releases): a disk
+image for each Mac chip, and an installer or a zip for Windows. The application is not signed,
+so macOS and Windows ask once before the first start. Each release says what to click.
+
+The source is in `desktop/`, an npm project of its own. To run it from the source:
+
+```bash
+cd desktop
+npm install
+npm start                       # collects the page into dist/web, then opens the window
+npm start -- --smoke            # starts, checks the page and the worker, stops with 0 or 1
+npm run build                   # makes the files for this platform in desktop/out
+```
+
+`scripts/stage-web.mjs` copies the files that the page loads into `dist/web`, and checks them
+against `js/manifest.js`. The window, the web zip and the desktop build all take that tree.
+`npm run build` builds for the platform of the machine: two disk images on a Mac, an installer
+and a zip on Windows. The names of the files carry the version of `js/manifest.js`.
+
 ## The dl command
 
 The same engine runs on a terminal. `dl` takes a workflow file and one or more data files, runs the
@@ -92,8 +120,8 @@ that the workflow holds. Columns go by name.
 A workflow file comes from the page: open Workflows and use Export.
 
 Binaries for Linux, macOS and Windows, with packages for Debian, Red Hat and Alpine, are on the
-[releases page](https://github.com/ethanpil/delimiter-lab/releases). Each release says how to
-install them.
+[releases page](https://github.com/ethanpil/delimiter-lab/releases), beside the desktop
+application and the web edition. Each release says how to install them.
 
 ## Build and test
 
@@ -156,6 +184,7 @@ packages/engine/src/workflow.ts  The workflow file format
 packages/engine/src/ops/*.ts     Operations (text, rows, columns, dates, reshape, verify)
 packages/cli/src/*.ts            The dl command, and what Node gives the engine
 scripts/build.mjs                The build: makes dist/ from packages/
+scripts/stage-web.mjs            Collects the page and its files into dist/web, for the web zip and the desktop application
 dist/engine.global.js            The build that the page and the worker load as self.DL
 js/engine/worker.js              Web Worker: the messages of the page, the cache and the slices. It
                                  calls the engine to read, to run and to write.
@@ -166,7 +195,8 @@ js/main.js                       Application controller
 vendor/                          Bootstrap, Bootstrap Icons, PapaParse, SheetJS
 test/                            Tests, benchmark and test data
 packaging/                       The description that makes the deb, the rpm and the apk
-.github/                         The checks on a push, and the build of a release
+desktop/                         The desktop application: Electron around the staged page. An npm project of its own.
+.github/                         The checks on a push, with a start of the desktop application, and the build of a release
 docs/                            Notes on the design
 CONTEXT.md                       The design, the conventions and the pitfalls
 ```
@@ -222,9 +252,19 @@ number and a `v` in front:
 git tag v1.0 && git push origin v1.0
 ```
 
-The tag starts the release build. It stops when the tag and `js/manifest.js` do not agree. It builds
-the `dl` command for Linux, macOS and Windows, makes the deb, the rpm and the apk for both chips,
-writes the checksums, and puts everything on the releases page with the instructions to install it.
+The tag starts the release build. It stops when the tag and `js/manifest.js` do not agree, and when
+the committed engine is not the build of its source. It builds the `dl` command for Linux, macOS
+and Windows and makes the deb, the rpm and the apk for both chips. It builds the desktop application
+on a Mac and on a Windows machine, and starts each build once with `--smoke`. It packs the page as
+the web edition. Then it writes the checksums and puts everything on the releases page with the
+instructions to install it.
+
+To try the build without a release, start the workflow by hand from the Actions page. Give the
+tag, give the branch as `ref`, and turn `publish` off. That run builds and checks everything and
+writes nothing to the releases page. The files go to the `release-files` artifact, and the notes go
+to the summary of the run. Start the run from the branch when the workflow itself changed, because
+a run takes the workflow from the branch that starts it. A run with `ref` and `publish` on stops
+at once: a branch is not the tag.
 
 Every file that the manifest lists carries `?v=` with the version, so a browser takes the new one.
 `js/manifest.js` and `css/app.css` load before that version exists, so `index.html` asks for them
