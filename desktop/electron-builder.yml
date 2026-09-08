@@ -42,7 +42,6 @@ win:
 
 nsis:
   oneClick: false
-  perMachine: false
   allowToChangeInstallationDirectory: true
   artifactName: delimiter-lab-${version}-windows-${arch}-setup.${ext}
   # No .blockmap file: there is no updater.

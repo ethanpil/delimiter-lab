@@ -6,8 +6,8 @@
  * its worker run, then stops with 0. After an error or 60 seconds, it stops with 1.
  */
 'use strict';
-const { app, BrowserWindow, Menu, net, protocol, shell } = require('electron');
-const { existsSync, mkdtempSync } = require('node:fs');
+const { app, BrowserWindow, Menu, net, protocol, session, shell } = require('electron');
+const { existsSync, mkdtempSync, readdirSync, rmSync } = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -16,6 +16,17 @@ const HOST = 'delimiter-lab';
 const ORIGIN = 'app://' + HOST;
 const ROOT = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '../dist/web');
 const SMOKE = process.argv.includes('--smoke');
+// The check runs on a new workspace of its own, so it never meets the application of the user, or
+// another check. Chromium holds the workspace open to the end, so the next check removes it.
+function smokeWorkspace() {
+  const temp = app.getPath('temp');
+  for (const name of readdirSync(temp)) {
+    if (name.startsWith('delimiter-lab-smoke-')) {
+      try { rmSync(path.join(temp, name), { recursive: true, force: true }); } catch (e) { /* a check that runs now keeps its workspace */ }
+    }
+  }
+  return mkdtempSync(path.join(temp, 'delimiter-lab-smoke-'));
+}
 
 // The page needs one origin with a host name. standard: relative paths resolve, and the browser
 // storage works. secure: navigator.deviceMemory exists, which sets the memory budget. The host is
@@ -62,7 +73,11 @@ function createWindow() {
 }
 
 // Says one line and stops. The write completes before the stop, so a pipe gets the line too.
+// The first call decides: a late answer after the limit does not change the result.
+let stopped = false;
 function stop(code, line) {
+  if (stopped) return;
+  stopped = true;
   (code ? process.stderr : process.stdout).write(line + '\n', () => app.exit(code));
 }
 
@@ -90,21 +105,23 @@ function smoke(win) {
   });
 }
 
-// One application at a time. A second one on the same workspace keeps its work in memory only
-// and loses it at the end. The check runs on a new workspace of its own, so it never meets the
-// application of the user, or another check.
-if (SMOKE) app.setPath('userData', mkdtempSync(path.join(app.getPath('temp'), 'delimiter-lab-smoke-')));
+// One application runs at a time. A second one on the same workspace keeps its work in memory
+// only and loses it at the end. A second start brings the window of the first to the front.
+if (SMOKE) app.setPath('userData', smokeWorkspace());
 if (!app.requestSingleInstanceLock()) {
   console.error('Delimiter Lab is open in another window.');
   app.quit();
 } else {
   app.on('second-instance', () => {
     const win = BrowserWindow.getAllWindows()[0];
-    if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+    if (!win) createWindow().loadURL(ORIGIN + '/');
+    else { if (win.isMinimized()) win.restore(); win.focus(); }
   });
   app.setAppUserModelId(APP_ID); // Windows puts the window and the shortcut of the installer in one group by this name
   app.whenReady().then(() => {
     protocol.handle('app', serve);
+    // Electron names the dialog of a download after its address, which is a blob address here.
+    session.defaultSession.on('will-download', (e, item) => item.setSaveDialogOptions({ title: 'Save' }));
     const win = createWindow();
     if (SMOKE) smoke(win);
     win.loadURL(ORIGIN + (SMOKE ? '/?debug' : '/'));

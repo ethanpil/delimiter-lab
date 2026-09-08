@@ -15,9 +15,16 @@ app.whenReady().then(async () => {
   const html = '<body style="margin:0;background:transparent"><img width="' + SIZE + '" height="' + SIZE +
     '" src="data:image/svg+xml,' + encodeURIComponent(svg) + '"></body>';
   const win = new BrowserWindow({ show: false, width: SIZE, height: SIZE, transparent: true, webPreferences: { offscreen: true } });
+  win.setContentSize(SIZE, SIZE); // a new window is not taller than the screen; this makes it so
   await win.loadURL('data:text/html,' + encodeURIComponent(html));
   const image = await win.webContents.capturePage();
+  const size = image.getSize();
+  if (size.width !== SIZE || size.height !== SIZE) {
+    console.error('The image is ' + size.width + 'x' + size.height + ', not ' + SIZE + 'x' + SIZE + '.');
+    app.exit(1);
+    return;
+  }
   writeFileSync(path.join(__dirname, 'icon.png'), image.toPNG());
-  console.log('icon.png ' + image.getSize().width + 'x' + image.getSize().height);
+  console.log('icon.png ' + size.width + 'x' + size.height);
   app.exit(0);
 });
