@@ -28,6 +28,10 @@ mac:
   hardenedRuntime: false
   notarize: false
 
+dmg:
+  # No .blockmap file: there is no updater.
+  writeUpdateInfo: false
+
 win:
   target:
     - target: nsis

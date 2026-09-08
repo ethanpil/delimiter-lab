@@ -69,6 +69,7 @@ function stop(code, line) {
 // Opens the page with ?debug, which puts the parts of the page on window.DLApp. Then asks the
 // worker of the page for its memory. An answer shows that the worker started over app://.
 function smoke(win) {
+  const started = Date.now();
   const timer = setTimeout(() => stop(1, 'smoke: no answer after 30 s'), 30000);
   if (!existsSync(path.join(ROOT, 'index.html'))) return stop(1, 'smoke: no page in ' + ROOT + '. Run: npm run stage');
   win.webContents.on('console-message', (d) => { if (d.level === 'error') console.error('page: ' + d.message); });
@@ -82,7 +83,8 @@ function smoke(win) {
       // build.mjs gives the application the version of the manifest. The page must carry the same.
       if (app.isPackaged && app.getVersion() !== version) throw new Error('the application says ' + app.getVersion() + ', the page says ' + version);
       clearTimeout(timer);
-      stop(0, 'smoke: ok, version ' + version);
+      // The time says how near the 30 seconds this machine came. Rosetta makes an Intel build slow.
+      stop(0, 'smoke: ok, version ' + version + ', ' + ((Date.now() - started) / 1000).toFixed(1) + ' s');
     } catch (e) { stop(1, 'smoke: ' + (e.message || e)); }
   });
 }
