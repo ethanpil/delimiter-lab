@@ -53,19 +53,24 @@ test('index.html asks for the version that the manifest holds', () => {
   });
 });
 
-test('every file that the manifest lists is on disk, with the same letters', () => {
-  // GitHub Pages serves the files of the repository as they are. A file that the manifest names
-  // and that is not there, or that has other letters in its name, gives a page that loads nothing
-  // after it, and no test reads the app, ui, main and locale files. Windows and macOS find a file
-  // whose case differs; the server of GitHub Pages does not, so the names are compared as text.
-  const onDisk = new Set();
-  ['js', 'dist'].forEach((dir) => {
-    fs.readdirSync(path.join(root, dir), { recursive: true }).forEach((f) => onDisk.add(dir + '/' + f.split(path.sep).join('/')));
-  });
+test('every file that the page loads is on disk, with the same letters', () => {
+  // GitHub Pages serves the files of the repository as they are. A file that the page names can
+  // be absent, or can have other letters in its name. Such a file gives a page that loads nothing
+  // after it, and no other test reads the app, ui, main and locale files. Windows and macOS find a
+  // file whose case differs; the server of GitHub Pages does not, so this test compares the names
+  // as text. The manifest names most files. index.html and the worker name the others themselves.
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const worker = fs.readFileSync(path.join(root, 'js/engine/worker.js'), 'utf8');
   const needed = ['js/engine/worker.js']
     .concat(...Object.values(DL.FILES))
-    .concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js'));
-  needed.forEach((f) => assert.ok(onDisk.has(f), f + ' is in js/manifest.js but not on disk with these letters'));
+    .concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js'))
+    .concat([...html.matchAll(/(?:src|href)="([^"#?:]+)(?:\?[^"]*)?"/g)].map((m) => m[1]))
+    .concat([...worker.matchAll(/'\.\.\/\.\.\/([^'?]+)'/g)].map((m) => m[1]));
+  const onDisk = new Set();
+  new Set(needed.map((f) => f.split('/')[0])).forEach((dir) => {
+    fs.readdirSync(path.join(root, dir), { recursive: true }).forEach((f) => onDisk.add(dir + '/' + f.split(path.sep).join('/')));
+  });
+  needed.forEach((f) => assert.ok(onDisk.has(f), f + ' is named by the page but not on disk with these letters'));
 });
 
 test('the build brings every operation', () => {

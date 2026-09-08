@@ -26,11 +26,16 @@ rmSync(out, { recursive: true, force: true });
 for (const part of PARTS) cpSync(path.join(root, part), path.join(out, part), { recursive: true });
 
 // Every file that the page loads must be in the tree, with the same letters. Windows and macOS
-// find a file whose case differs. A Linux server does not.
+// find a file whose case differs. A Linux server does not. index.html and the worker name some
+// files themselves, outside the manifest, so their text gives those names.
 const staged = new Set(readdirSync(out, { recursive: true }).map((f) => f.split(path.sep).join('/')));
+const html = readFileSync(path.join(out, 'index.html'), 'utf8');
+const worker = readFileSync(path.join(out, 'js/engine/worker.js'), 'utf8');
 const needed = [...new Set(['index.html', 'js/engine/worker.js']
   .concat(...Object.values(DL.FILES))
-  .concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js')))];
+  .concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js'))
+  .concat([...html.matchAll(/(?:src|href)="([^"#?:]+)(?:\?[^"]*)?"/g)].map((m) => m[1]))
+  .concat([...worker.matchAll(/'\.\.\/\.\.\/([^'?]+)'/g)].map((m) => m[1])))];
 const missing = needed.filter((f) => !staged.has(f));
 if (missing.length) throw new Error('These files are not in the staged page:\n  ' + missing.join('\n  '));
 console.log('page staged in dist/web, version ' + DL.VERSION + ', ' + needed.length + ' files checked');
