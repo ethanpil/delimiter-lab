@@ -1,7 +1,8 @@
 name: Release
 
 # Runs when a tag that starts with v is pushed, for example v1.0.
-# It builds the dl command for every platform, packs it, and puts the files on the release.
+# It builds the dl command for every platform, the desktop application for macOS and Windows,
+# and the web edition. It packs them and puts the files on the release.
 on:
   push:
     tags: ['v*']
@@ -10,6 +11,14 @@ on:
       tag:
         description: 'The tag to build, for example v1.0'
         required: true
+      ref:
+        description: 'The branch or commit to build. Empty takes the tag. Give a branch for a rehearsal.'
+        required: false
+        default: ''
+      publish:
+        description: 'Publish the release. Off for a rehearsal: the run builds and checks everything, and writes nothing to the releases page.'
+        type: boolean
+        default: true
 
 # Only the job that publishes needs the right to write. The jobs that build get no more than
 # the right to read, because that is where code from other people runs.
@@ -31,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -106,7 +115,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -144,7 +153,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -158,22 +167,176 @@ jobs:
           ./out/dl-windows-x64.exe --version
           bash .github/smoke.sh ./out/dl-windows-x64.exe
 
+  # ---------------------------------------------------------------- the desktop application, macOS
+  desktop-macos:
+    name: Build the desktop application for macOS
+    needs: binaries
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.binaries.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+
+      # The desktop application is an npm project of its own, with its own lock file.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # Electron is a download of about 100 MB for each chip. The cache keeps it between runs.
+      # The key holds the lock file, so a new version of Electron makes a new cache.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
+
+      - name: Install
+        run: npm ci
+        working-directory: desktop
+
+      # The build stages the page first: the engine is committed, so this needs no npm ci at the
+      # root. One command makes the disk image for each chip.
+      - name: Build
+        run: npm run build
+        working-directory: desktop
+
+      # The names come from electron-builder.yml, with the version of js/manifest.js, as the dl
+      # files are named. A wrong name stops the run here and not at the release.
+      - name: The files have the names that the notes of the release expect
+        run: |
+          set -euo pipefail
+          ls -la desktop/out
+          test -f "desktop/out/delimiter-lab-$VERSION-macos-arm64.dmg"
+          test -f "desktop/out/delimiter-lab-$VERSION-macos-x64.dmg"
+
+      # --smoke starts the application, loads the page, starts the worker and stops, with 0 when
+      # both work. The runner has an Apple silicon chip, so that build runs as it is. The Intel
+      # build runs under Rosetta when the runner has it, as the check of the dl command does.
+      - name: Check that the application starts
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          echo "--- Apple silicon"
+          "desktop/out/mac-arm64/Delimiter Lab.app/Contents/MacOS/Delimiter Lab" --smoke
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "--- Intel"
+            arch -x86_64 "desktop/out/mac/Delimiter Lab.app/Contents/MacOS/Delimiter Lab" --smoke
+          else
+            echo "::warning::This runner cannot run Intel code, so the Intel application was not checked."
+          fi
+
+      # Only the two disk images. electron-builder also writes a .blockmap and a latest-mac.yml
+      # for automatic updates, which this application does not have.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: desktop/out/delimiter-lab-*.dmg
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  # ---------------------------------------------------------------- the desktop application, Windows
+  desktop-windows:
+    name: Build the desktop application for Windows
+    needs: binaries
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.binaries.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
+
+      - name: Install
+        run: npm ci
+        working-directory: desktop
+
+      # One command stages the page and makes the installer and the zip.
+      - name: Build
+        run: npm run build
+        working-directory: desktop
+
+      - name: The files have the names that the notes of the release expect
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la desktop/out
+          test -f "desktop/out/delimiter-lab-$VERSION-windows-x64-setup.exe"
+          test -f "desktop/out/delimiter-lab-$VERSION-windows-x64.zip"
+
+      # A Windows program with a window does not hold the console that started it, so a shell can
+      # go on before the program ends and lose its answer. Start-Process -Wait waits for the end
+      # and gives the exit code back. The exit code is the answer.
+      - name: Check that the application starts
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "desktop\out\win-unpacked\Delimiter Lab.exe" -ArgumentList '--smoke' -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            Write-Host "::error::The application did not start. Exit code $($p.ExitCode)."
+            exit 1
+          }
+          Write-Host "the application starts, loads the page and starts the worker"
+
+      # Only the installer and the zip.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: |
+            desktop/out/delimiter-lab-*-setup.exe
+            desktop/out/delimiter-lab-*.zip
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
   # ---------------------------------------------------------------- the packages
   packages:
     name: Make the packages
-    needs: [binaries, macos, windows]
+    needs: [binaries, macos, windows, desktop-macos, desktop-windows]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.binaries.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          ref: ${{ github.event.inputs.ref || github.event.inputs.tag || github.ref_name }}
+
+      # The stage script runs on Node and nothing else. The engine is committed, so no npm ci.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - uses: actions/download-artifact@v4
         with:
           name: raw-binaries
           path: out
+
+      # The desktop files go into release/ as they are, so the list of checksums covers them too.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: release
+          merge-multiple: true
 
       - name: Get nfpm
         run: |
@@ -219,6 +382,17 @@ jobs:
           cd ..
           ls -la release
 
+      # The web edition is the tree that GitHub Pages serves, as one zip. The archive is made from
+      # inside dist/web, so index.html is at its root and not in a folder. The last line holds
+      # that promise.
+      - name: Pack the web edition
+        run: |
+          set -euo pipefail
+          node scripts/stage-web.mjs
+          (cd dist/web && zip -qr "../../release/delimiter-lab-$VERSION-web.zip" .)
+          unzip -Z1 "release/delimiter-lab-$VERSION-web.zip" | grep -qx index.html
+          ls -la release
+
       # Only the files, so that a directory cannot stop the step half way. The list of checksums
       # is left out of itself: the shell makes that file empty before find looks, so a line for it
       # would hold the checksum of nothing and sha256sum -c would always say FAILED.
@@ -255,29 +429,81 @@ jobs:
 
       # The names of the packages come from nfpm, so the instructions read the names off the files
       # that were really built. A name that is not there stops the step, because instructions that
-      # name a file nobody can download are worse than no instructions.
+      # name a file nobody can download are worse than no instructions. Two names are as bad as
+      # none: the dl zip and the desktop zip both end in windows-x64.zip, so every pattern must
+      # match one file only.
       - name: Write the notes
         run: |
           set -euo pipefail
           base="https://github.com/${{ github.repository }}/releases/download/$TAG"
           pick() {
-            name=$(cd release && ls $1 2>/dev/null | head -1 || true)
-            if [ -z "$name" ]; then
-              echo "::error::No file in the release matches $1" >&2
+            found=$(cd release && ls $1 2>/dev/null || true)
+            count=$(printf '%s\n' "$found" | grep -c . || true)
+            if [ "$count" != "1" ]; then
+              echo "::error::$count files in the release match $1. The notes need exactly one." >&2
               exit 1
             fi
-            echo "$name"
+            echo "$found"
           }
+          dmgArm=$(pick 'delimiter-lab-*-macos-arm64.dmg'); dmgIntel=$(pick 'delimiter-lab-*-macos-x64.dmg')
+          winSetup=$(pick 'delimiter-lab-*-windows-x64-setup.exe'); winZip=$(pick 'delimiter-lab-*-windows-x64.zip')
+          web=$(pick 'delimiter-lab-*-web.zip')
           deb=$(pick '*amd64.deb');      debArm=$(pick '*arm64.deb')
           rpm=$(pick '*x86_64.rpm');     rpmArm=$(pick '*aarch64.rpm')
           apk=$(pick '*x86_64.apk');     apkArm=$(pick '*aarch64.apk')
-          mac=$(pick '*macos-arm64.tar.gz'); macIntel=$(pick '*macos-x64.tar.gz')
-          lin=$(pick '*linux-x64.tar.gz'); linArm=$(pick '*linux-arm64.tar.gz')
-          win=$(pick '*windows-x64.zip')
+          mac=$(pick 'dl-*-macos-arm64.tar.gz'); macIntel=$(pick 'dl-*-macos-x64.tar.gz')
+          lin=$(pick 'dl-*-linux-x64.tar.gz'); linArm=$(pick 'dl-*-linux-arm64.tar.gz')
+          win=$(pick 'dl-*-windows-x64.zip')
           {
-            echo "The \`dl\` command runs a workflow on files from a terminal. It gives the same"
-            echo "answer as the page at https://ethanpil.github.io/delimiter-lab/, because both run"
-            echo "the same engine, built from one source."
+            echo "Delimiter Lab comes in three editions. All of them run one engine, built from one"
+            echo "source, so they give the same answer. No data leaves the computer in any of them."
+            echo
+            echo "- The desktop application: the page in a window of its own, for macOS and Windows."
+            echo "- The web edition: the page as files, for your own web server. The published copy runs"
+            echo "  at https://ethanpil.github.io/delimiter-lab/."
+            echo "- The \`dl\` command: runs a workflow on files from a terminal."
+            echo
+            echo "## Desktop application"
+            echo
+            echo "### macOS"
+            echo
+            echo "Take the file for your chip. \`uname -m\` says \`arm64\` for Apple silicon and"
+            echo "\`x86_64\` for Intel."
+            echo
+            echo "- Apple silicon: [$dmgArm]($base/$dmgArm)"
+            echo "- Intel: [$dmgIntel]($base/$dmgIntel)"
+            echo
+            echo "Open the file and drag Delimiter Lab to Applications. Apple has not notarized the"
+            echo "application, so the first start stops with a message. Then open System Settings >"
+            echo "Privacy & Security, find Delimiter Lab near the bottom, and click Open Anyway."
+            echo "Or take the mark off the application from a terminal, and start it again:"
+            echo '```'
+            echo "xattr -dr com.apple.quarantine \"/Applications/Delimiter Lab.app\""
+            echo '```'
+            echo
+            echo "### Windows"
+            echo
+            echo "- Installer: [$winSetup]($base/$winSetup)"
+            echo "- Without installation: [$winZip]($base/$winZip). Open it and start \`Delimiter Lab.exe\`."
+            echo
+            echo "The application is not signed, so SmartScreen says \"Windows protected your PC\" at"
+            echo "the first start. Click \"More info\", then \"Run anyway\"."
+            echo
+            echo "## Web edition"
+            echo
+            echo "[$web]($base/$web) holds the page as files. Unpack it and serve the folder from any"
+            echo "web server:"
+            echo '```'
+            echo "unzip $web -d delimiter-lab"
+            echo "cd delimiter-lab"
+            echo "python -m http.server 8765"
+            echo '```'
+            echo "Then open http://localhost:8765. The page needs a web server: a browser does not start"
+            echo "the Web Worker from a \`file://\` address."
+            echo
+            echo "## The dl command"
+            echo
+            echo "\`dl\` runs a workflow on files from a terminal."
             echo
             echo '```'
             echo "dl workflow.json input.csv -o out.csv        # write a file"
@@ -288,8 +514,6 @@ jobs:
             echo '```'
             echo
             echo "A workflow file comes from the page: open Workflows and use Export."
-            echo
-            echo "## Install"
             echo
             echo "### Debian and Ubuntu"
             echo '```'
@@ -349,8 +573,18 @@ jobs:
           } > notes.md
           cat notes.md
 
+      # A rehearsal reads the notes here, because the publish step does not run.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: notes.md
+          retention-days: 30
+          overwrite: true
+
       # tag_name is given, because a run started by hand has a branch and not a tag.
+      # A run started by hand with publish off stops before this step: that is the rehearsal.
       - name: Publish
+        if: ${{ github.event_name == 'push' || inputs.publish }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.TAG }}
