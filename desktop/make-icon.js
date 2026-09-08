@@ -1,6 +1,6 @@
 /* Makes icon.png, 1024 x 1024, from img/logo.svg. Run: npm run icon
- * electron-builder makes the .icns and the .ico from it. Electron draws the SVG itself, so no
- * other package is needed. Run it again when the logo changes, and commit the file.
+ * electron-builder makes the .icns and the .ico from it. Electron makes the image from the SVG
+ * itself, so no other package is necessary. Run it again when the logo changes. Then commit the file.
  */
 'use strict';
 const { app, BrowserWindow } = require('electron');
@@ -14,12 +14,8 @@ app.whenReady().then(async () => {
   const svg = readFileSync(path.join(__dirname, '../img/logo.svg'), 'utf8');
   const html = '<body style="margin:0;background:transparent"><img width="' + SIZE + '" height="' + SIZE +
     '" src="data:image/svg+xml,' + encodeURIComponent(svg) + '"></body>';
-  const win = new BrowserWindow({
-    show: false, width: SIZE, height: SIZE, useContentSize: true, frame: false, transparent: true,
-    webPreferences: { offscreen: true }
-  });
+  const win = new BrowserWindow({ show: false, width: SIZE, height: SIZE, transparent: true, webPreferences: { offscreen: true } });
   await win.loadURL('data:text/html,' + encodeURIComponent(html));
-  await new Promise((r) => setTimeout(r, 500)); // one paint after the load
   const image = await win.webContents.capturePage();
   writeFileSync(path.join(__dirname, 'icon.png'), image.toPNG());
   console.log('icon.png ' + image.getSize().width + 'x' + image.getSize().height);

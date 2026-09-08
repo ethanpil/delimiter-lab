@@ -9,7 +9,6 @@
   "scripts": {
     "stage": "node ../scripts/stage-web.mjs",
     "start": "npm run stage && electron .",
-    "smoke": "npm run stage && electron . --smoke",
     "build": "npm run stage && node build.mjs",
     "icon": "electron make-icon.js"
   },

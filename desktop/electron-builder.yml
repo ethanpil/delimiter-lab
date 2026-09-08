@@ -1,21 +1,17 @@
 # electron-builder makes the installers from main.js and the page in dist/web.
-# The version and the names of the files are not here: build.mjs reads the version from
-# js/manifest.js and passes them in.
+# The version is not here: build.mjs reads it from js/manifest.js and passes it in.
 appId: io.github.ethanpil.delimiter-lab
-productName: Delimiter Lab
 directories:
   output: out
 files:
   - main.js
-# The page goes next to the application, not into it, so the files stay as they are.
+# The page goes adjacent to the application, not into it, so the files stay as they are.
 # main.js reads them from process.resourcesPath/web.
 extraResources:
   - from: ../dist/web
     to: web
-asar: true
-npmRebuild: false
 icon: icon.png
-# Nothing is sent anywhere. The release workflow puts the files on GitHub itself.
+# electron-builder sends no file to a server. The release workflow puts the files on GitHub.
 publish: null
 
 mac:
@@ -23,9 +19,11 @@ mac:
   target:
     - target: dmg
       arch: [x64, arm64]
-  # There is no Apple certificate. An Apple silicon Mac does not start an application without a
-  # signature at all, and electron-builder does not sign by itself, so "-" asks for an ad-hoc
-  # signature. Ad-hoc and the hardened runtime do not go together, and there is nothing to notarize.
+  artifactName: delimiter-lab-${version}-macos-${arch}.${ext}
+  # There is no Apple certificate. An Apple silicon Mac does not start an application that has no
+  # signature. electron-builder does not sign by itself, so "-" asks for an ad-hoc signature. An
+  # ad-hoc signature does not permit the hardened runtime, and there is nothing to notarize.
+  # On a Mac that has a certificate with "-" in its name, electron-builder takes that certificate.
   identity: "-"
   hardenedRuntime: false
   notarize: false
@@ -36,10 +34,12 @@ win:
       arch: [x64]
     - target: zip
       arch: [x64]
+  artifactName: delimiter-lab-${version}-windows-${arch}.${ext}
 
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  artifactName: delimiter-lab-${version}-windows-${arch}-setup.${ext}
   # No .blockmap file: there is no updater.
   differentialPackage: false
