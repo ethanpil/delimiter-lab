@@ -1,9 +1,8 @@
 # Changelog
 
-The version is 1.0 while the work continues. The numbers below 1.0 are the
-history of the development before that.
+The numbers below 1.0 are the history of the development before 1.0.
 
-## 1.0 (in development)
+## 1.0
 
 - Add: a desktop application for macOS and Windows. It is the page in a window of its own, with no browser and no server (3509b4b, 3429880, 1d00ec7, 09024f1, 03f1aad).
 - Add: a release carries the page as a zip, for a copy on your own web server (8f02163, 05a9f97, b66c5a1, a85fe66).
