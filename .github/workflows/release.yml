@@ -12,11 +12,11 @@ on:
         description: 'The tag to build, for example v1.0'
         required: true
       ref:
-        description: 'The branch or commit to build. Empty takes the tag. Give a branch for a rehearsal, with publish off.'
+        description: 'The branch or commit to build. Empty takes the tag. Give a branch for a dry run, with publish off.'
         required: false
         default: ''
       publish:
-        description: 'Publish the release. Off for a rehearsal: the run builds and checks everything, and writes nothing to the releases page.'
+        description: 'Publish the release. Off for a dry run: the run builds and checks everything, and writes nothing to the releases page.'
         type: boolean
         default: true
 
@@ -46,7 +46,7 @@ jobs:
     steps:
       # A branch is not the tag. A run that builds a branch must not put its files on the release
       # of the tag, so it stops here, in seconds, and not after the builds.
-      - name: A run of a branch is a rehearsal
+      - name: A run of a branch is a dry run
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.publish }}
         run: |
           echo "::error::ref names a branch, so this run does not build the tag. Turn publish off, or leave ref empty."
@@ -439,7 +439,7 @@ jobs:
       # that were really built. A name that is not there stops the step, because instructions that
       # name a file nobody can download are worse than no instructions. Two names are as bad as
       # none. The dl zip and the desktop zip both end in windows-x64.zip, so every pattern must
-      # match one file only. The notes also go to the summary of the run, where a rehearsal reads them.
+      # match one file only. The notes also go to the summary of the run, where a dry run reads them.
       - name: Write the notes
         run: |
           set -euo pipefail
