@@ -3,7 +3,7 @@
  *
  * The page comes from dist/web, which scripts/stage-web.mjs makes. A packaged application
  * carries that tree in its resources. With --smoke, the application checks that the page and
- * its worker run, then stops with 0. After an error or 30 seconds, it stops with 1.
+ * its worker run, then stops with 0. After an error or 60 seconds, it stops with 1.
  */
 'use strict';
 const { app, BrowserWindow, Menu, net, protocol, shell } = require('electron');
@@ -70,7 +70,8 @@ function stop(code, line) {
 // worker of the page for its memory. An answer shows that the worker started over app://.
 function smoke(win) {
   const started = Date.now();
-  const timer = setTimeout(() => stop(1, 'smoke: no answer after 30 s'), 30000);
+  // An Intel build under Rosetta on a GitHub runner took 15 seconds. The limit is four times that.
+  const timer = setTimeout(() => stop(1, 'smoke: no answer after 60 s'), 60000);
   if (!existsSync(path.join(ROOT, 'index.html'))) return stop(1, 'smoke: no page in ' + ROOT + '. Run: npm run stage');
   win.webContents.on('console-message', (d) => { if (d.level === 'error') console.error('page: ' + d.message); });
   win.webContents.once('did-finish-load', async () => {
@@ -83,7 +84,7 @@ function smoke(win) {
       // build.mjs gives the application the version of the manifest. The page must carry the same.
       if (app.isPackaged && app.getVersion() !== version) throw new Error('the application says ' + app.getVersion() + ', the page says ' + version);
       clearTimeout(timer);
-      // The time says how near the 30 seconds this machine came. Rosetta makes an Intel build slow.
+      // The time says how near the limit this machine came. Rosetta makes an Intel build slow.
       stop(0, 'smoke: ok, version ' + version + ', ' + ((Date.now() - started) / 1000).toFixed(1) + ' s');
     } catch (e) { stop(1, 'smoke: ' + (e.message || e)); }
   });

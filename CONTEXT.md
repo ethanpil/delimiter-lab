@@ -15,7 +15,7 @@ The version in `js/manifest.js` is 1.0. `CHANGELOG.md` lists the changes with th
 | Task | Command |
 | --- | --- |
 | Run the application | `python -m http.server 8765` in the project folder, then open `http://localhost:8765`. The Web Worker does not start from a `file://` address; the page shows a clear message then. `.claude/launch.json` holds this server for the coding assistant. |
-| Run the desktop application | In `desktop/`: `npm install`, then `npm start`. `npm start -- --smoke` loads the page, asks the worker for its memory, and stops with 0, or with 1 after an error or 30 seconds. The check on a push runs that under xvfb on Linux, with `--no-sandbox`. |
+| Run the desktop application | In `desktop/`: `npm install`, then `npm start`. `npm start -- --smoke` loads the page, asks the worker for its memory, and stops with 0, or with 1 after an error or 60 seconds. The check on a push runs that under xvfb on Linux, with `--no-sandbox`. |
 | Build the desktop application | In `desktop/`: `npm run build`. It makes two disk images on a Mac, or an installer and a zip on Windows, in `desktop/out/`. The names carry the version of the manifest. |
 | Debug handle | Open the page with `?debug`. `window.DLApp` then gives `store`, `engine`, `grid`, `openFile(file)` and `openFiles(files)`. |
 | Build the engine | `npm install`, then `npm run build`. It writes `dist/engine.global.js` (the page and the worker), `dist/engine.mjs` and `dist/dl.mjs` (the `dl` command). Only the first is in the repository. |
