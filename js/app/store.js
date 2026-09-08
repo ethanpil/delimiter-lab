@@ -5,7 +5,6 @@
   var U = DL.util;
 
   var SESSION_KEY = 'dl.session.v1';
-  var WRITER_KEY = 'dl.tab.v1';
   var MAX_HISTORY = 100;
 
   function Store() {
@@ -28,15 +27,19 @@
     this.undoStack = [];
     this.redoStack = [];
     this.savedSnapshot = null; // the workflow as it was last saved
-    // Every tab of this browser writes one session. This name says which tab wrote it last, so a
-    // tab can see that another one owns the workspace now and say so before work is lost. It
-    // lives in sessionStorage, which belongs to one tab and stays through a reload: with a new
-    // name at each load, a single tab warns about itself every time.
-    this.writerId = null;
+    // Every tab of this browser writes one session, and the work of one of two open tabs does
+    // not come back after a reload. A new tab asks the open tabs if there is one. Both tabs say
+    // so once when they meet. A tab that opens after the other one closed gets no answer, so a
+    // new start stays quiet.
+    var self = this;
     try {
-      this.writerId = sessionStorage.getItem(WRITER_KEY);
-      if (!this.writerId) { this.writerId = DL.uid(); sessionStorage.setItem(WRITER_KEY, this.writerId); }
-    } catch (e) { this.writerId = DL.uid(); } // no sessionStorage: the warning is then only best effort
+      var channel = new BroadcastChannel(SESSION_KEY);
+      channel.onmessage = function (e) {
+        if (e.data === 'hello') channel.postMessage('here');
+        if (!self.sharedWarned) { self.sharedWarned = true; U.toast(DL.t('wf.sessionShared'), 'warning'); }
+      };
+      channel.postMessage('hello');
+    } catch (e) { /* no BroadcastChannel: the warning is then not given */ }
     this.restoreSession();
   }
 
@@ -407,20 +410,7 @@
 
   Store.prototype.saveSession = function () {
     try {
-      // Another tab writes the same one session. The first time this tab sees the name of another
-      // tab, it says so: the work of one of the two will not come back after a reload.
-      if (!this.sharedWarned) {
-        var held = localStorage.getItem(SESSION_KEY);
-        var other = held ? JSON.parse(held) : null;
-        if (other && other.writer && other.writer !== this.writerId) {
-          this.sharedWarned = true;
-          U.toast(DL.t('wf.sessionShared'), 'warning');
-        }
-      }
-    } catch (e) { /* a store that cannot be read is reported by the write below */ }
-    try {
       localStorage.setItem(SESSION_KEY, JSON.stringify({
-        writer: this.writerId,
         writtenAt: Date.now(),
         workflow: this.state.workflow,
         selectedId: this.state.selectedId,
