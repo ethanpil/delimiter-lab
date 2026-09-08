@@ -4,7 +4,7 @@ This document is for the developers who maintain and extend Delimiter Lab. It te
 
 ## 1. What the application is
 
-Delimiter Lab is a static web application. It reads a CSV, TSV, text or Excel file in the browser, applies a chain of steps (operations) to the data, shows a preview of each step and downloads the result. No data leaves the computer. There is no server, no build step and no package manager. The application is plain ES5 JavaScript (no classes, no arrow functions, no modules) with Bootstrap 5.3 for the user interface. That rule is for the page and the worker. `scripts/`, `packages/` and `desktop/` run in Node or in TypeScript and use the modern syntax. Vendor libraries are pinned copies in `vendor/`: Bootstrap 5.3.3, Bootstrap Icons, PapaParse 5.4.1 and SheetJS 0.20.3.
+Delimiter Lab is a static web application. It reads a CSV, TSV, text or Excel file in the browser, applies a chain of steps (operations) to the data, shows a preview of each step and downloads the result. No data leaves the computer. The page has no server and no build step of its own: GitHub Pages serves the files as they are, so the build of the engine is committed. The application is plain ES5 JavaScript (no classes, no arrow functions, no modules) with Bootstrap 5.3 for the user interface. That rule is for the page and the worker. `scripts/` and `desktop/` run in Node, and `packages/` is TypeScript; they use the modern syntax. Vendor libraries are pinned copies in `vendor/`: Bootstrap 5.3.3, Bootstrap Icons, PapaParse 5.4.1 and SheetJS 0.20.3.
 
 The published copy runs on GitHub Pages at https://ethanpil.github.io/delimiter-lab/, built from the `master` branch at the root. A push to `master` publishes the change. Every path in the application is relative, so the subfolder of the Pages address works; do not add a path that starts with `/`.
 
@@ -15,21 +15,20 @@ The version in `js/manifest.js` is 1.0. `CHANGELOG.md` lists the changes with th
 | Task | Command |
 | --- | --- |
 | Run the application | `python -m http.server 8765` in the project folder, then open `http://localhost:8765`. The Web Worker does not start from a `file://` address; the page shows a clear message then. `.claude/launch.json` holds this server for the coding assistant. |
-| Run the desktop application | In `desktop/`: `npm install`, then `npm start`. It collects the page into `dist/web` with `scripts/stage-web.mjs` and opens the window. The page comes from `app://delimiter-lab/`, so the worker and the storage work as on the web. |
-| Check the desktop application | In `desktop/`: `npm start -- --smoke`. The application loads the page, asks the worker for its memory, and stops with 0, or with 1 after an error or 30 seconds. It runs on a workspace of its own in the temp directory. The check on a push runs this under xvfb on Linux. |
-| Build the desktop application | In `desktop/`: `npm run build`. It builds for the platform of the machine: two disk images on a Mac, an installer and a zip on Windows, in `desktop/out/`. The names carry the version of the manifest. |
+| Run the desktop application | In `desktop/`: `npm install`, then `npm start`. `npm start -- --smoke` loads the page, asks the worker for its memory, and stops with 0, or with 1 after an error or 30 seconds. The check on a push runs that under xvfb on Linux, with `--no-sandbox`. |
+| Build the desktop application | In `desktop/`: `npm run build`. It makes two disk images on a Mac, or an installer and a zip on Windows, in `desktop/out/`. The names carry the version of the manifest. |
 | Debug handle | Open the page with `?debug`. `window.DLApp` then gives `store`, `engine`, `grid`, `openFile(file)` and `openFiles(files)`. |
 | Build the engine | `npm install`, then `npm run build`. It writes `dist/engine.global.js` (the page and the worker), `dist/engine.mjs` and `dist/dl.mjs` (the `dl` command). Only the first is in the repository. |
 | Run every test | `npm test`. It builds first, then runs the four sets below. |
 | Run the engine tests | `node test/engine.test.js` (82 tests) |
 | Run the worker tests | `node test/worker.test.js` (24 tests; loads the real worker in Node with a fake File and the real PapaParse and SheetJS) |
-| Run the tests of the build | `node test/bundle.test.js` (8 tests; the page loads the manifest and then the build; these hold that pair to its promises, and check that every file of the manifest is on disk with the same letters) |
+| Run the tests of the build | `node test/bundle.test.js` (8 tests). The page loads the manifest and then the build; these hold that pair to its promises. One test checks that every file of the manifest is on disk with the same letters. |
 | Run the parity tests | `node test/parity.test.js` (9 tests; one workflow through the worker of the page and through the `dl` command; the bytes must agree) |
 | Check the types | `npm run typecheck` |
 | Make test data | `node test/make-data.js 300000` writes `test/data/` (the `big*.csv` files are ignored by git) |
 | Run the benchmark | `node test/bench.js 1200000` |
 | Check the text keys | Write a small Node script that collects every `DL.t('key'` in `js/` and every `data-i18n*` attribute in `index.html`, loads `js/i18n/en.js` with a stub `DL.registerLocale`, and reports missing and unused keys. Zero of both is the rule. |
-| Release | Set `DL.VERSION` in `js/manifest.js` and run `npm run build`. Close the changelog section with the hashes. Commit "Release x.y", then push the tag `vX.Y`. The tag starts `.github/workflows/release.yml`, which stops when the tag and the manifest do not agree, or when the committed engine is not the build of its source. It builds the `dl` command, the desktop application and the web edition. A run by hand with `ref` set to a branch and `publish` off is a rehearsal: it builds and checks everything and writes nothing to the releases page. |
+| Release | Set `DL.VERSION` in `js/manifest.js` and run `npm run build`. Close the changelog section with the hashes. Commit "Release x.y", then push the tag `vX.Y`. The tag starts `.github/workflows/release.yml`. It stops when the tag and the manifest do not agree, or when the committed engine is not the build of its source. A run by hand with `ref` set to a branch and `publish` off is a dry run that writes nothing to the releases page; see README "Release". |
 
 Run `npm test` before every commit. There is no test runner; each file counts its own results and sets the exit code. `npm test` builds first, so a change to the engine that is not built cannot pass.
 
@@ -54,10 +53,10 @@ vendor/               Pinned libraries
 test/                 Tests, benchmark, test data
 packages/cli/src/     The dl command: the arguments, and what Node gives the engine
 scripts/build.mjs     The build: makes dist/ from packages/
-scripts/stage-web.mjs The page and its files, collected into dist/web for the web zip and the desktop application
+scripts/stage-web.mjs The page and its files, collected into dist/web for the web edition and the desktop application
 desktop/              The desktop application: Electron around the staged page. An npm project of its own, with its own lock file.
 packaging/nfpm.yaml   The description that makes the deb, the rpm and the apk
-.github/              The checks on a push, with a start of the desktop application, and the build of a release
+.github/              The checks on a push, and the build of a release
 docs/embedding.md     How other programs can use the engine. Steps 1 to 3 are built.
 .gitattributes        `* text=auto eol=lf`, and `test/data/* -text` so the test files keep their bytes
 ```

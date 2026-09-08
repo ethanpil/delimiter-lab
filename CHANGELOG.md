@@ -7,8 +7,7 @@ history of the development before that.
 
 - Add: a desktop application for macOS and Windows. It is the page in a window of its own, with no browser and no server (3509b4b, 3429880, 1d00ec7).
 - Add: a release carries the page as a zip, for a copy on your own web server (8f02163, 05a9f97, b66c5a1).
-- Add: the release builds the desktop application on a Mac and on a Windows machine, and starts each build once. A run by hand with publish off is a rehearsal (b66c5a1, 1e8e6f8).
-- Add: the check on a push starts the desktop application once (b66c5a1).
+- Add: the release and the check on a push start the desktop application once. A run of the release by hand with publish off writes nothing to the releases page (b66c5a1, 1e8e6f8).
 - Fix: the page said "Another tab has this workspace open" at every new start that came after a saved session (60bb775).
 - Fix: a second desktop application on the same workspace lost its work. One runs at a time (3429880).
 - Change: Pad / Trim leaves an empty value empty. It made a value the file does not hold, such as 00000 for a missing postcode (d0f3d68).
