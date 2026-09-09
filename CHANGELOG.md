@@ -4,8 +4,9 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
-- Change: the source panel lists its files on the left, with the size, the rows and the columns of each, and the drop zone takes the right side. The list is there for one file too (d6756dc).
+- Change: the source panel lists its files on the left, with the size, the rows and the columns of each. The drop zone takes the right side. The list is there for one file too (d6756dc).
 - Add: "Remove all" takes every file out of the source. The steps stay (d6756dc).
+- Change: a file that "Add more files" puts beside another one sets "Many files" to stack, because the two files make one stack (8df57c7).
 
 ## 1.0
 
