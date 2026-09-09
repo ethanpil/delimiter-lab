@@ -2,6 +2,11 @@
 
 The numbers below 1.0 are the history of the development before 1.0.
 
+## 1.1 (in development)
+
+- Change: the source panel lists its files on the left, with the size, the rows and the columns of each, and the drop zone takes the right side. The list is there for one file too (d6756dc).
+- Add: "Remove all" takes every file out of the source. The steps stay (d6756dc).
+
 ## 1.0
 
 - Add: a desktop application for macOS and Windows. It is the page in a window of its own, with no browser and no server (3509b4b, 3429880, 1d00ec7, 09024f1, 03f1aad).
