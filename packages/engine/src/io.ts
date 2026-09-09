@@ -518,7 +518,7 @@ DL.readSource = function (files, opts) {
     if (cells > DL.maxCells) throw DL.tooLarge(cells);
     tables.push(result.table);
     names.push(file.name);
-    each.push({ name: file.name, size: file.size, rowCount: result.table.length });
+    each.push({ name: file.name, size: file.size, rowCount: result.table.length, columnCount: result.table.columns.length });
     ragged += result.ragged || 0;
     for (var n = 0; n < result.notes.length; n++) {
       notes.push(files.length > 1 ? '"' + file.name + '": ' + result.notes[n] : result.notes[n]);

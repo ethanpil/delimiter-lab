@@ -208,12 +208,17 @@ body {
 .rows-editor .rule-row > .form-check { flex: 0 0 auto; }
 .mapping-table td { padding: 2px; }
 .mapping-table input { min-width: 120px; }
-.source-file-list { list-style: none; margin: 6px 0 0; padding: 0; }
+/* The files of the source take the left 30% of the panel; the drop zone takes the right 70%. */
+.source-layout { display: flex; align-items: stretch; gap: 14px; }
+.source-files { flex: 0 0 30%; min-width: 0; display: flex; flex-direction: column; }
+.source-layout .dropzone { flex: 1 1 70%; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.source-file-list { list-style: none; margin: 6px 0 0; padding: 0; max-height: 240px; overflow-y: auto; }
 .source-file {
   display: flex; align-items: center;
   padding: 4px 8px; border: 1px solid var(--dl-border);
   background: var(--dl-surface); margin-bottom: -1px; /* the borders meet, so there is no gap between them */
 }
+.source-file-text { min-width: 0; }
 .source-file:first-child { border-radius: 6px 6px 0 0; }
 .source-file:last-child { border-radius: 0 0 6px 6px; margin-bottom: 0; }
 .source-file:only-child { border-radius: 6px; }
@@ -323,6 +328,10 @@ body.is-col-resize { cursor: col-resize; user-select: none; }
 }
 .dropzone:hover, .dropzone.is-over { border-color: var(--dl-accent); background: var(--dl-accent-soft); color: var(--dl-link); }
 .dropzone i { font-size: 30px; display: block; margin-bottom: 6px; }
+@media (max-width: 760px) {
+  .source-layout { flex-direction: column; }
+  .source-files { flex-basis: auto; }
+}
 #dropHint { display: none; }
 body.is-dragging-file #dropHint {
   position: absolute; inset: 0; z-index: 1030;

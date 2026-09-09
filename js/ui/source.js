@@ -52,7 +52,8 @@
 
     var drop = U.el('div', { class: 'dropzone', tabindex: '0', role: 'button' }, [
       U.el('i', { class: 'bi bi-cloud-arrow-up' }),
-      src.file ? U.el('div', {}, [U.el('strong', { text: src.file.name }), ' · ' + U.fmtBytes(src.file.size), U.el('div', { class: 'small', text: DL.t(stacking(st) ? 'source.dropToAdd' : 'source.dropAnother') })])
+      // The list on the left names the files, so the zone only says what a drop does.
+      src.file ? U.el('div', {}, [U.el('strong', { text: DL.t(stacking(st) ? 'source.dropToAdd' : 'source.dropAnother') })])
         : U.el('div', {}, [U.el('strong', { text: DL.t('source.dropHere') }), DL.t('source.orClick'), U.el('div', { class: 'small mt-1', text: DL.t('source.formats', { types: DL.acceptedExtensions().map(function (e) { return e.slice(1).toUpperCase(); }).join(', ') }) })])
     ]);
     drop.addEventListener('click', function () { fileInput.click(); });
@@ -65,7 +66,8 @@
       drop.classList.remove('is-over');
       if (e.dataTransfer.files) self.actions.openFiles(Array.from(e.dataTransfer.files));
     });
-    el.appendChild(drop);
+    // The files of the source on the left, the drop zone on the right.
+    el.appendChild(U.el('div', { class: 'source-layout' }, [this.fileList(), drop]));
 
     if (!src.file) {
       el.appendChild(U.el('div', { class: 'mt-2 small' }, [
@@ -79,7 +81,6 @@
       el.appendChild(U.el('div', { class: 'alert alert-danger mt-3 mb-0' }, [U.el('i', { class: 'bi bi-exclamation-triangle me-1' }), src.error || DL.t('msg.fileNotRead')]));
     }
 
-    if (src.files.length > 1 || (src.file && stacking(st))) el.appendChild(this.fileList());
     if (src.file) el.appendChild(this.optionsForm());
 
     if (src.status === 'ready' && src.info) {
@@ -117,8 +118,9 @@
       this.filesEl.addEventListener('drop', function () { self.fileDragging = false; });
     }
     if (!this.fileDragging) this.fillFiles();
-    return U.el('div', { class: 'mt-3' }, [
-      U.el('div', { class: 'field-label', text: DL.t('source.files') }),
+    var n = this.store.state.source.files.length;
+    return U.el('div', { class: 'source-files' }, [
+      U.el('div', { class: 'field-label', text: DL.t('source.files') + (n ? ' (' + n + ')' : '') }),
       this.filesEl,
       this.addFilesRow()
     ]);
@@ -130,6 +132,11 @@
     var files = st.source.files;
     var info = st.source.info;
     var many = files.length > 1;
+    U.empty(this.filesEl);
+    if (!files.length) {
+      this.filesEl.appendChild(U.el('li', { class: 'source-file text-secondary small', text: DL.t('source.noFilesYet') }));
+      return;
+    }
     // The information of the source lists the files in the same order, so the place gives the rows.
     var each = (info && info.files && info.files.length === files.length) ? info.files : null;
     function removeButton(i) {
@@ -142,15 +149,18 @@
     // A drag needs a second file to go to, so one file alone gets no grip and no drag. The buttons
     // do the work of the drag for a user who does not use a pointer.
     var items = files.map(function (f, i) {
-      var rows = each ? each[i].rowCount : undefined;
+      // The size is known at once. The rows and the columns come when the read is done.
+      var stats = U.fmtBytes(f.size) + ' · ' + (each ? DL.rowsAndColumns(each[i].rowCount, each[i].columnCount) : DL.t('source.reading'));
       var move = function (to) { return function () { self.actions.moveFile(i, to); }; };
       var attrs = many
         ? { class: 'source-file', draggable: 'true', title: DL.t('source.dragToOrder') }
         : { class: 'source-file' };
       return U.el('li', attrs, [
         U.el('i', { class: 'bi ' + (many ? 'bi-grip-vertical' : 'bi-file-earmark-text') + ' me-2 text-secondary' }),
-        U.el('span', { class: 'source-file-name', text: f.name }),
-        U.el('span', { class: 'text-secondary ms-2 small', text: U.fmtBytes(f.size) + (rows === undefined ? '' : ' · ' + DL.pluralize(rows, 'row')) }),
+        U.el('div', { class: 'source-file-text' }, [
+          U.el('div', { class: 'source-file-name', text: f.name, title: f.name }),
+          U.el('div', { class: 'text-secondary small', text: stats })
+        ]),
         U.el('div', { class: 'source-file-actions ms-auto' }, many ? [
           U.el('button', {
             type: 'button', class: 'btn btn-sm btn-link text-secondary p-0', disabled: i === 0 ? 'disabled' : null,
@@ -164,11 +174,10 @@
         ] : [removeButton(i)])
       ]);
     });
-    U.empty(this.filesEl);
     items.forEach(function (li) { self.filesEl.appendChild(li); });
   };
 
-  // The button that adds more files, and the line that says a drop adds them too.
+  // The buttons that add more files and that take every file out of the source.
   SourceView.prototype.addFilesRow = function () {
     var self = this;
     var add = U.el('input', { type: 'file', multiple: true, accept: DL.acceptedExtensions().join(','), hidden: true });
@@ -177,12 +186,16 @@
       add.value = '';
       if (picked.length) self.actions.addFiles(picked);
     });
-    return U.el('div', { class: 'd-flex align-items-center gap-2 mt-2' }, [
+    var row = U.el('div', { class: 'd-flex align-items-center gap-2 mt-2' }, [
       U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', onclick: function () { add.click(); } },
         [U.el('i', { class: 'bi bi-plus-lg me-1' }), DL.t('source.addFiles')]),
-      U.el('span', { class: 'text-secondary small', text: DL.t('source.stackHint') }),
       add
     ]);
+    if (this.store.state.source.files.length) {
+      row.appendChild(U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-danger', onclick: function () { self.actions.clearFiles(); } },
+        [U.el('i', { class: 'bi bi-x-lg me-1' }), DL.t('source.removeAll')]));
+    }
+    return row;
   };
 
   function describeDelimiter(d) {

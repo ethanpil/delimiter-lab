@@ -19,6 +19,7 @@
     openFiles: openFiles,
     addFiles: addSourceFiles,
     removeFile: removeSourceFile,
+    clearFiles: clearSourceFiles,
     moveFile: moveSourceFile,
     // A read that follows a change of the settings says nothing about the file itself. Without
     // this, a read that fails on a new delimiter takes the file out of the workspace.
@@ -146,13 +147,33 @@
 
   function removeSourceFile(index) {
     store.removeSourceFile(index);
+    afterSourceFilesChanged();
+  }
+
+  // Takes every file out of the source. The steps stay, so the user can open other files for them.
+  function clearSourceFiles() {
+    var n = store.state.source.files.length;
+    if (!n) return;
+    U.confirm({
+      title: DL.t('source.removeAllTitle'),
+      message: DL.t('source.removeAllMessage', { n: DL.pluralize(n, 'file') }),
+      yes: DL.t('source.removeAllYes'),
+      danger: true
+    }, function () {
+      store.setSourceFiles([]);
+      afterSourceFilesChanged();
+    });
+  }
+
+  // Reads the files again after a change of the list, or stops the work when none is left.
+  function afterSourceFilesChanged() {
     keepWorkspace();
     if (store.state.source.files.length) { startLoad(); return; }
     loadToken++; // a load that is on its way must not make an empty source ready
     disarmStop();
     hideProgress();
-    // store.removeSourceFile has emitted 'source' already, and the listener draws the empty
-    // preview. To draw it again here only clears the key that the next refresh reads.
+    // The store has emitted 'source' already, and the listener draws the empty preview. To draw
+    // it again here only clears the key that the next refresh reads.
   }
 
   // Writes the files of the source to the workspace store, and says when it cannot keep them.
