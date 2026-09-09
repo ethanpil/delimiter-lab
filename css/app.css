@@ -190,7 +190,7 @@ body {
 .sortable-list li {
   display: flex; align-items: center; gap: 8px;
   padding: 4px 8px; border-bottom: 1px solid var(--dl-border);
-  background: var(--dl-surface); cursor: grab;
+  background: var(--dl-surface);
 }
 .sortable-list li:last-child { border-bottom: 0; }
 .sortable-list li.is-dragging { opacity: .4; }
@@ -208,11 +208,12 @@ body {
 .rows-editor .rule-row > .form-check { flex: 0 0 auto; }
 .mapping-table td { padding: 2px; }
 .mapping-table input { min-width: 120px; }
-/* The files of the source take the left 30% of the panel; the drop zone takes the right 70%. */
-.source-layout { display: flex; align-items: stretch; gap: 14px; }
-.source-files { flex: 0 0 30%; min-width: 0; display: flex; flex-direction: column; }
+/* The files of the source take the left 30% of the panel. The drop zone takes the right 70%.
+   A narrow panel gives the list 240 px, so the names and the buttons keep their lines. */
+.source-layout { display: flex; gap: 14px; }
+.source-files { flex: 0 0 30%; min-width: 240px; }
 .source-layout .dropzone { flex: 1 1 70%; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.source-file-list { list-style: none; margin: 6px 0 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.source-file-list { list-style: none; margin: 6px 0 0; padding: 0; }
 .source-file {
   display: flex; align-items: center;
   padding: 4px 8px; border: 1px solid var(--dl-border);
@@ -330,7 +331,7 @@ body.is-col-resize { cursor: col-resize; user-select: none; }
 .dropzone i { font-size: 30px; display: block; margin-bottom: 6px; }
 @media (max-width: 760px) {
   .source-layout { flex-direction: column; }
-  .source-files { flex-basis: auto; }
+  .source-files { flex-basis: auto; min-width: 0; }
 }
 #dropHint { display: none; }
 body.is-dragging-file #dropHint {

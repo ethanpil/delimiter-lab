@@ -131,18 +131,19 @@
     if (refused) U.toast(DL.t('msg.someFilesRefused', { n: DL.pluralize(refused, 'file'), types: split.accepted.join(', ') }), 'warning');
     if (mixed) U.toast(DL.t('msg.mixedFormats', { n: DL.pluralize(mixed, 'file'), format: wanted.label }), 'warning');
     if (!good.length) return;
+    // Files that go into one source make a stack. The setting must say so, or it says "batch" over
+    // a source of two files, and the column with the name of the file stays out of reach.
+    if (!stacking() && store.state.source.files.length + good.length > 1) store.setSourceOptions({ multiFile: 'stack' });
     if (!store.state.source.files.length) { openFile(good[0], { extra: good.slice(1) }); return; }
     var added = store.addSourceFiles(good);
     if (!added) { U.toast(DL.t('msg.filesAlreadyThere'), 'info'); return; }
     U.toast(DL.t('msg.filesAdded', { n: DL.pluralize(added, 'file') }), 'success');
-    keepWorkspace();
-    startLoad();
+    afterSourceFilesChanged();
   }
 
   function moveSourceFile(from, to) {
     if (!store.moveSourceFile(from, to)) return;
-    keepWorkspace();
-    startLoad();
+    afterSourceFilesChanged();
   }
 
   function removeSourceFile(index) {
@@ -154,6 +155,7 @@
   function clearSourceFiles() {
     var n = store.state.source.files.length;
     if (!n) return;
+    if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
     U.confirm({
       title: DL.t('source.removeAllTitle'),
       message: DL.t('source.removeAllMessage', { n: DL.pluralize(n, 'file') }),
@@ -165,13 +167,15 @@
     });
   }
 
-  // Reads the files again after a change of the list, or stops the work when none is left.
+  // Reads the files again after a change of the list, or stops the work when no file remains.
   function afterSourceFilesChanged() {
     keepWorkspace();
     if (store.state.source.files.length) { startLoad(); return; }
     loadToken++; // a load that is on its way must not make an empty source ready
+    runToken++; // a run that is on its way must not put its results under an empty source
     disarmStop();
     hideProgress();
+    engine.unload().catch(function () { /* a worker that stopped holds nothing */ });
     // The store has emitted 'source' already, and the listener draws the empty preview. To draw
     // it again here only clears the key that the next refresh reads.
   }

@@ -17,7 +17,7 @@
   function SourceView(container, store, actions) {
     this.el = container;
     this.store = store;
-    // { openFile, openFiles, addFiles, removeFile, moveFile, reload, loadSample }
+    // { openFile, openFiles, addFiles, removeFile, clearFiles, moveFile, reload, loadSample }
     this.actions = actions;
   }
 
@@ -31,6 +31,8 @@
     var active = document.activeElement;
     var typing = active && active.tagName.toLowerCase() === 'input' && active.type !== 'checkbox';
     if (typing && this.el.contains(active) && src.file) {
+      // The list is not the form under the cursor, so it takes the new state now.
+      if (this.filesEl && !this.fileDragging) this.fillFiles();
       this.pendingRender = true;
       var onBlur = function () { active.removeEventListener('blur', onBlur); if (self.pendingRender) { self.pendingRender = false; self.render(); } };
       active.addEventListener('blur', onBlur);
@@ -53,7 +55,7 @@
     var drop = U.el('div', { class: 'dropzone', tabindex: '0', role: 'button' }, [
       U.el('i', { class: 'bi bi-cloud-arrow-up' }),
       // The list on the left names the files, so the zone only says what a drop does.
-      src.file ? U.el('div', {}, [U.el('strong', { text: DL.t(stacking(st) ? 'source.dropToAdd' : 'source.dropAnother') })])
+      src.file ? U.el('strong', { text: DL.t(stacking(st) ? 'source.dropToAdd' : 'source.dropAnother') })
         : U.el('div', {}, [U.el('strong', { text: DL.t('source.dropHere') }), DL.t('source.orClick'), U.el('div', { class: 'small mt-1', text: DL.t('source.formats', { types: DL.acceptedExtensions().map(function (e) { return e.slice(1).toUpperCase(); }).join(', ') }) })])
     ]);
     drop.addEventListener('click', function () { fileInput.click(); });
@@ -66,7 +68,7 @@
       drop.classList.remove('is-over');
       if (e.dataTransfer.files) self.actions.openFiles(Array.from(e.dataTransfer.files));
     });
-    // The files of the source on the left, the drop zone on the right.
+    // The files of the source go on the left, and the drop zone goes on the right.
     el.appendChild(U.el('div', { class: 'source-layout' }, [this.fileList(), drop]));
 
     if (!src.file) {
@@ -113,16 +115,22 @@
     if (!this.filesEl) {
       this.filesEl = U.el('ul', { class: 'source-file-list sortable-list' });
       DL.fields.sortable(this.filesEl, 'li[draggable]', function (from, to) { self.actions.moveFile(from, to); });
+      // A render that came during the drag did not touch the list. The end of the drag fills it,
+      // so the rows and their buttons agree with the store before the next click.
+      var dragDone = function () {
+        self.fileDragging = false;
+        if (self.fillPending) { self.fillPending = false; self.fillFiles(); U.hideOrphanTooltips(); }
+      };
       this.filesEl.addEventListener('dragstart', function () { self.fileDragging = true; });
-      this.filesEl.addEventListener('dragend', function () { self.fileDragging = false; });
-      this.filesEl.addEventListener('drop', function () { self.fileDragging = false; });
+      this.filesEl.addEventListener('dragend', dragDone);
+      this.filesEl.addEventListener('drop', dragDone);
     }
-    if (!this.fileDragging) this.fillFiles();
-    var n = this.store.state.source.files.length;
+    if (this.fileDragging) this.fillPending = true;
+    else this.fillFiles();
     return U.el('div', { class: 'source-files' }, [
-      U.el('div', { class: 'field-label', text: DL.t('source.files') + (n ? ' (' + n + ')' : '') }),
+      U.el('div', { class: 'field-label', text: DL.t('source.files') }),
       this.filesEl,
-      this.addFilesRow()
+      this.store.state.source.files.length ? this.addFilesRow() : null
     ]);
   };
 
@@ -149,14 +157,17 @@
     // A drag needs a second file to go to, so one file alone gets no grip and no drag. The buttons
     // do the work of the drag for a user who does not use a pointer.
     var items = files.map(function (f, i) {
-      // The size is known at once. The rows and the columns come when the read is done.
-      var stats = U.fmtBytes(f.size) + ' · ' + (each ? DL.rowsAndColumns(each[i].rowCount, each[i].columnCount) : DL.t('source.reading'));
+      // The file gives its size at once. The rows and the columns come when the read is complete.
+      var counts = each ? DL.rowsAndColumns(each[i].rowCount, each[i].columnCount) : (st.source.status === 'loading' ? DL.t('source.reading') : '');
+      var stats = U.fmtBytes(f.size) + (counts ? ' · ' + counts : '');
       var move = function (to) { return function () { self.actions.moveFile(i, to); }; };
-      var attrs = many
-        ? { class: 'source-file', draggable: 'true', title: DL.t('source.dragToOrder') }
-        : { class: 'source-file' };
+      var attrs = many ? { class: 'source-file', draggable: 'true' } : { class: 'source-file' };
+      // The grip says what a drag does. The name says the whole name when the row cuts it.
+      var icon = many
+        ? { class: 'bi bi-grip-vertical me-2 text-secondary', title: DL.t('source.dragToOrder') }
+        : { class: 'bi bi-file-earmark-text me-2 text-secondary' };
       return U.el('li', attrs, [
-        U.el('i', { class: 'bi ' + (many ? 'bi-grip-vertical' : 'bi-file-earmark-text') + ' me-2 text-secondary' }),
+        U.el('i', icon),
         U.el('div', { class: 'source-file-text' }, [
           U.el('div', { class: 'source-file-name', text: f.name, title: f.name }),
           U.el('div', { class: 'text-secondary small', text: stats })
@@ -186,16 +197,13 @@
       add.value = '';
       if (picked.length) self.actions.addFiles(picked);
     });
-    var row = U.el('div', { class: 'd-flex align-items-center gap-2 mt-2' }, [
+    return U.el('div', { class: 'd-flex align-items-center flex-wrap gap-2 mt-2' }, [
       U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', onclick: function () { add.click(); } },
         [U.el('i', { class: 'bi bi-plus-lg me-1' }), DL.t('source.addFiles')]),
+      U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-danger', onclick: function () { self.actions.clearFiles(); } },
+        [U.el('i', { class: 'bi bi-x-lg me-1' }), DL.t('source.removeAll')]),
       add
     ]);
-    if (this.store.state.source.files.length) {
-      row.appendChild(U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-danger', onclick: function () { self.actions.clearFiles(); } },
-        [U.el('i', { class: 'bi bi-x-lg me-1' }), DL.t('source.removeAll')]));
-    }
-    return row;
   };
 
   function describeDelimiter(d) {

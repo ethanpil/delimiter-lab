@@ -76,6 +76,7 @@ function handle(msg) {
     switch (msg.type) {
       case 'config': DL.maxCells = msg.maxCells; state.cacheBudgetCells = msg.maxCells * 3; reply({ type: 'ok' }); break;
       case 'sheets': reply({ type: 'sheets', sheets: DL.sheetNames(msg.file) }); break;
+      case 'unload': unload(); reply({ type: 'ok' }); break;
       case 'load':
         try { loadFile(msg, reply); } finally { progressScope = null; } // a throw must not leave the label
         break;
@@ -146,12 +147,20 @@ function progress(phase, percent) {
 }
 
 
-function loadFile(msg, reply) {
-  var files = msg.files || (msg.file ? [msg.file] : []);
+// Lets the table and every result go. The page sends this when the last file leaves the source,
+// so a large table does not stay in memory with nothing to show it.
+function unload() {
   state.cache.clear();
   state.source = null;
   state.sourceInfo = null;
+  state.sourceKey = '';
+  state.hashes = null;
   state.cancelledFrom = -1;
+}
+
+function loadFile(msg, reply) {
+  var files = msg.files || (msg.file ? [msg.file] : []);
+  unload();
   var read = DL.readSource(files, msg.options || {});
   state.source = read.table;
   state.sourceKey = read.key;
