@@ -42,6 +42,36 @@ function readBuffer(blob) {
   return DL.platform.readBuffer(blob);
 }
 
+// The value of each base64 character, -1 for the others. "-" and "_" are base64url. A space counts
+// as "+", because a web address turns "+" into a space.
+var B64_VALUE = (function () {
+  var t = new Int8Array(128).fill(-1);
+  var s = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  for (var i = 0; i < 64; i++) t[s.charCodeAt(i)] = i;
+  t[45] = 62; t[95] = 63; t[32] = 62;
+  return t;
+})();
+
+// Reads data that a link carries as base64 or base64url. Line ends are skipped, and "=" ends the
+// data. The first character that is not base64 stops the read: badAt is its place (from 1), and the
+// whole bytes before it stay. Gives { bytes, badAt }, with badAt 0 when every character is good.
+DL.decodeBase64 = function (text) {
+  text = String(text == null ? '' : text);
+  var out = new Uint8Array(Math.floor(text.length * 3 / 4) + 3);
+  var n = 0, acc = 0, bits = 0, badAt = 0, ended = false;
+  for (var i = 0; i < text.length; i++) {
+    var c = text.charCodeAt(i);
+    if (c === 13 || c === 10 || c === 9) continue;
+    if (c === 61) { ended = true; continue; }
+    var v = c < 128 ? B64_VALUE[c] : -1;
+    if (v < 0 || ended) { badAt = i + 1; break; }
+    acc = ((acc << 6) | v) & 0xFFFFFF;
+    bits += 6;
+    if (bits >= 8) { bits -= 8; out[n++] = (acc >> bits) & 255; }
+  }
+  return { bytes: out.subarray(0, n), badAt: badAt };
+};
+
 // Reads a small sample to detect the text encoding.
 function detectEncoding(file) {
   var bytes = new Uint8Array(readBuffer(file.slice(0, 1024 * 1024)));

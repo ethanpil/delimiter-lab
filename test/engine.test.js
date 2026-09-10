@@ -611,6 +611,75 @@ test('TableBuilder says which rows are ragged, and a row that the bottom skip ta
   c.finish();
   assert.strictEqual(c.ragged, 1, 'a second call takes nothing away again');
 });
+
+/* ---- links ---- */
+test('workflowSlug gives the link name of a workflow', () => {
+  assert.strictEqual(DL.workflowSlug('Clean Contacts (2024)'), 'clean-contacts-2024');
+  assert.strictEqual(DL.workflowSlug('  Café  Report / Q3 '), 'cafe-report-q3');
+  assert.strictEqual(DL.workflowSlug('Straße & Söhne'), 'straße-sohne');
+  assert.strictEqual(DL.workflowSlug('हिंदी रिपोर्ट'), 'हिंदी-रिपोर्ट');
+  assert.strictEqual(DL.workflowSlug('数据 清理'), '数据-清理');
+  assert.strictEqual(DL.workflowSlug('***'), '');
+  assert.strictEqual(DL.workflowSlug(''), '');
+  assert.strictEqual(DL.workflowSlug(null), '');
+  ['clean-contacts-2024', 'straße-sohne', '数据-清理'].forEach((s) => assert.strictEqual(DL.workflowSlug(s), s, 'a link name gives itself'));
+});
+
+test('decodeBase64 reads base64 and base64url, and says where a fault is', () => {
+  const text = (r) => Buffer.from(r.bytes).toString('utf8');
+  const csv = 'a,b\n1,"x+y/z??>>"\né\u{1F600}\n';
+  const std = Buffer.from(csv).toString('base64');
+  const url = Buffer.from(csv).toString('base64url');
+  assert.ok(/[+/]/.test(std) && /=$/.test(std), 'the sample must hold + or / and padding');
+  let r = DL.decodeBase64(std);
+  assert.strictEqual(text(r), csv);
+  assert.strictEqual(r.badAt, 0);
+  r = DL.decodeBase64(url);
+  assert.strictEqual(text(r), csv, 'base64url, with no padding');
+  assert.strictEqual(r.badAt, 0);
+  // A web address turns "+" into a space, and a long value can come with line ends.
+  assert.strictEqual(text(DL.decodeBase64(std.replace(/\+/g, ' '))), csv);
+  assert.strictEqual(text(DL.decodeBase64(std.replace(/(.{8})/g, '$1\r\n'))), csv);
+  // The first character that is not base64 stops the read, and the whole bytes before it stay.
+  r = DL.decodeBase64('YWJjZGVm!Z2hp');
+  assert.strictEqual(r.badAt, 9);
+  assert.strictEqual(text(r), 'abcdef');
+  r = DL.decodeBase64('YWJj=ZGVm');
+  assert.strictEqual(r.badAt, 6, 'nothing but "=" comes after "="');
+  assert.strictEqual(text(r), 'abc');
+  r = DL.decodeBase64('YWJjZA');
+  assert.strictEqual(text(r), 'abcd');
+  assert.strictEqual(r.badAt, 0);
+  r = DL.decodeBase64('%41');
+  assert.strictEqual(r.badAt, 1);
+  assert.strictEqual(r.bytes.length, 0);
+  assert.strictEqual(DL.decodeBase64('').bytes.length, 0);
+});
+
+// Saved workflows must not get lost. A link name is not stored, so a file of 1.0 is the normal case.
+test('a workflow file of 1.0 reads as before, and no file holds a link name', () => {
+  const readme = '{"format":"delimiter-lab-workflow","version":1,"name":"Clean contacts","columns":["Full Name","Email"],' +
+    '"steps":[{"opId":"case","params":{"columns":["Email"],"mode":"lower"},"enabled":true}]}';
+  let wf = DL.parseWorkflow(readme);
+  assert.strictEqual(wf.name, 'Clean contacts');
+  assert.deepStrictEqual(wf.columns, ['Full Name', 'Email']);
+  assert.deepStrictEqual(wf.steps.map((s) => s.opId), ['case']);
+  assert.strictEqual(wf.sourceOptions, null);
+  // A full export of 1.0: the time, the reader settings and a step that is turned off.
+  const full = JSON.stringify({
+    format: 'delimiter-lab-workflow', version: 1, name: 'Monthly report', exportedAt: '2026-09-01T10:00:00.000Z',
+    columns: ['a', 'b'], sourceOptions: { delimiter: ';', headers: true, skipRows: 2, encoding: 'windows-1252', multiFile: 'batch', sheet: '' },
+    steps: [{ id: 's1', opId: 'case', params: { columns: ['a'], mode: 'upper' }, enabled: true }, { id: 's2', opId: 'remove', params: { columns: ['b'] }, enabled: false }]
+  });
+  wf = DL.parseWorkflow(full);
+  assert.strictEqual(wf.name, 'Monthly report');
+  assert.strictEqual(wf.sourceOptions.delimiter, ';');
+  assert.strictEqual(Number(wf.sourceOptions.skipRows), 2);
+  assert.deepStrictEqual(wf.steps.map((s) => [s.opId, s.enabled]), [['case', true], ['remove', false]]);
+  assert.strictEqual(DL.workflowSlug(wf.name), 'monthly-report');
+  // The file that the application writes has the keys of 1.0, and no link name.
+  assert.deepStrictEqual(Object.keys(JSON.parse(DL.workflowToJSON(wf))), ['format', 'version', 'name', 'exportedAt', 'columns', 'sourceOptions', 'steps']);
+});
 test('split with names but no maximum has unknown columns', () => {
   const p = Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',', names: 'P, Q' });
   assert.strictEqual(DL.predictColumns('split', p, ['A']), null);

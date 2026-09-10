@@ -15,6 +15,19 @@ DL.uid = function () {
   return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 };
 
+// The link name of a workflow: its name in a form that a web address can carry. It holds small
+// letters and digits of any script, with one "-" between words, and Latin letters lose their
+// accents. "Clean Contacts (2024)" gives "clean-contacts-2024". An empty result means that the
+// workflow has no link name. The name is not stored: it comes from the name each time.
+DL.workflowSlug = function (name) {
+  // Made here and not written as a literal, so that the engine still loads in a browser without
+  // Unicode property escapes. Only the link name needs them. \p{M} keeps the vowel signs of
+  // scripts such as Devanagari.
+  var notWord = new RegExp('[^\\p{L}\\p{M}\\p{N}]+', 'gu');
+  return String(name == null ? '' : name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').normalize('NFC')
+    .toLowerCase().replace(notWord, '-').replace(/^-+|-+$/g, '');
+};
+
 // A step with settings of the right shape. keepId keeps the name that the step came with.
 DL.normalizeStep = function (s, keepId) {
   return {

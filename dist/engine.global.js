@@ -1548,6 +1548,40 @@
   function readBuffer(blob) {
     return DL.platform.readBuffer(blob);
   }
+  var B64_VALUE = (function() {
+    var t = new Int8Array(128).fill(-1);
+    var s = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for (var i = 0; i < 64; i++) t[s.charCodeAt(i)] = i;
+    t[45] = 62;
+    t[95] = 63;
+    t[32] = 62;
+    return t;
+  })();
+  DL.decodeBase64 = function(text) {
+    text = String(text == null ? "" : text);
+    var out = new Uint8Array(Math.floor(text.length * 3 / 4) + 3);
+    var n = 0, acc = 0, bits = 0, badAt = 0, ended = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charCodeAt(i);
+      if (c === 13 || c === 10 || c === 9) continue;
+      if (c === 61) {
+        ended = true;
+        continue;
+      }
+      var v = c < 128 ? B64_VALUE[c] : -1;
+      if (v < 0 || ended) {
+        badAt = i + 1;
+        break;
+      }
+      acc = (acc << 6 | v) & 16777215;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        out[n++] = acc >> bits & 255;
+      }
+    }
+    return { bytes: out.subarray(0, n), badAt };
+  };
   function detectEncoding(file) {
     var bytes = new Uint8Array(readBuffer(file.slice(0, 1024 * 1024)));
     if (bytes.length >= 3 && bytes[0] === 239 && bytes[1] === 187 && bytes[2] === 191) return "utf-8";
@@ -2110,6 +2144,10 @@
   DL.WORKFLOW_VERSION = 1;
   DL.uid = function() {
     return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  };
+  DL.workflowSlug = function(name) {
+    var notWord = new RegExp("[^\\p{L}\\p{M}\\p{N}]+", "gu");
+    return String(name == null ? "" : name).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").normalize("NFC").toLowerCase().replace(notWord, "-").replace(/^-+|-+$/g, "");
   };
   DL.normalizeStep = function(s, keepId) {
     return {
