@@ -166,6 +166,28 @@
       runInput.value = '';
       if (files.length && w) m.closeThen(function () { actions.quickRun(w, files); });
     });
+    // A link to a page that is not on a web server (the desktop application, a file) opens nothing.
+    var canLink = /^https?:$/.test(location.protocol);
+    // Copies the address that opens a workflow. The clipboard of the browser needs a secure page, so
+    // a page on a plain http server uses the older copy command. The dialog keeps the focus, so the
+    // text for that command goes inside the dialog.
+    function copyLink(slug) {
+      var link = location.origin + location.pathname + '#workflow=' + encodeURIComponent(slug);
+      var done = function () { U.toast(DL.t('wf.linkCopied', { link: link }), 'success'); };
+      var older = function () {
+        var box = U.el('textarea', { class: 'visually-hidden', readonly: true });
+        box.value = link;
+        m.el.appendChild(box);
+        box.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { /* this browser has no copy command */ }
+        box.remove();
+        if (ok) done();
+        else U.toast(DL.t('wf.linkNotCopied', { link: link }), 'danger');
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, older);
+      else older();
+    }
     function build() {
       U.empty(list);
       var q = search.value.trim().toLowerCase();
@@ -198,6 +220,7 @@
           w.updatedAt ? DL.t('wf.savedMeta', { when: U.fmtTime(w.updatedAt) }) : '',
           w.lastUsedAt ? DL.t('wf.lastUsed', { when: U.fmtTime(w.lastUsedAt) }) : DL.t('wf.neverUsed')
         ].filter(Boolean).join(' · ');
+        var slug = DL.workflowSlug(w.name);
         var item = U.el('div', { class: 'wf-item flex-wrap' + (lv === 'full' ? ' is-match' : '') }, [
           U.el('div', { class: 'flex-grow-1', style: 'min-width:0' }, [
             U.el('div', { class: 'd-flex align-items-center gap-2 flex-wrap' }, [
@@ -206,7 +229,8 @@
               badge,
               w.id === opts.currentId ? U.el('span', { class: 'badge text-bg-primary', text: DL.t('wf.openNow') }) : null
             ]),
-            U.el('div', { class: 'wf-meta', title: opsText, text: meta })
+            U.el('div', { class: 'wf-meta', title: opsText, text: meta }),
+            slug ? U.el('div', { class: 'wf-meta' }, [DL.t('wf.linkName') + ' ', U.el('code', { text: slug })]) : null
           ]),
           U.el('div', { class: 'btn-group btn-group-sm' }, [
             U.el('button', { type: 'button', class: 'btn btn-primary', title: DL.t('dialog.useWorkflow'), onclick: function () { m.closeThen(function () { actions.apply(w); }); } }, [U.el('i', { class: 'bi bi-play-fill' }), ' ' + DL.t('common.use')]),
@@ -214,6 +238,8 @@
               runWf = w;
               runInput.click();
             } }, [U.el('i', { class: 'bi bi-lightning-charge' }), ' ' + DL.t('wf.runFile')]),
+            slug && canLink ? U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('wf.copyLinkTitle'), onclick: function () { copyLink(slug); } },
+              [U.el('i', { class: 'bi bi-link-45deg' }), ' ' + DL.t('wf.copyLink')]) : null,
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('common.rename'), onclick: function () {
               // One dialog at a time: the list opens again after the prompt.
               m.closeThen(function () {
@@ -276,7 +302,7 @@
     ]);
     var right = U.el('div', { class: 'col-lg-6' }, [
       U.el('h6', { class: 'mt-3 mt-lg-0', text: DL.t('help.tips') }),
-      list('ul', [DL.t('help.tip1'), DL.t('help.tip2'), DL.t('help.tip3'), DL.t('help.tip4'), DL.t('help.tip5'), DL.t('help.tip6'), DL.t('help.tip7'), DL.t('help.tip8'), DL.t('help.tip9'), DL.t('help.tip10')])
+      list('ul', [DL.t('help.tip1'), DL.t('help.tip2'), DL.t('help.tip3'), DL.t('help.tip4'), DL.t('help.tip5'), DL.t('help.tip6'), DL.t('help.tip7'), DL.t('help.tip8'), DL.t('help.tip9'), DL.t('help.tip10'), DL.t('help.tip11')])
     ]);
     function link(href, text) {
       return U.el('a', { href: href, target: '_blank', rel: 'noopener noreferrer', text: text });
