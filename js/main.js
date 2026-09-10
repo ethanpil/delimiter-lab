@@ -633,22 +633,32 @@
     U.toast(DL.t('msg.autosaveOn', { name: st.workflow.name }), 'success');
   });
 
-  // Empties the steps and closes the file, so that the user can start again.
-  function newWorkflow() {
+  // Empties the steps and closes the file, so that the user can start again. opts is for a caller
+  // that goes on after the clear, such as a link: opts.intro goes before the first question,
+  // opts.then runs after the clear (or at once when there is nothing to remove), and
+  // opts.onCancel runs when the steps and the file stay.
+  function newWorkflow(opts) {
+    opts = opts || {};
+    var stop = function () { if (opts.onCancel) opts.onCancel(); };
     grid.closeProfile();
-    if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
+    if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); stop(); return; }
     var st = store.state;
-    if (!st.workflow.steps.length && !st.workflow.name && !st.source.file) { U.toast(DL.t('msg.newEmpty'), 'info'); return; }
+    if (!st.workflow.steps.length && !st.workflow.name && !st.source.file) {
+      if (opts.then) opts.then();
+      else U.toast(DL.t('msg.newEmpty'), 'info');
+      return;
+    }
+    var message = !st.source.files.length ? DL.t('msg.newMessage')
+      : st.source.files.length > 1 ? DL.t('msg.newMessageFiles', { n: DL.pluralize(st.source.files.length, 'file') })
+      : DL.t('msg.newMessageFile', { name: st.source.file.name });
     U.confirm({
       title: DL.t('msg.newTitle'),
-      message: !st.source.files.length ? DL.t('msg.newMessage')
-        : st.source.files.length > 1 ? DL.t('msg.newMessageFiles', { n: DL.pluralize(st.source.files.length, 'file') })
-        : DL.t('msg.newMessageFile', { name: st.source.file.name }),
+      message: opts.intro ? opts.intro + ' ' + message : message,
       yes: DL.t('msg.newYes')
     }, function () {
       U.confirm({ title: DL.t('msg.newSureTitle'), message: DL.t('msg.newSureMessage'), yes: DL.t('msg.newSureYes'), danger: true }, function () {
         // A file dropped on the page can start a batch while the questions are on the screen.
-        if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
+        if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); stop(); return; }
         autosaveSoon.cancel();
         autosaveNow(); // a change that waits goes to the old record before the steps go away
         store.replaceWorkflow({ id: null, name: '', steps: [] });
@@ -664,9 +674,10 @@
         // screen. A half undo is worse than none.
         store.clearHistory();
         updateUndoButtons();
-        U.toast(DL.t('msg.newDone'), 'success');
-      });
-    });
+        if (opts.then) opts.then();
+        else U.toast(DL.t('msg.newDone'), 'success');
+      }, stop);
+    }, stop);
   }
 
   // Runs a saved workflow on files that the user gives, and downloads the result. The workflow on the
@@ -693,7 +704,9 @@
     });
   }
 
-  function applyWorkflow(wf, then) {
+  // Opens a saved workflow. then() runs when its steps are on the screen. onCancel() runs when the
+  // user stops and the workflow does not open.
+  function applyWorkflow(wf, then, onCancel) {
     // Write a waiting autosave first: it decides whether the steps count as saved. autosaveNow() opens
     // no dialog, so it cannot put the save dialog under the dialogs below.
     autosaveSoon.cancel();
@@ -719,7 +732,7 @@
     };
     var saveThenGo = function () {
       saveWorkflow(function (rec) {
-        if (!rec) { U.toast(DL.t('msg.notOpened', { name: wf.name }), 'info'); return; }
+        if (!rec) { U.toast(DL.t('msg.notOpened', { name: wf.name }), 'info'); if (onCancel) onCancel(); return; }
         // The save went into the record we are about to open: read it again, or the steps
         // that the save wrote go away.
         if (rec.id === wf.id) wf = DL.workflows.get(wf.id) || wf;
@@ -736,16 +749,16 @@
           message: DL.t('msg.unsavedMessage', { name: wf.name }),
           yes: DL.t('msg.saveAndUse'),
           alt: DL.t('msg.useWithoutSaving')
-        }, saveThenGo, null, go);
+        }, saveThenGo, onCancel, go);
         return;
       }
-      U.confirm({ title: DL.t('msg.replaceTitle'), message: DL.t('msg.replaceMessage'), yes: DL.t('msg.replace') }, go);
+      U.confirm({ title: DL.t('msg.replaceTitle'), message: DL.t('msg.replaceMessage'), yes: DL.t('msg.replace') }, go, onCancel);
     };
     // A workflow with code gets its own warning first. The question about saving must not hide it.
     // A step that is turned off does not run, so it does not need the question. The dl command
     // asks the same way.
     if ((wf.steps || []).some(function (s) { return s && s.opId === 'javascript' && s.enabled !== false; })) {
-      U.confirm({ title: DL.t('msg.applyTitle'), message: DL.t('msg.codeWarning'), yes: DL.t('common.use'), danger: true }, ask);
+      U.confirm({ title: DL.t('msg.applyTitle'), message: DL.t('msg.codeWarning'), yes: DL.t('common.use'), danger: true }, ask, onCancel);
       return;
     }
     ask();
@@ -785,6 +798,114 @@
     else if (st.workflow.id && !st.dirty) el.textContent = DL.t('header.saved');
     else if (st.workflow.id) el.textContent = DL.t('header.unsavedChanges');
     else el.textContent = DL.t('header.notSaved');
+  }
+
+  /* ---------- Open from a link ---------- */
+  // A link can open a saved workflow and data: #workflow=<link name>&source=<data in base64>. The
+  // same keys also work after "?", but GitHub Pages refuses an address above about 8 KB, and a
+  // query goes to the server. A key after "#" wins.
+  var linkBusy = false; // a link is on its way through its questions
+  var linkLoad = null;  // { file, badAt, wf }: the data of a link, until its read ends
+
+  // Gives { workflow, source } from the address, or null when the address holds neither. An empty
+  // value counts as no value. Only the name is trimmed: a space in the data is a "+".
+  function readLink() {
+    var hash = new URLSearchParams(location.hash.slice(1));
+    var query = new URLSearchParams(location.search);
+    var get = function (k) { return hash.get(k) || query.get(k) || ''; };
+    var link = { workflow: get('workflow').trim().slice(0, 80), source: get('source') };
+    return link.workflow || link.source ? link : null;
+  }
+
+  // Takes the keys of a link out of the address, so that a reload does not open the link again.
+  // Other keys, such as ?lang= and ?debug, stay.
+  function forgetLink() {
+    var parts = [location.search.slice(1), location.hash.slice(1)].map(function (text) {
+      var p = new URLSearchParams(text);
+      if (!p.has('workflow') && !p.has('source')) return text;
+      p.delete('workflow');
+      p.delete('source');
+      return p.toString();
+    });
+    history.replaceState(history.state, '', location.pathname + (parts[0] ? '?' + parts[0] : '') + (parts[1] ? '#' + parts[1] : ''));
+  }
+
+  // The words for a fault of the base64 data in a link.
+  function linkDataFault(badAt) {
+    return badAt ? DL.t('link.badData', { n: badAt }) : DL.t('link.noData');
+  }
+
+  function showLinkProblems(faults, intro) {
+    U.modal({
+      title: DL.t('link.problemsTitle'),
+      scrollable: true,
+      body: [U.el('p', { text: intro }), U.el('ul', { class: 'notes-list mb-0' }, faults.map(function (f) { return U.el('li', { text: f }); }))],
+      footer: [U.el('button', { type: 'button', class: 'btn btn-primary', 'data-bs-dismiss': 'modal', text: DL.t('common.close') })]
+    });
+  }
+
+  // Opens the link in the address: the questions of New, then the workflow, then the data. Nothing
+  // changes when the data holds nothing that the page can read.
+  function openLinkFromAddress() {
+    var link = readLink();
+    if (!link) return;
+    // Bootstrap shows one dialog at a time. The keys stay in the address, so a reload opens the link.
+    if (linkBusy || batchRunning || document.querySelector('.modal.show')) { U.toast(DL.t('link.wait'), 'info'); return; }
+    forgetLink();
+    var data = link.source ? DL.decodeBase64(link.source) : null;
+    if (data && !data.bytes.length) { showLinkProblems([linkDataFault(data.badAt)], DL.t('link.noDataIntro')); return; }
+    var name = link.workflow;
+    linkBusy = true;
+    newWorkflow({
+      intro: !name ? DL.t('link.introData') : DL.t(data ? 'link.introBoth' : 'link.introWorkflow', { name: name }),
+      then: function () {
+        if (!name) { openLinkData(null, data); return; }
+        var wf = DL.workflows.findBySlug(name);
+        if (wf) {
+          // A stop at the warning about code opens the data without the workflow.
+          applyWorkflow(wf, function () { openLinkData(wf, data); }, function () { openLinkData(null, data); });
+          return;
+        }
+        U.confirm({ title: DL.t('link.notFoundTitle'), message: DL.t('link.notFoundMessage', { name: name }), yes: DL.t('link.startNew') },
+          function () { store.setWorkflowMeta({ name: name }); openLinkData(null, data); },
+          function () { openLinkData(null, data); });
+      },
+      onCancel: function () { linkBusy = false; U.toast(DL.t('link.notOpened'), 'info'); }
+    });
+  }
+
+  // Puts the data of a link in the source, with the reader settings of the workflow. The settings are
+  // set each time: a workspace with no steps and no file keeps the settings of an older file.
+  // applyWorkflow() calls this before it compares the settings, so it finds them equal and does not
+  // read the data a second time.
+  function openLinkData(wf, data) {
+    linkBusy = false;
+    if (!data) return;
+    var options = DL.cleanSourceOptions(wf && wf.sourceOptions);
+    options.sheet = '';
+    options.multiFile = store.state.source.options.multiFile; // a habit of the user, not of the data
+    store.setSourceOptions(options);
+    linkLoad = { file: new File([data.bytes], 'link-data.csv', { type: 'text/csv' }), badAt: data.badAt, wf: wf };
+    openFile(linkLoad.file);
+  }
+
+  // When the read of the data of a link ends, this says how it went: the faults of the data in a
+  // dialog, or a short message when there are none.
+  function linkLoadEnded(st) {
+    var l = linkLoad;
+    if (st.source.file !== l.file) { linkLoad = null; return; } // other data took its place
+    if (st.source.status === 'loading') return;
+    linkLoad = null;
+    // The page shows the error of a read that failed.
+    if (st.source.status === 'error') { if (l.badAt) U.toast(linkDataFault(l.badAt), 'warning'); return; }
+    var info = st.source.info;
+    var faults = (l.badAt ? [linkDataFault(l.badAt)] : []).concat(info.problems);
+    // The check of the columns in applyWorkflow() ran before the data was there.
+    var level = l.wf ? DL.workflows.matchLevel(l.wf, info.columns) : 'unknown';
+    if (level === 'partial' || level === 'none') faults.push(DL.t('msg.columnsMissing'));
+    if (!faults.length) U.toast(DL.t('link.opened', { rows: DL.rowsAndColumns(info.rowCount, info.columns.length) }), 'success');
+    else if (document.querySelector('.modal.show')) U.toast(DL.t('link.problemsToast', { n: DL.pluralize(faults.length, 'problem') }), 'warning');
+    else showLinkProblems(faults, DL.t('link.problemsIntro'));
   }
 
   /* ---------- Download ---------- */
@@ -984,6 +1105,7 @@
         renderConfig();
         refreshPreview();
         store.saveSession(); // the name of the file belongs to the session, as the steps do
+        if (linkLoad) linkLoadEnded(st);
         break;
       case 'sourceOptions':
         store.saveSession();
@@ -1007,7 +1129,7 @@
   $('btnAddStep').addEventListener('click', addStep);
   $('btnUndo').addEventListener('click', function () { store.undo(); });
   $('btnRedo').addEventListener('click', function () { store.redo(); });
-  $('btnNew').addEventListener('click', newWorkflow);
+  $('btnNew').addEventListener('click', function () { newWorkflow(); }); // the click event is not opts
   $('btnSave').addEventListener('click', function () { saveWorkflow(); });
   $('btnWorkflows').addEventListener('click', openWorkflows);
   $('btnDownload').addEventListener('click', download);
@@ -1106,6 +1228,11 @@
     } else if (store.restoredSourceName && store.state.workflow.steps.length) {
       U.toast(DL.t('msg.stepsRestored', { name: store.restoredSourceName }), 'info');
     }
+  }).then(function () {
+    // A link comes after the workspace, so that its questions name the file that is open. A link
+    // that the user pastes into the address of an open page does not load the page again.
+    openLinkFromAddress();
+    window.addEventListener('hashchange', openLinkFromAddress);
   });
   // A handle for tests: open the page with ?debug to use it from the browser console.
   if (/[?&]debug\b/.test(location.search)) window.DLApp = { store: store, engine: engine, grid: grid, openFile: openFile, openFiles: openFiles };
