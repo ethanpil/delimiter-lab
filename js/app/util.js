@@ -172,7 +172,9 @@
       el: el,
       close: function () { modal.hide(); },
       // Closes the dialog and runs fn when it is gone, so the next dialog does not open over it.
-      closeThen: function (fn) { afterHidden.push(fn); modal.hide(); }
+      // Bootstrap ignores a close while the dialog still opens, so a person can click two times.
+      // The first choice runs, and only once.
+      closeThen: function (fn) { if (!afterHidden.length) afterHidden.push(fn); modal.hide(); }
     };
   };
 
