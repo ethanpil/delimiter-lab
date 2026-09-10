@@ -92,6 +92,19 @@
     write(state, state.list.filter(function (w) { return w.id !== id; }));
   };
 
+  // The saved workflow that a link names. The text can be the link name or the name itself. When two
+  // names give the same link name, the workflow that was used or saved last wins. It only reads.
+  W.findBySlug = function (text) {
+    var slug = DL.workflowSlug(text);
+    if (!slug) return null;
+    var found = null;
+    W.list().forEach(function (w) {
+      if (DL.workflowSlug(w.name) !== slug) return;
+      if (!found || (w.lastUsedAt || w.updatedAt || 0) > (found.lastUsedAt || found.updatedAt || 0)) found = w;
+    });
+    return found;
+  };
+
   // How well a workflow fits the columns of the current file: 'full', 'partial', 'none' or 'unknown'.
   // The check goes through the steps with the real columns, so that columns from earlier steps count as present.
   W.matchLevel = function (wf, columns) {

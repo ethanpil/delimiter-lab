@@ -101,6 +101,34 @@ test('an operation reads the memory limit that the page writes', () => {
   assert.strictEqual(run(8e6), 'ran');
 });
 
+test('saved workflows of 1.0 stay readable, and a link finds them with no write', () => {
+  // The page keeps the saved workflows in localStorage under dl.workflows.v1. A record of 1.0 has
+  // no link name, and the link name is never stored, so these records must work as they are.
+  const records = [
+    { id: 's1', name: 'Clean Contacts (2024)', steps: [{ id: 'a', opId: 'case', params: { columns: ['Email'], mode: 'lower' }, enabled: true }], columns: ['Email'], sourceOptions: null, createdAt: 1, updatedAt: 5, lastUsedAt: 0 },
+    { id: 's2', name: 'Café / Report', steps: [{ id: 'b', opId: 'javascript', params: { code: 'return row.a;', output: 'J', mode: 'add' }, enabled: false }], columns: [], sourceOptions: { delimiter: ';' }, createdAt: 2, updatedAt: 2 },
+    { id: 's3', name: 'clean contacts 2024', steps: [], columns: [], sourceOptions: null, createdAt: 3, updatedAt: 3, lastUsedAt: 9 },
+    { id: 'later', name: 'From a later build', steps: [{ opId: 42 }] } // this build cannot read it, so it stays untouched
+  ];
+  const text = JSON.stringify(records);
+  const saved = { 'dl.workflows.v1': text };
+  const fake = { getItem: (k) => (k in saved ? saved[k] : null), setItem: (k, v) => { saved[k] = String(v); }, removeItem: (k) => { delete saved[k]; } };
+  Object.defineProperty(globalThis, 'localStorage', { value: fake, configurable: true, writable: true });
+  ['js/app/i18n.js', 'js/i18n/en.js', 'js/app/util.js', 'js/app/workflows.js'].forEach((f) => {
+    vm.runInThisContext(fs.readFileSync(path.join(root, f), 'utf8'), { filename: f });
+  });
+  const W = DL.workflows;
+  assert.deepStrictEqual(W.list().map((w) => w.id), ['s1', 's2', 's3']);
+  // Two names give one link name: the workflow used or saved last wins.
+  assert.strictEqual(W.findBySlug('clean-contacts-2024').id, 's3');
+  assert.strictEqual(W.findBySlug('Clean Contacts (2024)').id, 's3', 'the plain name finds it too');
+  assert.strictEqual(W.findBySlug('cafe-report').id, 's2');
+  assert.strictEqual(W.findBySlug('no-such-name'), null);
+  assert.strictEqual(W.findBySlug(''), null);
+  assert.strictEqual(W.findBySlug('***'), null);
+  assert.strictEqual(saved['dl.workflows.v1'], text, 'to read and to find writes nothing');
+});
+
 // The page reads the IIFE build; a program that takes the engine as a module reads the other one.
 // Both come from one source, so both must hold the same engine.
 (async () => {
