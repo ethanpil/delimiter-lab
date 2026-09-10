@@ -8,6 +8,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 
 - Reads CSV, TSV, text files with any separator, and Excel workbooks (with sheet selection).
 - Detects the encoding and the column separator automatically. You can change both.
+- Says where a file has faults: the line and the character of a value with bad quotes, and the lines of the rows with a different number of values than the header.
 - Reads the numbers of a file by the separator that file uses. A file that writes 1.234,56 gives 1000 for 1.000, and a file that writes 1,234.56 gives 1. The reader says when it finds a comma file.
 - Builds a chain of steps. Each step reads the output of the step before it.
 - Shows a preview of each step. You can download the result of any step.
@@ -16,6 +17,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Shows the rows that failed a Verify rule when you click the rule in the result.
 - Saves workflows in the browser and as files, so you can apply them again to new files. Autosave writes each change of the steps to the open workflow.
 - Runs a saved workflow on a file from the workflow list, and downloads the result. You do not need to build the steps again.
+- Opens a saved workflow and data from a link: `#workflow=<link name>&source=<data in base64>`. See "Open from a link".
 - Reads many files as one Data Source. Put "Many files" at stack, then add files at any time. The columns go by name, and a column that a file does not have is empty for the rows of that file.
 - Lists the files of the source with the size, the rows and the columns of each. You can change their order, take one out, or remove all of them. The steps stay.
 - Keeps the workspace in the browser. After a reload, or after the power goes off, the steps are there again, and the file too when it is smaller than 100 MB.
@@ -55,6 +57,66 @@ The page runs with no build. A change to the engine needs one, because the page 
 
 A release carries the page as `delimiter-lab-<version>-web.zip`, for a copy on your own server
 without git. The release says how to unpack and serve it.
+
+## Open from a link
+
+A link can open the page with a saved workflow and with data. Put the keys after `#` in the
+address:
+
+```
+https://ethanpil.github.io/delimiter-lab/#workflow=clean-contacts&source=bmFtZSxlbWFpbApBZGEgTG92ZWxhY2UsQURBQEVYQU1QTEUuQ09NCg==
+```
+
+- `workflow` is the link name of a saved workflow. The page makes the link name from the name of
+  the workflow. It uses small letters and digits, with one hyphen between words, and Latin letters
+  lose their accents. For example, "Clean Contacts (2024)" has the link name `clean-contacts-2024`.
+  The Workflows list shows the link name of each workflow, and "Copy link" copies the link.
+- `source` is the data of a CSV file, as base64. The page also reads base64url, with `-` and `_`
+  and with no `=` at the end.
+
+A link can hold one of the two keys, or both. The page does these steps:
+
+1. When the workspace holds steps or a file, the page asks the two questions of the New button.
+   When you stop, nothing changes.
+2. The page opens the workflow. When no saved workflow has the link name, the page says so, and it
+   asks if you want to start a new workflow with that name. Save the new workflow after you add a
+   step. The link then opens it.
+3. The page reads the data as the Source Data, with the reader settings of the workflow.
+4. When the data has faults, a dialog gives the place of each fault: the line, and for a bad quote
+   the character. The page uses the data that it can read. The notes under Source Data keep the
+   same list.
+
+Then the page removes the two keys from the address, so a reload does not open the link again.
+When the data holds nothing that the page can read, the page does not clear the workspace.
+
+When two workflows have the same link name, the link opens the workflow that you used or saved
+last. A link name comes from the name, so after you rename a workflow, its old link does not open
+it. Saved workflows and workflow files do not store a link name, so the workflows of 1.0 work as
+they are.
+
+To make the base64 text of a file, use one of these commands:
+
+```bash
+base64 -w0 data.csv
+```
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('data.csv'))
+```
+
+On macOS, use `base64 -i data.csv`.
+
+Use `#` in a link, not `?`. The page also reads `?workflow=…&source=…`, but `#` is better:
+
+- A browser does not send the part after `#` to the server. It sends the part after `?`, so with
+  `?` the data leaves your computer.
+- GitHub Pages refuses an address that is longer than about 8 KB, with the error "414 URI Too
+  Long". With `?`, a link can hold only about 6 KB of data. With `#`, only the browser sets a
+  limit. For example, Chrome takes about 2 MB.
+
+A key after `#` has priority over the same key after `?`. Both forms put the data in the history
+of the browser. Links work in the web edition only. The desktop application does not get an
+address.
 
 ## The desktop application
 

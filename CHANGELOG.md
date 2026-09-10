@@ -7,6 +7,13 @@ The numbers below 1.0 are the history of the development before 1.0.
 - Change: the source panel lists its files on the left, with the size, the rows and the columns of each. The drop zone takes the right side. The list is there for one file too (d6756dc).
 - Add: "Remove all" takes every file out of the source. The steps stay (d6756dc).
 - Change: a file that "Add more files" puts beside another one sets "Many files" to stack, because the two files make one stack (8df57c7).
+- Add: a link opens a saved workflow and data: `#workflow=<link name>&source=<data in base64>`. The page asks before it clears the workspace (ba01872, 8597133, 2531449).
+- Add: the Workflows list shows the link name of each workflow, and "Copy link" copies its link (a8c9b5d).
+- Change: the notes of a CSV read give the line and the character of each value with bad quotes, and the lines of the ragged rows (bc1ead6).
+- Change: a value with bad quotes counts once. Each file of a source has its own note about ragged rows (bc1ead6).
+- Fix: a ragged row that "Skip rows at the bottom" removes no longer counts (bc1ead6).
+- Fix: an error inside the reader stops the read with a message. Before, the table ended early with no word (ae6ca8d).
+- Fix: a double click on a question runs the choice once. A double click on New emptied the workspace two times (fca99af).
 
 ## 1.0
 
