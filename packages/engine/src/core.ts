@@ -869,10 +869,14 @@ DL.TableBuilder = function (opts) {
   this.n = 0;
   this.ragged = 0;
   this.cells = 0;
+  // The ragged flags of the last rows, at row % skipRowsBottom. "Skip rows at the bottom" takes
+  // those rows away, and a row that goes away is not a ragged row of the table.
+  this.tail = this.toSkipBottom ? [] : null;
 };
 
+// Adds a row. Gives true for a ragged row: a row with another number of values than the header.
 DL.TableBuilder.prototype.add = function (row) {
-  if (this.toSkip > 0) { this.toSkip--; return; }
+  if (this.toSkip > 0) { this.toSkip--; return false; }
   // A blank line and a header row with no names are not the same row. An empty line gives one
   // empty value; a header row of ",," gives one for each column. So a blank first row with more
   // than one value is the header, and DL.cleanHeaders names its columns; a blank line before the
@@ -881,17 +885,20 @@ DL.TableBuilder.prototype.add = function (row) {
   if (this.columns === null && this.headers && !(blank && row.length <= 1)) {
     this.columns = row.map(DL.cellText);
     this.expected = row.length;
-    return;
+    return false;
   }
-  if (blank) return;
+  if (blank) return false;
   // A blank line that the user keeps is a row of empty values, not a ragged row.
   if (row.length === 1 && row[0] === '' && this.expected > 1) row = [];
+  var ragged = false;
   if (this.expected < 0) this.expected = row.length;
-  else if (row.length !== this.expected && row.length !== 0) this.ragged++;
+  else if (row.length !== this.expected && row.length !== 0) { this.ragged++; ragged = true; }
+  if (this.tail) this.tail[this.n % this.toSkipBottom] = ragged ? 1 : 0;
   for (var c = this.cols.length; c < row.length; c++) { this.cols.push(new Array(this.n).fill('')); this.cells += this.n; }
   for (c = 0; c < this.cols.length; c++) this.cols[c][this.n] = c < row.length ? DL.cellText(row[c]) : '';
   this.n++;
   this.cells += this.cols.length;
+  return ragged;
 };
 
 DL.TableBuilder.prototype.finish = function () {
@@ -904,6 +911,9 @@ DL.TableBuilder.prototype.finish = function () {
   if (this.toSkipBottom) {
     n = Math.max(0, n - this.toSkipBottom);
     for (var i = 0; i < this.cols.length; i++) this.cols[i].length = n;
+    // The flags go to zero, so a second call takes nothing away again.
+    for (var r = n; r < this.n; r++) this.ragged -= this.tail[r % this.toSkipBottom];
+    this.tail.fill(0);
   }
   return DL.makeTable(DL.cleanHeaders(names), this.cols, n);
 };

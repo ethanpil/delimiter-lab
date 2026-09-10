@@ -211,6 +211,63 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     }
   });
 
+  // The notes say where a fault of the data is: the line, and for a quote the character. A value in
+  // quotes can hold line ends, so a row is not always one line. Each case runs with slices of many
+  // sizes, so that faults and line ends also fall on the edge of two slices.
+  const faultsOf = (text, options, name, sizes) => {
+    let first = null;
+    (sizes || [0, 1, 2, 5, 11]).forEach((size) => {
+      globalThis.SLICE_OVERRIDE = size;
+      try {
+        const r = send({ type: 'load', file: new FakeFile(text, name || 'f.csv'), options: Object.assign({ delimiter: ',' }, options) });
+        assert.strictEqual(r.type, 'loaded', JSON.stringify(r));
+        const got = JSON.stringify(r.info.problems);
+        if (first === null) first = got;
+        assert.strictEqual(got, first, 'slices of ' + size + ' bytes gave other places');
+        r.info.problems.forEach((p) => assert.ok(r.info.notes.indexOf(p) >= 0, 'a fault is a note too'));
+      } finally {
+        globalThis.SLICE_OVERRIDE = 0;
+      }
+    });
+    return JSON.parse(first);
+  };
+  const RAGGED_END = '. Missing values were left empty and extra values were kept in new columns.';
+
+  test('the note names the lines of rows with a different number of values', () => {
+    assert.deepStrictEqual(faultsOf('a,b\n1,2\n3\n4,5,6\n7,8\n'), ['2 rows had a different number of values than the header (lines 3 and 4)' + RAGGED_END]);
+    // A value in quotes that holds line ends takes more than one line.
+    const multi = 'a,b\n1,"x\ny\nz"\n2\n"p\nq",r\n4,5,6\n';
+    assert.deepStrictEqual(faultsOf(multi), ['2 rows had a different number of values than the header (lines 5 and 8)' + RAGGED_END]);
+    assert.deepStrictEqual(faultsOf(multi.replace(/\n/g, '\r\n')), faultsOf(multi), 'CRLF gives the same lines');
+    // PapaParse guesses the line end once, from the first slice, so that slice must hold a line end.
+    // A real slice holds 8 MB.
+    assert.deepStrictEqual(faultsOf('a,b\r1,2\r3\r4,5\r', {}, null, [0, 5, 6, 11]), ['1 row had a different number of values than the header (line 3)' + RAGGED_END]);
+    // With CRLF, PapaParse drops a lone LF after a closing quote. An editor shows a line there.
+    assert.deepStrictEqual(faultsOf('a,b\r\n"z"\n,w\r\n5\r\n', {}, null, [0, 5, 6, 11]), ['1 row had a different number of values than the header (line 4)' + RAGGED_END]);
+    // Five places, and a count of the rest.
+    assert.deepStrictEqual(faultsOf('a,b\n' + '1\n'.repeat(7)), ['7 rows had a different number of values than the header (lines 2, 3, 4, 5 and 6, and 2 more)' + RAGGED_END]);
+    // A totals row that "Skip rows at the bottom" takes away is not a fault of the table.
+    assert.deepStrictEqual(faultsOf('a,b\n1,2\n3,4\ntotal\n', { skipRowsBottom: 1 }), []);
+    assert.deepStrictEqual(faultsOf('a,b\n1,2\n3,4\n'), []);
+  });
+
+  test('the note names the line and the character of a value with bad quotes', () => {
+    assert.deepStrictEqual(faultsOf('a,b\n1,"be"ta,x"\n2,3\n'), ['1 value had unbalanced quotes (line 2, character 3). Check the text delimiter setting if data looks wrong.']);
+    assert.deepStrictEqual(faultsOf('a,b\n1,2\n3,"open\n4,5\n'), ['The quoted value at line 3, character 3 has no end quote. The rest of the file is in that value.']);
+    // The character counts an emoji as one.
+    assert.deepStrictEqual(faultsOf('a,b\n\u{1F600}x,"q"z\n'), ['The quoted value at line 2, character 4 has no end quote. The rest of the file is in that value.']);
+    const malformed = fs.readFileSync(path.join(root, 'test/data/malformed.csv'));
+    assert.deepStrictEqual(faultsOf(malformed, {}, 'malformed.csv'), ['1 value had unbalanced quotes (line 3, character 3). Check the text delimiter setting if data looks wrong.']);
+  });
+
+  test('each file of a source has its own note, with its name', () => {
+    const r = send({ type: 'load', files: [new FakeFile('x,y\n1\n', 'a.csv'), new FakeFile('x,y\n1,2\n1,2,3\n', 'b.csv')], options: { delimiter: ',' } });
+    assert.deepStrictEqual(r.info.problems, [
+      '"a.csv": 1 row had a different number of values than the header (line 2)' + RAGGED_END,
+      '"b.csv": 1 row had a different number of values than the header (line 3)' + RAGGED_END
+    ]);
+  });
+
   await (async () => {
     const lines = ['id,name'];
     for (let i = 0; i < 300; i++) lines.push(i + ',n' + (i % 7));

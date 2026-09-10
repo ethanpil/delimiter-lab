@@ -76,7 +76,8 @@ function makeDecoder(encoding, notes) {
   }
 }
 
-// Readers by input format id. Each gives { table, notes, meta }.
+// Readers by input format id. Each gives { table, notes, problems, meta }. problems holds the
+// faults of the data, with their places.
 var readers: any = {};
 
 // A minimal Node-style stream. PapaParse reads text chunks from it and keeps row boundaries intact.
@@ -129,6 +130,36 @@ function checkSize(file, decoder, delimiter, quoteChar) {
   if (projected > DL.maxCells * 1.3) throw tooLarge(projected);
 }
 
+// Counts the line ends in text from "from" to "to". A line ends at "\n", at "\r\n" (one end) or
+// at a lone "\r", as an editor counts lines. A "\r" just before "to" looks at the next character.
+function countBreaks(text, from, to) {
+  var n = 0;
+  for (var i = text.indexOf('\n', from); i >= 0 && i < to; i = text.indexOf('\n', i + 1)) n++;
+  for (var j = text.indexOf('\r', from); j >= 0 && j < to; j = text.indexOf('\r', j + 1)) {
+    if (text.charCodeAt(j + 1) !== 10) n++;
+  }
+  return n;
+}
+
+// The place where each row of text starts, up to row "last". Only a parse knows it: a value in
+// quotes can hold line ends, and with "\r\n" PapaParse drops a lone "\n" after a closing quote.
+function rowStarts(text, last, cfg) {
+  var starts = [0];
+  DL.platform.papa.parse(text, {
+    delimiter: cfg.delimiter, quoteChar: cfg.quoteChar, escapeChar: cfg.quoteChar, newline: cfg.newline, skipEmptyLines: false,
+    step: function (r, parser) { starts.push(r.meta.cursor); if (starts.length > last) parser.abort(); }
+  });
+  return starts;
+}
+
+// "8", "8 and 12", "8, 12 and 20".
+function andList(items) {
+  return items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+}
+
+// The number of places that a note names. The note counts the rest.
+var PLACES = 5;
+
 readers.delimited = function (file, opts) {
   if (!DL.platform.papa) throw new Error('DL.platform.papa is not set.');
   var notes = [];
@@ -141,6 +172,20 @@ readers.delimited = function (file, opts) {
   var builder = new DL.TableBuilder(opts);
   var errors = { quotes: 0, delimiter: 0, other: 0 };
   var stopped = null;
+  // The text that PapaParse holds: "pending" starts at "base" in the whole text, and "lineBase"
+  // lines end before it. The places of the faults come from it.
+  var pending = '';
+  var base = 0;
+  var lineBase = 0;
+  var ragged = [];    // { row, line } of the first ragged rows
+  var quoted = [];    // the places of the first values with unbalanced quotes
+  var unclosed = '';  // the place of a value with no end quote
+  var nextQuote = 0;  // a fault before this place in the whole text is counted already
+  // "line 3, character 7" for a place in "pending". The character counts an emoji as one.
+  var placeOf = function (at) {
+    var from = Math.max(pending.lastIndexOf('\n', at - 1), pending.lastIndexOf('\r', at - 1)) + 1;
+    return 'line ' + (lineBase + 1 + countBreaks(pending, 0, at)) + ', character ' + (DL.charCount(pending.slice(from, at)) + 1);
+  };
   var config: any = {
     quoteChar: quoteChar,
     escapeChar: quoteChar,
@@ -150,6 +195,7 @@ readers.delimited = function (file, opts) {
       // follow with no sign. The error must go out through "stopped", as the size limit does.
       try {
         var data = results.data;
+        var wanted = []; // { at, row }: the ragged rows of this chunk that need a line
         // A file with mixed line endings leaves "\r" on the last value, but only when the parser
         // took "\n" as the line ending. When the parser took "\r\n", a "\r" at the end of the last
         // value is part of the value, and to remove it takes a character out of the data.
@@ -160,13 +206,44 @@ readers.delimited = function (file, opts) {
             var lastCell = row[row.length - 1];
             if (typeof lastCell === 'string' && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
           }
-          builder.add(row);
+          if (builder.add(row) && ragged.length + wanted.length < PLACES) wanted.push({ at: i, row: builder.n - 1 });
         }
+        var cut = results.meta.cursor - base; // the rows of this chunk end here in "pending"
+        var breaks = countBreaks(pending, 0, cut);
+        if (wanted.length) {
+          // When no value holds a line end, each row takes one line. Else a parse finds the rows.
+          var starts = breaks === data.length ? null
+            : rowStarts(pending.slice(0, cut), wanted[wanted.length - 1].at, { delimiter: config.delimiter, quoteChar: quoteChar, newline: results.meta.linebreak });
+          for (var w = 0; w < wanted.length; w++) {
+            var at = wanted[w].at;
+            ragged.push({ row: wanted[w].row, line: lineBase + 1 + (at === 0 ? 0 : starts ? countBreaks(pending, 0, starts[at]) : at) });
+          }
+        }
+        // PapaParse can give one fault twice, and one value as both kinds. "No end quote" says
+        // more, so it wins. A fault in the row that waits for the next chunk comes again with it.
+        var found = [];
         var errs = results.errors;
         for (var k = 0; k < errs.length; k++) {
-          if (errs[k].type === 'Quotes') errors.quotes++;
-          else if (errs[k].type !== 'FieldMismatch' && errs[k].type !== 'Delimiter') errors.other++;
+          var e = errs[k];
+          if (e.type !== 'Quotes') {
+            if (e.type !== 'FieldMismatch' && e.type !== 'Delimiter') errors.other++;
+            continue;
+          }
+          if (e.row >= data.length) continue;
+          var q = base + e.index - 1; // the opening quote: PapaParse points at the character after it
+          var last = found[found.length - 1];
+          if (last && last.q === q) { if (e.code === 'MissingQuotes') last.missing = true; continue; }
+          if (q < nextQuote) continue;
+          found.push({ q: q, missing: e.code === 'MissingQuotes' });
         }
+        for (var f = 0; f < found.length; f++) {
+          if (found[f].missing) { if (!unclosed) unclosed = placeOf(found[f].q - base); }
+          else if (++errors.quotes <= PLACES) quoted.push(placeOf(found[f].q - base));
+        }
+        if (found.length) nextQuote = found[found.length - 1].q + 1;
+        lineBase += breaks;
+        pending = pending.slice(cut);
+        base = results.meta.cursor;
         if (builder.cells > DL.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
       } catch (err) {
         stopped = err;
@@ -193,6 +270,7 @@ readers.delimited = function (file, opts) {
       config.delimiter = delimiter;
       DL.platform.papa.parse(stream, config);
     }
+    pending += text; // PapaParse puts the same text after the row that waits
     stream.emit('data', text);
     DL.platform.progress('Reading file', Math.min(99, Math.round(100 * offset / file.size)));
   }
@@ -201,10 +279,18 @@ readers.delimited = function (file, opts) {
   if (stopped) throw stopped;
 
   var table = builder.finish();
-  if (errors.quotes) notes.push(DL.pluralize(errors.quotes, 'value') + ' had unbalanced quotes. Check the text delimiter setting if data looks wrong.');
-  if (errors.other) notes.push(DL.pluralize(errors.other, 'problem') + ' found while reading the file.');
-  if (errors.delimiter && table.columns.length === 1) notes.push('The column separator could not be detected. Choose it in the options if the data looks wrong.');
-  return { table: table, notes: notes, ragged: builder.ragged, meta: { encoding: encoding, delimiter: delimiter } };
+  var problems = [];
+  if (errors.quotes) {
+    var more = errors.quotes > quoted.length ? '; and ' + (errors.quotes - quoted.length) + ' more' : '';
+    problems.push(DL.pluralize(errors.quotes, 'value') + ' had unbalanced quotes (' + quoted.join('; ') + more + '). Check the text delimiter setting if data looks wrong.');
+  }
+  if (unclosed) problems.push('The quoted value at ' + unclosed + ' has no end quote. The rest of the file is in that value.');
+  if (errors.other) problems.push(DL.pluralize(errors.other, 'problem') + ' found while reading the file.');
+  if (errors.delimiter && table.columns.length === 1) problems.push('The column separator could not be detected. Choose it in the options if the data looks wrong.');
+  // A row that "Skip rows at the bottom" took away is not in the table, so the note does not name it.
+  var lines = ragged.filter(function (r) { return r.row < table.length; }).map(function (r) { return r.line; });
+  if (builder.ragged) problems.push(RAGGED_NOTE(builder.ragged, lines));
+  return { table: table, notes: notes, problems: problems, meta: { encoding: encoding, delimiter: delimiter } };
 };
 
 function readWorkbook(file, sheetsOnly) {
@@ -232,11 +318,14 @@ readers.spreadsheet = function (file, opts) {
     if (builder.cells > DL.maxCells) throw tooLarge(builder.cells * (raw.length / (i + 1)));
   }
   DL.platform.progress('Reading sheet "' + sheetName + '"', 95);
-  return { table: builder.finish(), notes: notes, ragged: 0, meta: { sheet: sheetName } };
+  return { table: builder.finish(), notes: notes, problems: [], meta: { sheet: sheetName } };
 };
 
-function RAGGED_NOTE(count) {
-  return DL.pluralize(count, 'row') + ' had a different number of values than the header. Missing values were left empty and extra values were kept in new columns.';
+// lines holds the lines of the first ragged rows. The note counts the rest.
+function RAGGED_NOTE(count, lines) {
+  var where = !lines.length ? ''
+    : ' (' + (lines.length > 1 ? 'lines ' : 'line ') + andList(lines) + (count > lines.length ? ', and ' + (count - lines.length) + ' more' : '') + ')';
+  return DL.pluralize(count, 'row') + ' had a different number of values than the header' + where + '. Missing values were left empty and extra values were kept in new columns.';
 }
 
 /* ---------- Zip (store only, no compression) ---------- */
@@ -487,13 +576,13 @@ DL.crcAdd = crcAdd;
 DL.crcEnd = crcEnd;
 DL.makeZip = makeZip;
 DL.tooLarge = tooLarge;
-DL.raggedNote = RAGGED_NOTE;
 DL.readerFor = function (name) { return readers[DL.inputFormatFor(name).id]; };
 DL.sheetNames = sheetNames;
 
 /* Reads files into one table.
  *
- * Gives { table, info }. info names every file with its rows, and carries the notes of the read,
+ * Gives { table, info }. info names every file with its rows, and carries the notes of the read
+ * (info.problems holds the faults of the data again, for a caller that shows only those),
  * the encoding and the separator of the first file, and the time that the read took.
  *
  * The command line and the worker both call this. Neither has a reader of its own.
@@ -506,7 +595,7 @@ DL.readSource = function (files, opts) {
   var names = [];
   var each = [];
   var notes = [];
-  var ragged = 0;
+  var problems = [];
   var meta: any = {};
   var cells = 0;
   var key = 'src:';
@@ -527,9 +616,12 @@ DL.readSource = function (files, opts) {
     tables.push(result.table);
     names.push(file.name);
     each.push({ name: file.name, size: file.size, rowCount: result.table.length, columnCount: result.table.columns.length });
-    ragged += result.ragged || 0;
-    for (var n = 0; n < result.notes.length; n++) {
-      notes.push(files.length > 1 ? '"' + file.name + '": ' + result.notes[n] : result.notes[n]);
+    // A fault has its place in one file, so each file gives its own note, with its name.
+    var prefix = files.length > 1 ? '"' + file.name + '": ' : '';
+    for (var n = 0; n < result.notes.length; n++) notes.push(prefix + result.notes[n]);
+    for (var p = 0; p < result.problems.length; p++) {
+      notes.push(prefix + result.problems[p]);
+      problems.push(prefix + result.problems[p]);
     }
     if (i === 0) meta = result.meta || {};
     key += file.name + ':' + file.size + ':' + file.lastModified + ':';
@@ -548,7 +640,6 @@ DL.readSource = function (files, opts) {
   for (var m = 0; m < stacked.notes.length; m++) notes.push(stacked.notes[m]);
   var skip = Math.max(0, Number(opts.skipRows) || 0);
   if (skip) notes.push('Skipped the first ' + DL.pluralize(skip, 'row') + (files.length > 1 ? ' of each file.' : '.'));
-  if (ragged) notes.push(DL.raggedNote(ragged));
   // The numbers of this file decide how every value in it is read. Without this the same column
   // can be read at two scales: 1.234,56 as one thousand and 1.000 as one.
   DL.numberStyle = DL.detectNumberStyle(table);
@@ -563,6 +654,7 @@ DL.readSource = function (files, opts) {
       rowCount: table.length,
       columns: table.columns,
       notes: notes,
+      problems: problems,
       encoding: meta.encoding || null,
       delimiter: meta.delimiter || null,
       sheet: meta.sheet || null,

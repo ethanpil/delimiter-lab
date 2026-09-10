@@ -779,22 +779,28 @@
     this.n = 0;
     this.ragged = 0;
     this.cells = 0;
+    this.tail = this.toSkipBottom ? [] : null;
   };
   DL.TableBuilder.prototype.add = function(row) {
     if (this.toSkip > 0) {
       this.toSkip--;
-      return;
+      return false;
     }
     var blank = this.dropEmpty && DL.isBlankRow(row);
     if (this.columns === null && this.headers && !(blank && row.length <= 1)) {
       this.columns = row.map(DL.cellText);
       this.expected = row.length;
-      return;
+      return false;
     }
-    if (blank) return;
+    if (blank) return false;
     if (row.length === 1 && row[0] === "" && this.expected > 1) row = [];
+    var ragged = false;
     if (this.expected < 0) this.expected = row.length;
-    else if (row.length !== this.expected && row.length !== 0) this.ragged++;
+    else if (row.length !== this.expected && row.length !== 0) {
+      this.ragged++;
+      ragged = true;
+    }
+    if (this.tail) this.tail[this.n % this.toSkipBottom] = ragged ? 1 : 0;
     for (var c = this.cols.length; c < row.length; c++) {
       this.cols.push(new Array(this.n).fill(""));
       this.cells += this.n;
@@ -802,6 +808,7 @@
     for (c = 0; c < this.cols.length; c++) this.cols[c][this.n] = c < row.length ? DL.cellText(row[c]) : "";
     this.n++;
     this.cells += this.cols.length;
+    return ragged;
   };
   DL.TableBuilder.prototype.finish = function() {
     var header = this.columns || [];
@@ -811,6 +818,8 @@
     if (this.toSkipBottom) {
       n = Math.max(0, n - this.toSkipBottom);
       for (var i = 0; i < this.cols.length; i++) this.cols[i].length = n;
+      for (var r = n; r < this.n; r++) this.ragged -= this.tail[r % this.toSkipBottom];
+      this.tail.fill(0);
     }
     return DL.makeTable(DL.cleanHeaders(names), this.cols, n);
   };
@@ -1628,6 +1637,33 @@
     var projected = cells * (file.size / Math.max(1, sampleBytes));
     if (projected > DL.maxCells * 1.3) throw tooLarge(projected);
   }
+  function countBreaks(text, from, to) {
+    var n = 0;
+    for (var i = text.indexOf("\n", from); i >= 0 && i < to; i = text.indexOf("\n", i + 1)) n++;
+    for (var j = text.indexOf("\r", from); j >= 0 && j < to; j = text.indexOf("\r", j + 1)) {
+      if (text.charCodeAt(j + 1) !== 10) n++;
+    }
+    return n;
+  }
+  function rowStarts(text, last, cfg) {
+    var starts = [0];
+    DL.platform.papa.parse(text, {
+      delimiter: cfg.delimiter,
+      quoteChar: cfg.quoteChar,
+      escapeChar: cfg.quoteChar,
+      newline: cfg.newline,
+      skipEmptyLines: false,
+      step: function(r, parser) {
+        starts.push(r.meta.cursor);
+        if (starts.length > last) parser.abort();
+      }
+    });
+    return starts;
+  }
+  function andList(items) {
+    return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+  }
+  var PLACES = 5;
   readers.delimited = function(file, opts) {
     if (!DL.platform.papa) throw new Error("DL.platform.papa is not set.");
     var notes = [];
@@ -1639,6 +1675,17 @@
     var builder = new DL.TableBuilder(opts);
     var errors = { quotes: 0, delimiter: 0, other: 0 };
     var stopped = null;
+    var pending = "";
+    var base = 0;
+    var lineBase = 0;
+    var ragged = [];
+    var quoted = [];
+    var unclosed = "";
+    var nextQuote = 0;
+    var placeOf = function(at) {
+      var from = Math.max(pending.lastIndexOf("\n", at - 1), pending.lastIndexOf("\r", at - 1)) + 1;
+      return "line " + (lineBase + 1 + countBreaks(pending, 0, at)) + ", character " + (DL.charCount(pending.slice(from, at)) + 1);
+    };
     var config = {
       quoteChar,
       escapeChar: quoteChar,
@@ -1646,6 +1693,7 @@
       chunk: function(results, parser) {
         try {
           var data = results.data;
+          var wanted = [];
           var strayCR = results.meta && results.meta.linebreak === "\n";
           for (var i = 0; i < data.length; i++) {
             var row = data[i];
@@ -1653,13 +1701,44 @@
               var lastCell = row[row.length - 1];
               if (typeof lastCell === "string" && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
             }
-            builder.add(row);
+            if (builder.add(row) && ragged.length + wanted.length < PLACES) wanted.push({ at: i, row: builder.n - 1 });
           }
+          var cut = results.meta.cursor - base;
+          var breaks = countBreaks(pending, 0, cut);
+          if (wanted.length) {
+            var starts = breaks === data.length ? null : rowStarts(pending.slice(0, cut), wanted[wanted.length - 1].at, { delimiter: config.delimiter, quoteChar, newline: results.meta.linebreak });
+            for (var w = 0; w < wanted.length; w++) {
+              var at = wanted[w].at;
+              ragged.push({ row: wanted[w].row, line: lineBase + 1 + (at === 0 ? 0 : starts ? countBreaks(pending, 0, starts[at]) : at) });
+            }
+          }
+          var found = [];
           var errs = results.errors;
           for (var k = 0; k < errs.length; k++) {
-            if (errs[k].type === "Quotes") errors.quotes++;
-            else if (errs[k].type !== "FieldMismatch" && errs[k].type !== "Delimiter") errors.other++;
+            var e = errs[k];
+            if (e.type !== "Quotes") {
+              if (e.type !== "FieldMismatch" && e.type !== "Delimiter") errors.other++;
+              continue;
+            }
+            if (e.row >= data.length) continue;
+            var q = base + e.index - 1;
+            var last = found[found.length - 1];
+            if (last && last.q === q) {
+              if (e.code === "MissingQuotes") last.missing = true;
+              continue;
+            }
+            if (q < nextQuote) continue;
+            found.push({ q, missing: e.code === "MissingQuotes" });
           }
+          for (var f = 0; f < found.length; f++) {
+            if (found[f].missing) {
+              if (!unclosed) unclosed = placeOf(found[f].q - base);
+            } else if (++errors.quotes <= PLACES) quoted.push(placeOf(found[f].q - base));
+          }
+          if (found.length) nextQuote = found[found.length - 1].q + 1;
+          lineBase += breaks;
+          pending = pending.slice(cut);
+          base = results.meta.cursor;
           if (builder.cells > DL.maxCells) {
             stopped = tooLarge(builder.cells * 1.2);
             parser.abort();
@@ -1690,16 +1769,28 @@
         config.delimiter = delimiter;
         DL.platform.papa.parse(stream, config);
       }
+      pending += text;
       stream.emit("data", text);
       DL.platform.progress("Reading file", Math.min(99, Math.round(100 * offset / file.size)));
     }
     if (started && !stopped) stream.emit("end");
     if (stopped) throw stopped;
     var table = builder.finish();
-    if (errors.quotes) notes.push(DL.pluralize(errors.quotes, "value") + " had unbalanced quotes. Check the text delimiter setting if data looks wrong.");
-    if (errors.other) notes.push(DL.pluralize(errors.other, "problem") + " found while reading the file.");
-    if (errors.delimiter && table.columns.length === 1) notes.push("The column separator could not be detected. Choose it in the options if the data looks wrong.");
-    return { table, notes, ragged: builder.ragged, meta: { encoding, delimiter } };
+    var problems = [];
+    if (errors.quotes) {
+      var more = errors.quotes > quoted.length ? "; and " + (errors.quotes - quoted.length) + " more" : "";
+      problems.push(DL.pluralize(errors.quotes, "value") + " had unbalanced quotes (" + quoted.join("; ") + more + "). Check the text delimiter setting if data looks wrong.");
+    }
+    if (unclosed) problems.push("The quoted value at " + unclosed + " has no end quote. The rest of the file is in that value.");
+    if (errors.other) problems.push(DL.pluralize(errors.other, "problem") + " found while reading the file.");
+    if (errors.delimiter && table.columns.length === 1) problems.push("The column separator could not be detected. Choose it in the options if the data looks wrong.");
+    var lines = ragged.filter(function(r) {
+      return r.row < table.length;
+    }).map(function(r) {
+      return r.line;
+    });
+    if (builder.ragged) problems.push(RAGGED_NOTE(builder.ragged, lines));
+    return { table, notes, problems, meta: { encoding, delimiter } };
   };
   function readWorkbook(file, sheetsOnly) {
     return DL.platform.xlsx().read(readBuffer(file), { type: "array", cellDates: true, dense: true, bookSheets: !!sheetsOnly });
@@ -1724,10 +1815,11 @@
       if (builder.cells > DL.maxCells) throw tooLarge(builder.cells * (raw.length / (i + 1)));
     }
     DL.platform.progress('Reading sheet "' + sheetName + '"', 95);
-    return { table: builder.finish(), notes, ragged: 0, meta: { sheet: sheetName } };
+    return { table: builder.finish(), notes, problems: [], meta: { sheet: sheetName } };
   };
-  function RAGGED_NOTE(count) {
-    return DL.pluralize(count, "row") + " had a different number of values than the header. Missing values were left empty and extra values were kept in new columns.";
+  function RAGGED_NOTE(count, lines) {
+    var where = !lines.length ? "" : " (" + (lines.length > 1 ? "lines " : "line ") + andList(lines) + (count > lines.length ? ", and " + (count - lines.length) + " more" : "") + ")";
+    return DL.pluralize(count, "row") + " had a different number of values than the header" + where + ". Missing values were left empty and extra values were kept in new columns.";
   }
   var CRC_TABLE = (function() {
     var t = new Int32Array(256);
@@ -1940,7 +2032,6 @@
   DL.crcEnd = crcEnd;
   DL.makeZip = makeZip;
   DL.tooLarge = tooLarge;
-  DL.raggedNote = RAGGED_NOTE;
   DL.readerFor = function(name) {
     return readers[DL.inputFormatFor(name).id];
   };
@@ -1953,7 +2044,7 @@
     var names = [];
     var each = [];
     var notes = [];
-    var ragged = 0;
+    var problems = [];
     var meta = {};
     var cells = 0;
     var key = "src:";
@@ -1972,9 +2063,11 @@
       tables.push(result.table);
       names.push(file.name);
       each.push({ name: file.name, size: file.size, rowCount: result.table.length, columnCount: result.table.columns.length });
-      ragged += result.ragged || 0;
-      for (var n = 0; n < result.notes.length; n++) {
-        notes.push(files.length > 1 ? '"' + file.name + '": ' + result.notes[n] : result.notes[n]);
+      var prefix = files.length > 1 ? '"' + file.name + '": ' : "";
+      for (var n = 0; n < result.notes.length; n++) notes.push(prefix + result.notes[n]);
+      for (var p = 0; p < result.problems.length; p++) {
+        notes.push(prefix + result.problems[p]);
+        problems.push(prefix + result.problems[p]);
       }
       if (i === 0) meta = result.meta || {};
       key += file.name + ":" + file.size + ":" + file.lastModified + ":";
@@ -1991,7 +2084,6 @@
     for (var m = 0; m < stacked.notes.length; m++) notes.push(stacked.notes[m]);
     var skip = Math.max(0, Number(opts.skipRows) || 0);
     if (skip) notes.push("Skipped the first " + DL.pluralize(skip, "row") + (files.length > 1 ? " of each file." : "."));
-    if (ragged) notes.push(DL.raggedNote(ragged));
     DL.numberStyle = DL.detectNumberStyle(table);
     if (DL.numberStyle === "comma") notes.push("The numbers in this file write 1.234,56, so a comma is the decimal separator.");
     return {
@@ -2004,6 +2096,7 @@
         rowCount: table.length,
         columns: table.columns,
         notes,
+        problems,
         encoding: meta.encoding || null,
         delimiter: meta.delimiter || null,
         sheet: meta.sheet || null,
