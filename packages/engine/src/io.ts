@@ -146,25 +146,32 @@ readers.delimited = function (file, opts) {
     escapeChar: quoteChar,
     skipEmptyLines: false,
     chunk: function (results, parser) {
-      var data = results.data;
-      // A file with mixed line endings leaves "\r" on the last value, but only when the parser
-      // took "\n" as the line ending. When the parser took "\r\n", a "\r" at the end of the last
-      // value is part of the value, and to remove it takes a character out of the data.
-      var strayCR = results.meta && results.meta.linebreak === '\n';
-      for (var i = 0; i < data.length; i++) {
-        var row = data[i];
-        if (strayCR) {
-          var lastCell = row[row.length - 1];
-          if (typeof lastCell === 'string' && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
+      // PapaParse catches an error that this function throws, stops, and drops the rows that
+      // follow with no sign. The error must go out through "stopped", as the size limit does.
+      try {
+        var data = results.data;
+        // A file with mixed line endings leaves "\r" on the last value, but only when the parser
+        // took "\n" as the line ending. When the parser took "\r\n", a "\r" at the end of the last
+        // value is part of the value, and to remove it takes a character out of the data.
+        var strayCR = results.meta && results.meta.linebreak === '\n';
+        for (var i = 0; i < data.length; i++) {
+          var row = data[i];
+          if (strayCR) {
+            var lastCell = row[row.length - 1];
+            if (typeof lastCell === 'string' && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
+          }
+          builder.add(row);
         }
-        builder.add(row);
+        var errs = results.errors;
+        for (var k = 0; k < errs.length; k++) {
+          if (errs[k].type === 'Quotes') errors.quotes++;
+          else if (errs[k].type !== 'FieldMismatch' && errs[k].type !== 'Delimiter') errors.other++;
+        }
+        if (builder.cells > DL.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
+      } catch (err) {
+        stopped = err;
+        parser.abort();
       }
-      var errs = results.errors;
-      for (var k = 0; k < errs.length; k++) {
-        if (errs[k].type === 'Quotes') errors.quotes++;
-        else if (errs[k].type !== 'FieldMismatch' && errs[k].type !== 'Delimiter') errors.other++;
-      }
-      if (builder.cells > DL.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
     }
   };
   // Decode the bytes in slices with one streaming decoder, so that multi-byte characters
@@ -189,8 +196,9 @@ readers.delimited = function (file, opts) {
     stream.emit('data', text);
     DL.platform.progress('Reading file', Math.min(99, Math.round(100 * offset / file.size)));
   }
+  // The last rows come in the final flush, and a stop there counts too.
+  if (started && !stopped) stream.emit('end');
   if (stopped) throw stopped;
-  if (started) stream.emit('end');
 
   var table = builder.finish();
   if (errors.quotes) notes.push(DL.pluralize(errors.quotes, 'value') + ' had unbalanced quotes. Check the text delimiter setting if data looks wrong.');

@@ -1644,23 +1644,28 @@
       escapeChar: quoteChar,
       skipEmptyLines: false,
       chunk: function(results, parser) {
-        var data = results.data;
-        var strayCR = results.meta && results.meta.linebreak === "\n";
-        for (var i = 0; i < data.length; i++) {
-          var row = data[i];
-          if (strayCR) {
-            var lastCell = row[row.length - 1];
-            if (typeof lastCell === "string" && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
+        try {
+          var data = results.data;
+          var strayCR = results.meta && results.meta.linebreak === "\n";
+          for (var i = 0; i < data.length; i++) {
+            var row = data[i];
+            if (strayCR) {
+              var lastCell = row[row.length - 1];
+              if (typeof lastCell === "string" && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
+            }
+            builder.add(row);
           }
-          builder.add(row);
-        }
-        var errs = results.errors;
-        for (var k = 0; k < errs.length; k++) {
-          if (errs[k].type === "Quotes") errors.quotes++;
-          else if (errs[k].type !== "FieldMismatch" && errs[k].type !== "Delimiter") errors.other++;
-        }
-        if (builder.cells > DL.maxCells) {
-          stopped = tooLarge(builder.cells * 1.2);
+          var errs = results.errors;
+          for (var k = 0; k < errs.length; k++) {
+            if (errs[k].type === "Quotes") errors.quotes++;
+            else if (errs[k].type !== "FieldMismatch" && errs[k].type !== "Delimiter") errors.other++;
+          }
+          if (builder.cells > DL.maxCells) {
+            stopped = tooLarge(builder.cells * 1.2);
+            parser.abort();
+          }
+        } catch (err) {
+          stopped = err;
           parser.abort();
         }
       }
@@ -1688,8 +1693,8 @@
       stream.emit("data", text);
       DL.platform.progress("Reading file", Math.min(99, Math.round(100 * offset / file.size)));
     }
+    if (started && !stopped) stream.emit("end");
     if (stopped) throw stopped;
-    if (started) stream.emit("end");
     var table = builder.finish();
     if (errors.quotes) notes.push(DL.pluralize(errors.quotes, "value") + " had unbalanced quotes. Check the text delimiter setting if data looks wrong.");
     if (errors.other) notes.push(DL.pluralize(errors.other, "problem") + " found while reading the file.");

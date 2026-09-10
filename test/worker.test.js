@@ -191,6 +191,26 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     assert.deepStrictEqual(r.info.columns, ['a', 'b']);
   });
 
+  // PapaParse catches an error that the chunk function throws, stops, and drops the rows that
+  // follow. The read must stop with that error, and not give a short table with no sign.
+  test('an error inside the reader stops the read', () => {
+    const add = DL.TableBuilder.prototype.add;
+    const breakAt = (bad) => function (row) { if (row[0] === bad) throw new Error('broken row ' + bad); return add.call(this, row); };
+    try {
+      DL.TableBuilder.prototype.add = breakAt('3');
+      let r = send({ type: 'load', file: new FakeFile('a,b\n1,2\n3,4\n5,6\n', 'e.csv'), options: {} });
+      assert.strictEqual(r.type, 'error', JSON.stringify(r));
+      assert.strictEqual(r.message, 'broken row 3');
+      // The last row of a file with no line break at the end comes in the final flush.
+      DL.TableBuilder.prototype.add = breakAt('5');
+      r = send({ type: 'load', file: new FakeFile('a,b\n1,2\n3,4\n5,6', 'e.csv'), options: {} });
+      assert.strictEqual(r.type, 'error', JSON.stringify(r));
+      assert.strictEqual(r.message, 'broken row 5');
+    } finally {
+      DL.TableBuilder.prototype.add = add;
+    }
+  });
+
   await (async () => {
     const lines = ['id,name'];
     for (let i = 0; i < 300; i++) lines.push(i + ',n' + (i % 7));
