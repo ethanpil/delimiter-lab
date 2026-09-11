@@ -19,6 +19,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Runs a saved workflow on a file from the workflow list, and downloads the result. You do not need to build the steps again.
 - Opens a saved workflow and data from a link: `#workflow=<link name>&source=<data in base64>`. See "Open from a link".
 - Reads many files as one Data Source. Put "Many files" at stack, then add files at any time. The columns go by name, and a column that a file does not have is empty for the rows of that file.
+- Takes pasted data: the text of a CSV or TSV file, or cells that you copied from a spreadsheet. Click "Paste data" beside the files of the source. The data becomes a file of the source.
 - Lists the files of the source with the size, the rows and the columns of each. You can change their order, take one out, or remove all of them. The steps stay.
 - Keeps the workspace in the browser. After a reload, or after the power goes off, the steps are there again, and the file too when it is smaller than 100 MB.
 - Applies the steps to many files at once. Drop the files and choose the output format. The result is a zip file.

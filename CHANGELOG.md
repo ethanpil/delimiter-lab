@@ -13,6 +13,7 @@ The numbers below 1.0 are the history of the development before 1.0.
 - Change: a value with bad quotes counts once. Each file of a source has its own note about ragged rows (bc1ead6).
 - Fix: an error inside the reader stops the read with a message. Before, the table ended early with no word (ae6ca8d).
 - Fix: a click on a question while it opens runs that choice once, after the question has opened. Before, a later click or a Cancel ran it again (fca99af, 4f80023).
+- Add: "Paste data" takes the text of a CSV or TSV file, or cells from a spreadsheet. The data becomes a file of the source (2b0a391, 161cf4b).
 
 ## 1.0
 
