@@ -147,6 +147,10 @@
     });
   };
 
+  // A link opens the page only on a web server. The desktop application and a file have no address
+  // that a link can reach.
+  function linksWork() { return /^https?:$/.test(location.protocol); }
+
   /* ---------- Saved workflows ---------- */
   D.workflows = function (opts, actions) {
     // opts: { currentColumns, currentId }, actions: { apply(wf), importFile(file) }
@@ -166,8 +170,7 @@
       runInput.value = '';
       if (files.length && w) m.closeThen(function () { actions.quickRun(w, files); });
     });
-    // A link to a page that is not on a web server (the desktop application, a file) opens nothing.
-    var canLink = /^https?:$/.test(location.protocol);
+    var canLink = linksWork();
     // Copies the address that opens a workflow. The clipboard of the browser needs a secure page, so
     // a page on a plain http server uses the older copy command. The dialog keeps the focus, so the
     // text for that command goes inside the dialog.
@@ -230,7 +233,7 @@
               w.id === opts.currentId ? U.el('span', { class: 'badge text-bg-primary', text: DL.t('wf.openNow') }) : null
             ]),
             U.el('div', { class: 'wf-meta', title: opsText, text: meta }),
-            slug ? U.el('div', { class: 'wf-meta' }, [DL.t('wf.linkName') + ' ', U.el('code', { text: slug })]) : null
+            slug && canLink ? U.el('div', { class: 'wf-meta' }, [DL.t('wf.linkName') + ' ', U.el('code', { text: slug })]) : null
           ]),
           U.el('div', { class: 'btn-group btn-group-sm' }, [
             U.el('button', { type: 'button', class: 'btn btn-primary', title: DL.t('dialog.useWorkflow'), onclick: function () { m.closeThen(function () { actions.apply(w); }); } }, [U.el('i', { class: 'bi bi-play-fill' }), ' ' + DL.t('common.use')]),
@@ -302,7 +305,7 @@
     ]);
     var right = U.el('div', { class: 'col-lg-6' }, [
       U.el('h6', { class: 'mt-3 mt-lg-0', text: DL.t('help.tips') }),
-      list('ul', [DL.t('help.tip1'), DL.t('help.tip2'), DL.t('help.tip3'), DL.t('help.tip4'), DL.t('help.tip5'), DL.t('help.tip6'), DL.t('help.tip7'), DL.t('help.tip8'), DL.t('help.tip9'), DL.t('help.tip10'), DL.t('help.tip11')])
+      list('ul', [DL.t('help.tip1'), DL.t('help.tip2'), DL.t('help.tip3'), DL.t('help.tip4'), DL.t('help.tip5'), DL.t('help.tip6'), DL.t('help.tip7'), DL.t('help.tip8'), DL.t('help.tip9'), DL.t('help.tip10')].concat(linksWork() ? [DL.t('help.tip11')] : []))
     ]);
     function link(href, text) {
       return U.el('a', { href: href, target: '_blank', rel: 'noopener noreferrer', text: text });
