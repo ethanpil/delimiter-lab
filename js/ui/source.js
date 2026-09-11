@@ -17,7 +17,7 @@
   function SourceView(container, store, actions) {
     this.el = container;
     this.store = store;
-    // { openFile, openFiles, addFiles, removeFile, clearFiles, moveFile, reload, loadSample }
+    // { openFile, openFiles, addFiles, removeFile, clearFiles, moveFile, reload, loadSample, paste }
     this.actions = actions;
   }
 
@@ -130,7 +130,7 @@
     return U.el('div', { class: 'source-files' }, [
       U.el('div', { class: 'field-label', text: DL.t('source.files') }),
       this.filesEl,
-      this.store.state.source.files.length ? this.addFilesRow() : null
+      this.addFilesRow()
     ]);
   };
 
@@ -188,9 +188,11 @@
     items.forEach(function (li) { self.filesEl.appendChild(li); });
   };
 
-  // The buttons that add more files and that take every file out of the source.
+  // The buttons that add more files, that paste data as a file, and that take every file out of the
+  // source. With no file, only the paste button is there: the drop zone opens a file.
   SourceView.prototype.addFilesRow = function () {
     var self = this;
+    var has = this.store.state.source.files.length > 0;
     var add = U.el('input', { type: 'file', multiple: true, accept: DL.acceptedExtensions().join(','), hidden: true });
     add.addEventListener('change', function () {
       var picked = Array.prototype.slice.call(add.files);
@@ -198,10 +200,12 @@
       if (picked.length) self.actions.addFiles(picked);
     });
     return U.el('div', { class: 'd-flex align-items-center flex-wrap gap-2 mt-2' }, [
-      U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', onclick: function () { add.click(); } },
-        [U.el('i', { class: 'bi bi-plus-lg me-1' }), DL.t('source.addFiles')]),
-      U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-danger', onclick: function () { self.actions.clearFiles(); } },
-        [U.el('i', { class: 'bi bi-x-lg me-1' }), DL.t('source.removeAll')]),
+      has ? U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', onclick: function () { add.click(); } },
+        [U.el('i', { class: 'bi bi-plus-lg me-1' }), DL.t('source.addFiles')]) : null,
+      U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', title: DL.t('source.pasteTitle'), onclick: function () { self.actions.paste(); } },
+        [U.el('i', { class: 'bi bi-clipboard-plus me-1' }), DL.t('source.paste')]),
+      has ? U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-danger', onclick: function () { self.actions.clearFiles(); } },
+        [U.el('i', { class: 'bi bi-x-lg me-1' }), DL.t('source.removeAll')]) : null,
       add
     ]);
   };

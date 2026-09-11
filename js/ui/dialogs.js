@@ -147,6 +147,33 @@
     });
   };
 
+  /* ---------- Paste data ---------- */
+  // A box for text that the user pastes. onText(text) runs when the text is not empty.
+  // opts.adding says that the source has files, so the text goes into that source.
+  D.paste = function (opts, onText) {
+    var box = U.el('textarea', {
+      class: 'form-control font-monospace', rows: '12', spellcheck: 'false', autofocus: true,
+      placeholder: DL.t('dialog.pastePlaceholder'), 'aria-label': DL.t('dialog.pasteTitle')
+    });
+    var m;
+    var submit = function () {
+      if (!box.value.trim()) { box.classList.add('is-invalid'); box.focus(); return; }
+      var text = box.value;
+      m.closeThen(function () { onText(text); });
+    };
+    box.addEventListener('input', function () { box.classList.remove('is-invalid'); });
+    m = U.modal({
+      title: DL.t('dialog.pasteTitle'),
+      size: 'lg',
+      body: [U.el('p', { class: 'small text-secondary', text: DL.t('dialog.pasteHelp') }), box],
+      footer: [
+        U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: DL.t('common.cancel') }),
+        U.el('button', { type: 'button', class: 'btn btn-primary', onclick: submit },
+          [U.el('i', { class: 'bi bi-clipboard-plus me-1' }), DL.t(opts.adding ? 'dialog.pasteAdd' : 'dialog.pasteOpen')])
+      ]
+    });
+  };
+
   // A link opens the page only on a web server. The desktop application and a file have no address
   // that a link can reach.
   function linksWork() { return /^https?:$/.test(location.protocol); }
