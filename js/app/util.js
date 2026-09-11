@@ -146,14 +146,21 @@
     ]);
     host.appendChild(el);
     var modal = new bootstrap.Modal(el);
-    var afterHidden = [];
+    var afterHidden = null; // the choice that runs when the dialog is gone
+    // Bootstrap does nothing with hide() while the dialog opens. A close in that time waits for the
+    // end of the opening.
+    var opened = false;
+    var closeWhenOpen = false;
+    var close = function () { if (opened) modal.hide(); else closeWhenOpen = true; };
     el.addEventListener('hidden.bs.modal', function () {
       modal.dispose();
       el.remove();
       if (opts.onHidden) opts.onHidden();
-      afterHidden.forEach(function (fn) { fn(); });
+      if (afterHidden) afterHidden();
     });
     el.addEventListener('shown.bs.modal', function () {
+      opened = true;
+      if (closeWhenOpen) { modal.hide(); return; }
       var f = el.querySelector('[autofocus], input:not([type=hidden]), button.btn-primary');
       if (f) f.focus();
       if (opts.onShown) opts.onShown(el);
@@ -170,11 +177,11 @@
     return {
       modal: modal,
       el: el,
-      close: function () { modal.hide(); },
+      close: close,
       // Closes the dialog and runs fn when it is gone, so the next dialog does not open over it.
-      // Bootstrap ignores a close while the dialog still opens, so a person can click two times.
-      // The first choice runs, and only once.
-      closeThen: function (fn) { if (!afterHidden.length) afterHidden.push(fn); modal.hide(); }
+      // The first choice runs, and only once. The dialog closes after that choice, so a later click
+      // comes too late.
+      closeThen: function (fn) { if (afterHidden) return; afterHidden = fn; close(); }
     };
   };
 
