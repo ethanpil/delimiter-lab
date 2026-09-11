@@ -18,6 +18,8 @@ The numbers below 1.0 are the history of the development before 1.0.
 - Change: the step Custom JavaScript is now Custom JavaScript Column. Saved workflows do not change (38e7a36).
 - Add: Find & Replace has a list "More to find and replace". Its pairs run in order after the first pair, with the same options. Saved steps do not change (a9f6eb9).
 - Change: in Find & Replace, "Replace with" and the list go under "Find" in one column, and the options go down in the column beside them (58e748e, f94bd8e).
+- Change: Find & Replace shows all pairs as one list, with the headings Find and Replace with. The button of the first row empties it. Saved steps do not change (f77b5cc, dd97863).
+- Add: "Use regular expression" has a "How to use" link to a tutorial with the parts of a pattern and examples (f77b5cc, dd97863).
 
 ## 1.0
 
