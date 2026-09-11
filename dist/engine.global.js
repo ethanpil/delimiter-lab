@@ -1714,16 +1714,23 @@
     var builder = new DL.TableBuilder(opts);
     var errors = { quotes: 0, delimiter: 0, other: 0 };
     var stopped = null;
-    var pending = "";
+    var pieces = [];
     var base = 0;
     var lineBase = 0;
     var prevCode = 0;
+    var ending = false;
     var ragged = [];
     var quoted = [];
     var unclosed = "";
+    var head = function(to) {
+      var s = pieces[0] || "";
+      for (var i = 1; s.length < to && i < pieces.length; i++) s += pieces[i];
+      return s.length > to ? s.slice(0, to) : s;
+    };
     var placeOf = function(at) {
-      var from = Math.max(pending.lastIndexOf("\n", at - 1), pending.lastIndexOf("\r", at - 1)) + 1;
-      return "line " + (lineBase + 1 + countBreaks(pending, at, prevCode)) + ", character " + (DL.charCount(pending.slice(from, at)) + 1);
+      var s = head(at);
+      var from = Math.max(s.lastIndexOf("\n"), s.lastIndexOf("\r")) + 1;
+      return "line " + (lineBase + 1 + countBreaks(s, at, prevCode)) + ", character " + (DL.charCount(s.slice(from)) + 1);
     };
     var config = {
       quoteChar,
@@ -1743,16 +1750,19 @@
             if (builder.add(row) && ragged.length + wanted.length < PLACES) wanted.push(i);
           }
           var cut = results.meta.cursor - base;
-          var breaks = cut ? countBreaks(pending, cut, prevCode) : 0;
-          if (wanted.length) {
-            var lastAt = wanted[wanted.length - 1];
-            var many = lastAt > 0 && breaks !== data.length;
-            var before2 = many ? rowLines(data, breaks) : null;
-            var starts = many && !before2 ? rowStarts(pending.slice(0, cut), lastAt, { delimiter: config.delimiter, quoteChar, newline: results.meta.linebreak }) : null;
-            for (var w = 0; w < wanted.length; w++) {
-              var at = wanted[w];
-              ragged.push(lineBase + 1 + (before2 ? before2[at] : starts ? countBreaks(pending, starts[at], prevCode) : at));
-            }
+          var lastAt = wanted.length ? wanted[wanted.length - 1] : 0;
+          var held = "";
+          if (cut && (!ending || lastAt > 0)) {
+            if (pieces.length > 1) pieces = [pieces.join("")];
+            held = pieces[0];
+          }
+          var breaks = held ? countBreaks(held, cut, prevCode) : 0;
+          var many = lastAt > 0 && breaks !== data.length;
+          var before2 = many ? rowLines(data, breaks) : null;
+          var starts = many && !before2 ? rowStarts(held.slice(0, cut), lastAt, { delimiter: config.delimiter, quoteChar, newline: results.meta.linebreak }) : null;
+          for (var w = 0; w < wanted.length; w++) {
+            var at = wanted[w];
+            ragged.push(lineBase + 1 + (before2 ? before2[at] : starts ? countBreaks(held, starts[at], prevCode) : at));
           }
           var found = [];
           var errs = results.errors;
@@ -1777,8 +1787,10 @@
             } else if (++errors.quotes <= PLACES) quoted.push(placeOf(found[f].q));
           }
           lineBase += breaks;
-          if (cut) prevCode = pending.charCodeAt(cut - 1);
-          pending = pending.slice(cut);
+          if (held) {
+            prevCode = held.charCodeAt(cut - 1);
+            pieces = [held.slice(cut)];
+          }
           base = results.meta.cursor;
           if (builder.cells > DL.maxCells) {
             stopped = tooLarge(builder.cells * 1.2);
@@ -1810,11 +1822,14 @@
         config.delimiter = delimiter;
         DL.platform.papa.parse(stream, config);
       }
-      pending += text;
+      pieces.push(text);
       stream.emit("data", text);
       DL.platform.progress("Reading file", Math.min(99, Math.round(100 * offset / file.size)));
     }
-    if (started && !stopped) stream.emit("end");
+    if (started && !stopped) {
+      ending = true;
+      stream.emit("end");
+    }
     if (stopped) throw stopped;
     var table = builder.finish();
     var problems = [];

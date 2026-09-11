@@ -215,19 +215,28 @@ readers.delimited = function (file, opts) {
   var builder = new DL.TableBuilder(opts);
   var errors = { quotes: 0, delimiter: 0, other: 0 };
   var stopped = null;
-  // The text that PapaParse holds: "pending" starts at "base" in the whole text, and "lineBase"
-  // lines end before it. The places of the faults come from it.
-  var pending = '';
+  // The text that PapaParse holds starts at "base" in the whole text, and "lineBase" lines end
+  // before it. It stays in the pieces that came. They become one text only in a chunk where rows
+  // end, because a row that does not end grows at every chunk.
+  var pieces = [];
   var base = 0;
   var lineBase = 0;
-  var prevCode = 0;   // the code of the character before "pending"
-  var ragged = [];    // the lines of the first ragged rows
-  var quoted = [];    // the places of the first values with unbalanced quotes
-  var unclosed = '';  // the place of a value with no end quote
-  // "line 3, character 7" for a place in "pending". The character counts an emoji as one.
+  var prevCode = 0;     // the code of the character before that text
+  var ending = false;   // true in the final flush, after which no line is counted
+  var ragged = [];      // the lines of the first ragged rows
+  var quoted = [];      // the places of the first values with unbalanced quotes
+  var unclosed = '';    // the place of a value with no end quote
+  // The first "to" characters of that text.
+  var head = function (to) {
+    var s = pieces[0] || '';
+    for (var i = 1; s.length < to && i < pieces.length; i++) s += pieces[i];
+    return s.length > to ? s.slice(0, to) : s;
+  };
+  // "line 3, character 7" for a place in that text. The character counts an emoji as one.
   var placeOf = function (at) {
-    var from = Math.max(pending.lastIndexOf('\n', at - 1), pending.lastIndexOf('\r', at - 1)) + 1;
-    return 'line ' + (lineBase + 1 + countBreaks(pending, at, prevCode)) + ', character ' + (DL.charCount(pending.slice(from, at)) + 1);
+    var s = head(at);
+    var from = Math.max(s.lastIndexOf('\n'), s.lastIndexOf('\r')) + 1;
+    return 'line ' + (lineBase + 1 + countBreaks(s, at, prevCode)) + ', character ' + (DL.charCount(s.slice(from)) + 1);
   };
   var config: any = {
     quoteChar: quoteChar,
@@ -251,21 +260,25 @@ readers.delimited = function (file, opts) {
           }
           if (builder.add(row) && ragged.length + wanted.length < PLACES) wanted.push(i);
         }
-        var cut = results.meta.cursor - base; // the rows of this chunk end here in "pending"
-        // When no row ended, "pending" only grows, and a count of it is work for nothing.
-        var breaks = cut ? countBreaks(pending, cut, prevCode) : 0;
-        if (wanted.length) {
-          // Each row takes one line when no value holds a line end. Else the line ends in the values
-          // give the lines, and a parse finds the rows when they do not add up. Row 0 needs neither.
-          var lastAt = wanted[wanted.length - 1];
-          var many = lastAt > 0 && breaks !== data.length;
-          var before = many ? rowLines(data, breaks) : null;
-          var starts = many && !before
-            ? rowStarts(pending.slice(0, cut), lastAt, { delimiter: config.delimiter, quoteChar: quoteChar, newline: results.meta.linebreak }) : null;
-          for (var w = 0; w < wanted.length; w++) {
-            var at = wanted[w];
-            ragged.push(lineBase + 1 + (before ? before[at] : starts ? countBreaks(pending, starts[at], prevCode) : at));
-          }
+        var cut = results.meta.cursor - base; // the rows of this chunk end here in that text
+        var lastAt = wanted.length ? wanted[wanted.length - 1] : 0;
+        // The text is needed only when rows ended. In the final flush, only a ragged row after the
+        // first one needs it.
+        var held = '';
+        if (cut && (!ending || lastAt > 0)) {
+          if (pieces.length > 1) pieces = [pieces.join('')];
+          held = pieces[0];
+        }
+        var breaks = held ? countBreaks(held, cut, prevCode) : 0;
+        // Each row takes one line when no value holds a line end. Else the line ends in the values
+        // give the lines, and a parse finds the rows when they do not add up. Row 0 needs neither.
+        var many = lastAt > 0 && breaks !== data.length;
+        var before = many ? rowLines(data, breaks) : null;
+        var starts = many && !before
+          ? rowStarts(held.slice(0, cut), lastAt, { delimiter: config.delimiter, quoteChar: quoteChar, newline: results.meta.linebreak }) : null;
+        for (var w = 0; w < wanted.length; w++) {
+          var at = wanted[w];
+          ragged.push(lineBase + 1 + (before ? before[at] : starts ? countBreaks(held, starts[at], prevCode) : at));
         }
         // PapaParse can give one fault twice, and one value as both kinds. "No end quote" says
         // more, so it wins. A fault in the row that waits for the next chunk comes again with it.
@@ -288,8 +301,7 @@ readers.delimited = function (file, opts) {
           else if (++errors.quotes <= PLACES) quoted.push(placeOf(found[f].q));
         }
         lineBase += breaks;
-        if (cut) prevCode = pending.charCodeAt(cut - 1);
-        pending = pending.slice(cut);
+        if (held) { prevCode = held.charCodeAt(cut - 1); pieces = [held.slice(cut)]; }
         base = results.meta.cursor;
         if (builder.cells > DL.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
       } catch (err) {
@@ -317,12 +329,12 @@ readers.delimited = function (file, opts) {
       config.delimiter = delimiter;
       DL.platform.papa.parse(stream, config);
     }
-    pending += text; // PapaParse puts the same text after the row that waits
+    pieces.push(text); // PapaParse puts the same text after the row that waits
     stream.emit('data', text);
     DL.platform.progress('Reading file', Math.min(99, Math.round(100 * offset / file.size)));
   }
   // The last rows come in the final flush, and a stop there counts too.
-  if (started && !stopped) stream.emit('end');
+  if (started && !stopped) { ending = true; stream.emit('end'); }
   if (stopped) throw stopped;
 
   var table = builder.finish();
