@@ -614,7 +614,12 @@ test('workflowSlug gives the link name of a workflow', () => {
   assert.strictEqual(DL.workflowSlug('***'), '');
   assert.strictEqual(DL.workflowSlug(''), '');
   assert.strictEqual(DL.workflowSlug(null), '');
-  ['clean-contacts-2024', 'straße-sohne', '数据-清理'].forEach((s) => assert.strictEqual(DL.workflowSlug(s), s, 'a link name gives itself'));
+  // Only Latin letters lose their accents. "й" and "и" are two letters, so two names stay two names.
+  assert.strictEqual(DL.workflowSlug('Йога отчёт'), 'йога-отчёт');
+  assert.strictEqual(DL.workflowSlug('Ελληνικά ά'), 'ελληνικά-ά');
+  // One form for the "fi" ligature and for full-width letters.
+  assert.strictEqual(DL.workflowSlug('ﬁle ＡＢＣ'), 'file-abc');
+  ['clean-contacts-2024', 'straße-sohne', '数据-清理', 'йога-отчёт'].forEach((s) => assert.strictEqual(DL.workflowSlug(s), s, 'a link name gives itself'));
 });
 
 test('decodeBase64 reads base64 and base64url, and says where a fault is', () => {

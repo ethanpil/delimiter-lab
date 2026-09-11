@@ -20,12 +20,10 @@ DL.uid = function () {
 // accents. "Clean Contacts (2024)" gives "clean-contacts-2024". An empty result means that the
 // workflow has no link name. The name is not stored: it comes from the name each time.
 DL.workflowSlug = function (name) {
-  // Made here and not written as a literal, so that the engine still loads in a browser without
-  // Unicode property escapes. Only the link name needs them. \p{M} keeps the vowel signs of
-  // scripts such as Devanagari.
-  var notWord = new RegExp('[^\\p{L}\\p{M}\\p{N}]+', 'gu');
-  return String(name == null ? '' : name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').normalize('NFC')
-    .toLowerCase().replace(notWord, '-').replace(/^-+|-+$/g, '');
+  // NFKC gives one form to letters such as the "fi" ligature and full-width letters. \p{M} keeps
+  // the vowel signs of scripts such as Devanagari.
+  return DL.stripLatinAccents(String(name == null ? '' : name).normalize('NFKC'))
+    .toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
 };
 
 // A step with settings of the right shape. keepId keeps the name that the step came with.

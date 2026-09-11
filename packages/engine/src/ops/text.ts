@@ -513,7 +513,7 @@ var CLEAN_STEPS = [
   { value: 'control', label: 'Remove hidden control characters', fn: function (s) { return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u200B\u200C\u2060-\u2064\uFEFF]/g, ''); } },
   { value: 'quotes', label: 'Make curly quotes and dashes plain', fn: function (s) { return s.replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...'); } },
   // Only Latin letters lose their marks. Other scripts, such as Cyrillic, keep their letters.
-  { value: 'accents', label: 'Remove accents from Latin letters (é → e)', fn: function (s) { return s.normalize('NFD').replace(/([A-Za-z])[\u0300-\u036f]+/g, '$1').normalize('NFC'); } },
+  { value: 'accents', label: 'Remove accents from Latin letters (é → e)', fn: function (s) { return DL.stripLatinAccents(s); } },
   { value: 'unicode', label: 'Normalize Unicode (same letter, one code)', fn: function (s) { return s.normalize('NFC'); } },
   { value: 'spaces', label: 'Replace odd spaces and line breaks with one space, trim', fn: function (s) { return s.replace(/\s+/g, ' ').trim(); } }
 ];

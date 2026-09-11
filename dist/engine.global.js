@@ -725,6 +725,9 @@
     }
     return true;
   };
+  DL.stripLatinAccents = function(s) {
+    return s.normalize("NFD").replace(/([A-Za-z])[\u0300-\u036f]+/g, "$1").normalize("NFC");
+  };
   DL.charCount = function(s) {
     var n = 0;
     for (var i = 0; i < s.length; i++) {
@@ -2163,8 +2166,7 @@
     return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   };
   DL.workflowSlug = function(name) {
-    var notWord = new RegExp("[^\\p{L}\\p{M}\\p{N}]+", "gu");
-    return String(name == null ? "" : name).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").normalize("NFC").toLowerCase().replace(notWord, "-").replace(/^-+|-+$/g, "");
+    return DL.stripLatinAccents(String(name == null ? "" : name).normalize("NFKC")).toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
   };
   DL.normalizeStep = function(s, keepId) {
     return {
@@ -2802,7 +2804,7 @@
     } },
     // Only Latin letters lose their marks. Other scripts, such as Cyrillic, keep their letters.
     { value: "accents", label: "Remove accents from Latin letters (\xE9 \u2192 e)", fn: function(s) {
-      return s.normalize("NFD").replace(/([A-Za-z])[\u0300-\u036f]+/g, "$1").normalize("NFC");
+      return DL.stripLatinAccents(s);
     } },
     { value: "unicode", label: "Normalize Unicode (same letter, one code)", fn: function(s) {
       return s.normalize("NFC");

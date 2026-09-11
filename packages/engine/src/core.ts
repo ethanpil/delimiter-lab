@@ -799,6 +799,11 @@ DL.isBlank = function (v) {
 };
 
 // Gives the number of characters (code points) in a text. Emoji and other astral characters count as one.
+// Takes the accents off Latin letters: "é" gives "e". Letters of other scripts keep their marks.
+DL.stripLatinAccents = function (s) {
+  return s.normalize('NFD').replace(/([A-Za-z])[\u0300-\u036f]+/g, '$1').normalize('NFC');
+};
+
 DL.charCount = function (s) {
   var n = 0;
   for (var i = 0; i < s.length; i++) {
