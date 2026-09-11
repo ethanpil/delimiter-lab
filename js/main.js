@@ -168,16 +168,21 @@
     });
   }
 
-  // Asks for pasted data and makes a file of it. With no file open, that file opens as the source.
-  // Else it goes into the source, as "Add more files" does. A name that the source has already gets
-  // a number, so each pasted file has its own name in the list.
+  // Asks for pasted data and makes a file of it. When the source holds delimited files, the file goes
+  // into the source, as "Add more files" does. Else it opens as the source, as a dropped file does,
+  // because a workbook source cannot take a text file. A name that the source has already gets a
+  // number, so each pasted file has its own name in the list.
   function pasteData() {
-    DL.dialogs.paste({ adding: store.state.source.files.length > 0 }, function (text) {
+    var adding = function () {
+      var first = store.state.source.files[0];
+      return !!first && DL.inputFormatFor(first.name).id === 'delimited';
+    };
+    DL.dialogs.paste({ adding: adding() }, function (text) {
       var names = store.state.source.files.map(function (f) { return f.name; });
       var name = 'pasted-data.csv';
       for (var n = 2; names.indexOf(name) >= 0; n++) name = 'pasted-data-' + n + '.csv';
       var file = new File([text], name, { type: 'text/csv' });
-      if (names.length) addSourceFiles([file]);
+      if (adding()) addSourceFiles([file]);
       else openFile(file);
     });
   }
