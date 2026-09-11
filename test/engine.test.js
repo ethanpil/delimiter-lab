@@ -368,7 +368,18 @@ test('a saved Find & Replace step with no list works as before', () => {
   // A bad pattern in the list names its row.
   const bad = DL.validateParams('replace', { columns: [], find: 'a', regex: true, more: [{ from: 'b', to: '' }, { from: '(c', to: '' }] }, ['A']);
   assert.strictEqual(bad.length, 1);
-  assert.ok(bad[0].indexOf('More to find and replace, row 2: ') === 0, bad[0]);
+  assert.ok(bad[0].indexOf('Find and replace, row 3: ') === 0, bad[0]);
+});
+test('Find & Replace runs the list when Find is empty', () => {
+  const t = T(['A'], [['cat'], ['dog']]);
+  const p = { columns: [], find: '', replace: '', more: [{ from: 'dog', to: 'fox' }] };
+  assert.deepStrictEqual(DL.validateParams('replace', p, ['A']), []);
+  assert.deepStrictEqual(rowsOf(run('replace', p, t).table), [['cat'], ['fox']]);
+  assert.strictEqual(DL.getOp('replace').summary(DL.cleanParams('replace', p)), '"dog" → "fox"');
+  assert.deepStrictEqual(DL.validateParams('replace', { columns: [], find: '', more: [{ from: '', to: 'x' }] }, ['A']), ['Add a text to find.']);
+  // An empty row of the list does not count in the number of a row.
+  const bad = DL.validateParams('replace', { columns: [], find: 'a', regex: true, more: [{ from: '', to: '' }, { from: '(c', to: '' }] }, ['A']);
+  assert.deepStrictEqual(bad.map((m) => m.slice(0, 25)), ['Find and replace, row 2: ']);
 });
 
 /* ---- verify ---- */

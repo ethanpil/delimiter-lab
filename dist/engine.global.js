@@ -2540,9 +2540,9 @@
     });
     return out;
   }
-  function morePairs(p) {
-    return (p.more || []).filter(function(m) {
-      return m.from !== "";
+  function replacePairs(p) {
+    return [{ from: p.find, to: p.replace }].concat(p.more || []).filter(function(m) {
+      return !!m.from;
     });
   }
   function replacer(findText, replaceText, p) {
@@ -2574,44 +2574,54 @@
     name: "Find & Replace",
     category: "Text",
     icon: "bi-search",
-    description: 'Replace text in one or more columns. Leave "Replace with" empty to remove the text. Add more pairs to replace more texts in one step.',
+    description: 'Replace text in one or more columns. Add a row for each text to replace. Leave "Replace with" empty to remove the text.',
     keywords: "substitute remove clear text regex many list",
     params: [
       { key: "columns", label: "Columns", type: "columns", required: false, help: "Leave empty to search all columns." },
-      { key: "find", label: "Find", type: "text", default: "", required: true },
-      // stack: the field goes under the field before it, in the same column of the form.
-      { key: "replace", label: "Replace with", type: "text", default: "", stack: true, help: "With regular expressions you can use $1, $2 for captured groups." },
+      // The form has no boxes for find and replace (inForm: false). They are the first row of the list
+      // "more" (firstPair), so saved workflows keep the keys that they have always had.
+      { key: "find", label: "Find", type: "text", default: "", required: false, inForm: false },
+      { key: "replace", label: "Replace with", type: "text", default: "", inForm: false },
       {
         key: "more",
-        label: "More to find and replace",
+        label: "Find and replace",
         type: "mapping",
         required: false,
-        stack: true,
-        help: "Each row finds one more text and replaces it. The rows run in order, after the pair above, and each row reads what the rows before it wrote. The options below apply to every row."
+        wide: false,
+        firstPair: ["find", "replace"],
+        headers: ["Find", "Replace with"],
+        help: 'Each row finds a text and replaces it. The rows run in order from the top, and each row reads what the rows before it wrote. Leave "Replace with" empty to remove the text. The options apply to every row.'
       },
       { key: "matchCase", label: "Match case", type: "boolean", default: false },
+      // stack: the field goes under the field before it, in the same column of the form.
       { key: "wholeWord", label: "Whole words only", type: "boolean", default: false, stack: true },
       { key: "wholeCell", label: "Whole cell must match", type: "boolean", default: false, stack: true },
-      { key: "regex", label: "Use regular expression", type: "boolean", default: false, stack: true }
+      { key: "regex", label: "Use regular expression", type: "boolean", default: false, stack: true, tutorial: "regex" }
     ],
     summary: function(p) {
-      var more = morePairs(p).length;
-      return '"' + p.find + '" \u2192 "' + p.replace + '"' + (more ? " and " + DL.pluralize(more, "more pair") : "");
+      var pairs = replacePairs(p);
+      if (!pairs.length) return "";
+      var more = pairs.length - 1;
+      return '"' + pairs[0].from + '" \u2192 "' + pairs[0].to + '"' + (more ? " and " + DL.pluralize(more, "more pair") : "");
     },
     validate: function(p) {
+      if (!replacePairs(p).length) return ["Add a text to find."];
       if (!p.regex) return [];
-      var problems = DL.regexProblem(p.find) ? [DL.regexProblem(p.find)] : [];
-      (p.more || []).forEach(function(m, i) {
-        var problem = m.from !== "" && DL.regexProblem(m.from);
-        if (problem) problems.push("More to find and replace, row " + (i + 1) + ": " + problem);
+      var problems = [];
+      var n = 0;
+      [{ from: p.find, to: p.replace }].concat(p.more || []).forEach(function(m, i) {
+        if (i > 0 && !m.from && !m.to) return;
+        n++;
+        var problem = m.from && DL.regexProblem(m.from);
+        if (problem) problems.push("Find and replace, row " + n + ": " + problem);
       });
       return problems;
     },
     apply: function(table, p) {
       var idxs = DL.colIndexesOrAll(table, p.columns);
-      var steps = [replacer(p.find, p.replace, p)].concat(morePairs(p).map(function(m) {
+      var steps = replacePairs(p).map(function(m) {
         return replacer(m.from, m.to, p);
-      }));
+      });
       var stats = {};
       var out = DL.mapColumns(table, idxs, function(v, ctx) {
         var r = v;
