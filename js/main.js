@@ -24,7 +24,8 @@
     // A read that follows a change of the settings says nothing about the file itself. Without
     // this, a read that fails on a new delimiter takes the file out of the workspace.
     reload: function () { restoredLoad = false; loadSource(); },
-    loadSample: function () { openFile(DL.SourceView.sampleFile()); }
+    loadSample: function () { openFile(DL.SourceView.sampleFile()); },
+    paste: pasteData
   });
   var configView = new DL.ConfigView($('config'), store, {
     changeOp: function (id) {
@@ -164,6 +165,20 @@
     }, function () {
       store.setSourceFiles([]);
       afterSourceFilesChanged();
+    });
+  }
+
+  // Asks for pasted data and makes a file of it. With no file open, that file opens as the source.
+  // Else it goes into the source, as "Add more files" does. A name that the source has already gets
+  // a number, so each pasted file has its own name in the list.
+  function pasteData() {
+    DL.dialogs.paste({ adding: store.state.source.files.length > 0 }, function (text) {
+      var names = store.state.source.files.map(function (f) { return f.name; });
+      var name = 'pasted-data.csv';
+      for (var n = 2; names.indexOf(name) >= 0; n++) name = 'pasted-data-' + n + '.csv';
+      var file = new File([text], name, { type: 'text/csv' });
+      if (names.length) addSourceFiles([file]);
+      else openFile(file);
     });
   }
 
