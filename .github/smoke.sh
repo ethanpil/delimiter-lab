@@ -70,9 +70,20 @@ cat > "$work/code.json" <<'JSON'
   "steps": [ { "id": "s1", "opId": "javascript", "params": { "code": "return { name: 1 };", "output": "name" }, "enabled": true } ] }
 JSON
 if "${dl[@]}" "$work/code.json" "$work/in.csv" -o "$work/code.csv" --quiet 2>/dev/null; then
-  echo "::error::a workflow with a Custom JavaScript step must not run without --allow-code"; exit 1
+  echo "::error::a workflow with a Custom JavaScript Column step must not run without --allow-code"; exit 1
 fi
 "${dl[@]}" "$work/code.json" "$work/in.csv" -o "$work/code.csv" --allow-code --quiet
 test -s "$work/code.csv" || { echo "::error::--allow-code did not run the workflow"; exit 1; }
+
+# A row edit is code too.
+cat > "$work/rowcode.json" <<'JSON'
+{ "format": "delimiter-lab-workflow", "version": 1, "name": "Row code", "columns": ["name"], "sourceOptions": null,
+  "steps": [ { "id": "s1", "opId": "javascriptRow", "params": { "code": "row.name = 'x';" }, "enabled": true } ] }
+JSON
+if "${dl[@]}" "$work/rowcode.json" "$work/in.csv" -o "$work/rowcode.csv" --quiet 2>/dev/null; then
+  echo "::error::a workflow with a JavaScript Row Edit step must not run without --allow-code"; exit 1
+fi
+"${dl[@]}" "$work/rowcode.json" "$work/in.csv" -o "$work/rowcode.csv" --allow-code --quiet
+test -s "$work/rowcode.csv" || { echo "::error::--allow-code did not run the row edit"; exit 1; }
 
 echo "the binary reads, runs and writes"

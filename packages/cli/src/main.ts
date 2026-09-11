@@ -35,8 +35,9 @@ const USAGE = [
   '                        format comes from the name of the output file, or csv.',
   '      --dry-run         Run every step but write nothing. Says what the result would hold.',
   '      --validate        Check the workflow and the files, then stop. Runs no step.',
-  '      --allow-code      Let a Custom JavaScript step run. Such a step is code from the',
-  '                        workflow file, and it runs with the rights of this command.',
+  '      --allow-code      Let a step with code run (Custom JavaScript Column or JavaScript',
+  '                        Row Edit). Such a step is code from the workflow file, and it',
+  '                        runs with the rights of this command.',
   '  -q, --quiet           Say nothing on standard error except errors.',
   '  -h, --help            Show this text.',
   '  -v, --version         Show the version.',
@@ -138,14 +139,14 @@ export async function main(argv: string[]): Promise<void> {
     return fail('The workflow file "' + a.workflow + '" is not right: ' + e.message);
   }
 
-  // A workflow file travels from person to person. A Custom JavaScript step in one is code, and
-  // it runs here with every right this command has: the files of the machine and the network. The
-  // page asks before it runs such a step; a terminal has nobody to ask, so it refuses and names
-  // the answer that allows it. --validate runs no step, so it needs no answer.
-  const code = (workflow.steps || []).filter(function (st: any) { return st && st.opId === 'javascript' && st.enabled !== false; });
+  // A workflow file travels from person to person. A step with code in one (DL.stepRunsCode) runs
+  // here with every right this command has: the files of the machine and the network. The page
+  // asks before it runs such a step; a terminal has nobody to ask, so it refuses and names the
+  // answer that allows it. --validate runs no step, so it needs no answer.
+  const code = (workflow.steps || []).filter(function (st: any) { return DL.stepRunsCode(st); });
   if (code.length && !a.allowCode && !a.validate) {
-    return fail('This workflow holds ' + DL.pluralize(code.length, 'Custom JavaScript step') +
-      ', which is code from the file "' + a.workflow + '". Read it first. To run it: --allow-code');
+    return fail('This workflow holds ' + DL.pluralize(code.length, 'step') + ' with code from the file "' +
+      a.workflow + '". Read the code first. To run it: --allow-code');
   }
 
   // ---- the files ----
