@@ -391,7 +391,7 @@
       }
     });
     var hint = U.el('div', { class: 'form-text', text: DL.t('fields.pasteTip') });
-    return wrap(param, U.el('div', {}, [editor.box, editor.add, hint]), true);
+    return wrap(param, U.el('div', {}, [editor.box, editor.add, hint]), !param.stack);
   };
 
   // Shared renderer for lists of rules (filter conditions and verify rules).
@@ -463,6 +463,7 @@
   F.renderAll = function (params, values, ctx, onChange) {
     var grid = U.el('div', { class: 'field-grid' });
     var els = {};
+    var cell = null;
     params.forEach(function (p) {
       var el = F.render(p, values[p.key], {
         columns: ctx.columns,
@@ -470,7 +471,18 @@
         onChange: function (value, opts) { onChange(p.key, value, opts); }
       });
       els[p.key] = el;
-      grid.appendChild(el);
+      // A field with stack: true goes under the field before it, in one cell of the grid.
+      if (p.stack && grid.lastChild) {
+        if (!cell) {
+          cell = U.el('div', { class: 'field-stack' });
+          grid.insertBefore(cell, grid.lastChild);
+          cell.appendChild(grid.lastChild);
+        }
+        cell.appendChild(el);
+      } else {
+        cell = null;
+        grid.appendChild(el);
+      }
     });
     return { grid: grid, els: els };
   };
