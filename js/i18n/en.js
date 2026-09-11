@@ -105,7 +105,7 @@
     'msg.quickRunNote': 'Each file goes through "{name}" ({steps}). The steps on the screen do not change.',
     'msg.quickRunNoSteps': 'This workflow has no steps.',
     'msg.applyTitle': 'Use this workflow?',
-    'msg.codeWarning': 'This workflow has a Custom JavaScript step. Its code runs on your data in this browser. Use it only when you trust the source of the workflow.',
+    'msg.codeWarning': 'This workflow has a step with code (Custom JavaScript Column or JavaScript Row Edit). Its code runs on your data in this browser. Use it only when you trust the source of the workflow.',
     'msg.stepsDropped': 'Your saved steps had {n} of an operation this version does not have. Those steps were removed.',
     'msg.workflowImported': 'Workflow "{name}" imported and saved.',
     'msg.fileNotRead': 'The file could not be read.',

@@ -790,7 +790,7 @@
     // A workflow with code gets its own warning first. The question about saving must not hide it.
     // A step that is turned off does not run, so it does not need the question. The dl command
     // asks the same way.
-    if ((wf.steps || []).some(function (s) { return s && s.opId === 'javascript' && s.enabled !== false; })) {
+    if ((wf.steps || []).some(function (s) { return DL.stepRunsCode(s); })) {
       U.confirm({ title: DL.t('msg.applyTitle'), message: DL.t('msg.codeWarning'), yes: DL.t('common.use'), danger: true }, ask, onCancel);
       return;
     }
