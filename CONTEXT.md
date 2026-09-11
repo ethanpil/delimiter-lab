@@ -20,7 +20,7 @@ The version in `js/manifest.js` is 1.0. `CHANGELOG.md` lists the changes with th
 | Debug handle | Open the page with `?debug`. `window.DLApp` then gives `store`, `engine`, `grid`, `openFile(file)` and `openFiles(files)`. |
 | Build the engine | `npm install`, then `npm run build`. It writes `dist/engine.global.js` (the page and the worker), `dist/engine.mjs` and `dist/dl.mjs` (the `dl` command). Only the first is in the repository. |
 | Run every test | `npm test`. It builds first, then runs the four sets below. |
-| Run the engine tests | `node test/engine.test.js` (86 tests) |
+| Run the engine tests | `node test/engine.test.js` (89 tests) |
 | Run the worker tests | `node test/worker.test.js` (28 tests; loads the real worker in Node with a fake File and the real PapaParse and SheetJS) |
 | Run the tests of the build | `node test/bundle.test.js` (9 tests). The page loads the manifest and then the build; these hold that pair to its promises. One test checks that every file that the page names is on disk with the same letters. One test loads saved workflows of 1.0 through `js/app/workflows.js` and checks that nothing writes over them. |
 | Run the parity tests | `node test/parity.test.js` (11 tests; one workflow through the worker of the page and through the `dl` command; the bytes must agree) |
@@ -98,6 +98,7 @@ These functions in `packages/engine/src/core.ts` hold the product decisions abou
 An operation is registered with `DL.registerOp(def)`. The contract is documented above `DL.registerOp` in `packages/engine/src/core.ts`:
 
 - `id`, `name`, `category` (Text, Dates, Rows, Columns, Quality, Advanced, Other), `icon` (a Bootstrap icon class), `description`, `keywords`, `params`.
+- `runsCode: true` for an operation that runs code from the workflow. `DL.stepRunsCode(step)` reads it. The page asks before it opens such a workflow, and the dl command refuses it without `--allow-code`.
 - `summary(params)` gives the short text on the step card.
 - `validate(params, cols)` gives extra problems. `cols` is `null` when the input columns are not known yet; guard with `if (!cols) return []`.
 - `outputColumns(cols, params)` predicts the columns. Return `null` when the step must run before the columns are known (Split without a maximum, Pivot). The store then shows "columns known after the earlier steps run" in later steps.
@@ -110,11 +111,11 @@ Param types (`DL.registerParamType`) are `text`, `code`, `number` (with `integer
 
 Helpers you should use instead of new code: `DL.newColumnName(columns, wanted, fallback)`, `DL.isBlank`, `DL.charCount` (code points, so an emoji counts as one), `DL.startOfDay`, `DL.localDate` (years 0 to 99 without the 1900 shift), `DL.unescapeText`, `DL.toNumber`, `DL.toDate`, `DL.formatDate`, `DL.formatFixed`, `DL.formatNumber`, `DL.pluralize`, `DL.keyGetters`, `DL.buildRegex` (whole-word boundaries only where the pattern starts or ends with a word character), `DL.regexProblem` (user regexes use the `u` flag everywhere; `\-` inside a class is invalid with it, and that is consistent across the operations), `DL.noteText`.
 
-The 27 operations and their notable decisions:
+The 28 operations and their notable decisions:
 
 - Text: `case`, `concat`, `split` (a regex separator runs on the whole text, so `^` keeps its meaning; empty matches end the split), `splitName` (the whole part before a comma is the last name; particles such as "van der" go into the last name; a title with one name gives a last name), `replace` (a replacement counts only when the cell changed; `$` is literal without regex mode), `substitute`, `padTrim` (pads by characters, a whole emoji as pad character, and an empty value stays empty), `extract` (empty matches do not count; the group number is checked against the pattern), `textClean` (one ordered list `CLEAN_STEPS` holds the options and the order; the html step removes a tag only without attributes or with `=` attributes, so "a<b and c>d" stays; the accents step strips marks from Latin letters only; the control step keeps U+200D so emoji sequences survive; the spaces step collapses all white space including line breaks).
 - Rows: `dedupe`, `filter` (date rules parse each distinct value once), `sort` (auto type from `detectType`), `outliers` (no numbers gives an empty result with a note), `unique`, `pivot` (at most 1,000 key values; the empty key is named `(empty)` first so a real "(empty)" value cannot take it; white-space keys are `(blank)`; the total column exists also for an empty input; non-numeric values in numeric aggregates are counted in a note; aggregates sum, count, avg, min, max, first, list), `unpivot` (cell limit).
-- Columns: `rename`, `reorder`, `remove` (counts only present columns for "cannot remove every column"), `addColumn`, `fill` (above, below, fixed value, average, most common; the note says "Changed N cells"), `calculate`, `numFormat`, `javascript` (runs `new Function` in the worker; see the pitfalls).
+- Columns: `rename`, `reorder`, `remove` (counts only present columns for "cannot remove every column"), `addColumn`, `fill` (above, below, fixed value, average, most common; the note says "Changed N cells"), `calculate`, `numFormat`, `javascript` (Custom JavaScript Column: runs `new Function` in the worker; see the pitfalls), `javascriptRow` (JavaScript Row Edit: the same function gets the whole row. It changes existing columns only, and a name that no column has gives a note. `return false` removes the row through `DL.selectRows`, and an object sets values by name. A row with an error stays as it was).
 - Dates: `dateFormat`, `dateMath` (add with amount limited to ±1,000,000 and results limited to the years 0 to 9999; differences symmetric with month ends counting as full months; parts year, month, month name, day, weekday, ISO week, quarter, day of year, hour, minute; the second date can be a column, today or a fixed date).
 - Quality: `verify` (the unique rule ignores case and spaces at the ends, and its label says so; length rules count characters; per-rule notes carry `rows` for the click-to-see-rows feature).
 
@@ -206,8 +207,8 @@ These came from measured failures. Each one changed the design.
 - **Notes can be objects.** Use `DL.noteText(note)` where a note is displayed; only notes with `rows` become links.
 - **Result status `'warning'` is not an error.** The step ran; the notes explain. `'invalid'`, `'blocked'` and `'error'` have no table, and `'skipped'` passes the input through.
 - **The step hash includes `JSON.stringify(params)`.** `cleanParams` gives a stable key order. Do not put functions or Dates in params.
-- **Workflow files run code.** A `javascript` step in an imported file runs `new Function` in the worker with access to the worker global (`state.source`, `fetch`). The import asks the user first; there is no sandbox and no time limit.
-- **The JavaScript step API.** User code gets a `Row` object with the cell values; a return value becomes text through `DL.cellText`; the first error per step is reported in a note. A thrown non-Error value or a BigInt return still fails the step (open item).
+- **Workflow files run code.** A `javascript` or `javascriptRow` step in an imported file runs `new Function` in the worker with access to the worker global (`state.source`, `fetch`). The import asks the user first (`DL.stepRunsCode`); there is no sandbox and no time limit. A new operation that runs code must say `runsCode: true`, or it gets past both checks.
+- **The JavaScript step API.** User code gets a `Row` object with the cell values; a return value becomes text through `jsCell` (`DL.cellText`, or JSON for an object); the first error per step is reported in a note. A thrown non-Error value or a BigInt return still fails the step (open item).
 - **Excel dates.** SheetJS gives Date objects; time-only cells have the date 30 or 31 December 1899 and `DL.cellText` writes them as a time; the serial 45321 is 30 January 2024 in local time.
 - **Zoned dates and two-digit years.** See section 5.
 - **Spreadsheet options.** The `sheet` option is special-cased in five places (defaults, clean, new file, restore, apply workflow). A batch reads every workbook with the same sheet name and falls back to the first sheet with a note.
@@ -235,7 +236,7 @@ These came from measured failures. Each one changed the design.
 
 These are known and documented, not fixed:
 
-- A sandbox and a time limit for the Custom JavaScript step (a disposable worker or a sandboxed iframe with a strict content security policy).
+- A sandbox and a time limit for the steps with code (a disposable worker or a sandboxed iframe with a strict content security policy).
 - Cooperative cancel checks inside long row loops, so Stop never needs a worker restart, and a Stop that does not turn the step off.
 - Plural words and status labels stay English in translated interfaces; a plural form in `DL.t` would close it.
 - A size pre-check for very large workbooks; SheetJS reads the whole file.

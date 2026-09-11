@@ -14,6 +14,8 @@ The numbers below 1.0 are the history of the development before 1.0.
 - Fix: an error inside the reader stops the read with a message. Before, the table ended early with no word (ae6ca8d).
 - Fix: a click on a question while it opens runs that choice once, after the question has opened. Before, a later click or a Cancel ran it again (fca99af, 4f80023).
 - Add: "Paste data" takes the text of a CSV or TSV file, or cells from a spreadsheet. The data becomes a file of the source (2b0a391, 161cf4b, 76284aa).
+- Add: JavaScript Row Edit runs code for each row. The code can change values or remove the row, and the step saves with the workflow (38e7a36, db21c56, c15f7d7).
+- Change: the step Custom JavaScript is now Custom JavaScript Column. Saved workflows do not change (38e7a36).
 
 ## 1.0
 

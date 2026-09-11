@@ -39,7 +39,29 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 | Rows | Remove Duplicates, Filter Rows, Sort Rows, Find Outliers, Unique Values, Pivot, Unpivot |
 | Columns | Rename Columns, Reorder Columns, Remove Columns, Add Column, Fill Empty Values, Calculate, Format Numbers |
 | Quality | Verify Values |
-| Advanced | Custom JavaScript |
+| Advanced | Custom JavaScript Column, JavaScript Row Edit |
+
+### JavaScript Row Edit
+
+This step runs your code once for each row. Use it for the rows that need a special change, for
+example one wrong value in one file. The code finds those rows, so you can save the step with the
+workflow and use it again on the next file.
+
+- `row` holds the values of the row, by column name. Set `row["Column name"]` to change a value.
+- `return false` removes the row.
+- Return an object to set values by column name, for example `return { Status: "closed" };`.
+- Return nothing to keep the row with its changes.
+- `index` is the row number, from 0. `num(x)` and `date(x)` turn text into a number or a date.
+
+```js
+if (row["Order ID"] === "10342") row["Amount"] = "125.00"; // fix one wrong value
+if (row["Email"] === "") return false;                      // remove the rows with no email
+```
+
+The step changes only the columns that are there. A name that no column has gives a note. To add a
+column, use Custom JavaScript Column. A row that gives an error stays as it was, and a note says so.
+The code runs on your data in the browser, so the page asks before it opens a workflow with such a
+step.
 
 ## Run
 
@@ -162,7 +184,7 @@ dl workflow.json input.csv --validate        # check the workflow against the fi
 | `--format <id>` | `csv`, `tsv`, `delimited`, `xlsx` or `json`. Without it the format comes from the name of the output file, or `csv`. |
 | `--dry-run` | Run every step and write nothing. Says what the result would hold. |
 | `--validate` | Check the settings of each step against the columns that the files really have, then stop. |
-| `--allow-code` | Let a Custom JavaScript step run. Such a step is code from the workflow file, and it runs with the rights of this command. Without this the command refuses such a workflow. |
+| `--allow-code` | Let a step with code run: Custom JavaScript Column or JavaScript Row Edit. Such a step is code from the workflow file, and it runs with the rights of this command. Without this the command refuses such a workflow. |
 | `-q`, `--quiet` | Say nothing except errors. |
 | `-h`, `--help` | Show the options. |
 | `-v`, `--version` | Show the version. |
