@@ -97,10 +97,11 @@
   W.findBySlug = function (text) {
     var slug = DL.workflowSlug(text);
     if (!slug) return null;
+    // The time of the last use or of the last save, whichever is later.
+    var when = function (w) { return Math.max(w.lastUsedAt || 0, w.updatedAt || 0); };
     var found = null;
     W.list().forEach(function (w) {
-      if (DL.workflowSlug(w.name) !== slug) return;
-      if (!found || (w.lastUsedAt || w.updatedAt || 0) > (found.lastUsedAt || found.updatedAt || 0)) found = w;
+      if (DL.workflowSlug(w.name) === slug && (!found || when(w) > when(found))) found = w;
     });
     return found;
   };
