@@ -17,6 +17,7 @@ The numbers below 1.0 are the history of the development before 1.0.
 - Add: JavaScript Row Edit runs code for each row. The code can change values or remove the row, and the step saves with the workflow (38e7a36, db21c56, c15f7d7).
 - Change: the step Custom JavaScript is now Custom JavaScript Column. Saved workflows do not change (38e7a36).
 - Add: Find & Replace has a list "More to find and replace". Its pairs run in order after the first pair, with the same options. Saved steps do not change (a9f6eb9).
+- Change: in Find & Replace, "Replace with" and the list go under "Find" in one column, and the options go down in the column beside them (58e748e, f94bd8e).
 
 ## 1.0
 
