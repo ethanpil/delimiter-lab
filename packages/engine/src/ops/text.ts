@@ -280,57 +280,80 @@ function namePartColumns(base, p) {
 }
 
 /* ---------- Replace ---------- */
+// The rows of "More to find and replace" that find something. A saved step from before the list
+// has no list, and then only the first pair runs.
+function morePairs(p) {
+  return (p.more || []).filter(function (m) { return m.from !== ''; });
+}
+
+// A function that finds one text in a value and replaces it, with the options of the step.
+function replacer(findText, replaceText, p) {
+  var find = p.regex ? findText : unescapeText(findText);
+  if (p.wholeCell) {
+    var test = p.regex ? new RegExp('^(?:' + find + ')$', p.matchCase ? 'u' : 'iu') : null;
+    var target = p.matchCase ? find : find.toLowerCase();
+    var plain = unescapeText(replaceText);
+    return function (v) {
+      var hit = test ? test.test(v) : (p.matchCase ? v === target : v.toLowerCase() === target);
+      if (!hit) return v;
+      return test ? v.replace(test, plain) : plain;
+    };
+  }
+  var replacement = p.regex ? unescapeText(replaceText) : unescapeText(replaceText).replace(/\$/g, '$$$$');
+  var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
+  var quick = !p.regex && !p.wholeWord && p.matchCase ? find : null; // indexOf is a quick first check
+  return function (v) {
+    if (!v) return v;
+    if (quick !== null && v.indexOf(quick) < 0) return v;
+    re.lastIndex = 0;
+    if (!re.test(v)) return v;
+    re.lastIndex = 0;
+    return v.replace(re, replacement);
+  };
+}
+
 DL.registerOp({
   id: 'replace',
   name: 'Find & Replace',
   category: 'Text',
   icon: 'bi-search',
-  description: 'Replace text in one or more columns. Leave "Replace with" empty to remove the text.',
-  keywords: 'substitute remove clear text regex',
+  description: 'Replace text in one or more columns. Leave "Replace with" empty to remove the text. Add more pairs to replace more texts in one step.',
+  keywords: 'substitute remove clear text regex many list',
   params: [
     { key: 'columns', label: 'Columns', type: 'columns', required: false, help: 'Leave empty to search all columns.' },
     { key: 'find', label: 'Find', type: 'text', default: '', required: true },
     { key: 'replace', label: 'Replace with', type: 'text', default: '', help: 'With regular expressions you can use $1, $2 for captured groups.' },
+    { key: 'more', label: 'More to find and replace', type: 'mapping', required: false,
+      help: 'Each row finds one more text and replaces it. The rows run in order, after the pair above, and each row reads what the rows before it wrote. The options below apply to every row.' },
     { key: 'matchCase', label: 'Match case', type: 'boolean', default: false },
     { key: 'wholeWord', label: 'Whole words only', type: 'boolean', default: false },
     { key: 'wholeCell', label: 'Whole cell must match', type: 'boolean', default: false },
     { key: 'regex', label: 'Use regular expression', type: 'boolean', default: false }
   ],
-  summary: function (p) { return '"' + p.find + '" → "' + p.replace + '"'; },
+  summary: function (p) {
+    var more = morePairs(p).length;
+    return '"' + p.find + '" → "' + p.replace + '"' + (more ? ' and ' + DL.pluralize(more, 'more pair') : '');
+  },
   validate: function (p) {
-    return p.regex && DL.regexProblem(p.find) ? [DL.regexProblem(p.find)] : [];
+    if (!p.regex) return [];
+    var problems = DL.regexProblem(p.find) ? [DL.regexProblem(p.find)] : [];
+    (p.more || []).forEach(function (m, i) {
+      var problem = m.from !== '' && DL.regexProblem(m.from);
+      if (problem) problems.push('More to find and replace, row ' + (i + 1) + ': ' + problem);
+    });
+    return problems;
   },
   apply: function (table, p) {
     var idxs = DL.colIndexesOrAll(table, p.columns);
-    var find = p.regex ? p.find : unescapeText(p.find);
-    var replacement = p.regex ? unescapeText(p.replace) : unescapeText(p.replace).replace(/\$/g, '$$$$');
+    // The pairs run in order, and each one reads what the pair before it wrote. A cell counts once.
+    var steps = [replacer(p.find, p.replace, p)].concat(morePairs(p).map(function (m) { return replacer(m.from, m.to, p); }));
     var stats: any = {};
-    var out;
-    if (p.wholeCell) {
-      var test = p.regex ? new RegExp('^(?:' + find + ')$', p.matchCase ? 'u' : 'iu') : null;
-      var target = p.matchCase ? find : find.toLowerCase();
-      var plain = unescapeText(p.replace);
-      out = DL.mapColumns(table, idxs, function (v, ctx) {
-        var hit = test ? test.test(v) : (p.matchCase ? v === target : v.toLowerCase() === target);
-        if (!hit) return v;
-        var r = test ? v.replace(test, replacement) : plain;
-        if (r !== v) ctx.tag();
-        return r;
-      }, stats);
-    } else {
-      var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
-      var quick = !p.regex && !p.wholeWord && p.matchCase ? find : null; // indexOf is a quick first check
-      out = DL.mapColumns(table, idxs, function (v, ctx) {
-        if (!v) return v;
-        if (quick !== null && v.indexOf(quick) < 0) return v;
-        re.lastIndex = 0;
-        if (!re.test(v)) return v;
-        re.lastIndex = 0;
-        var r = v.replace(re, replacement);
-        if (r !== v) ctx.tag();
-        return r;
-      }, stats);
-    }
+    var out = DL.mapColumns(table, idxs, function (v, ctx) {
+      var r = v;
+      for (var i = 0; i < steps.length; i++) r = steps[i](r);
+      if (r !== v) ctx.tag();
+      return r;
+    }, stats);
     return { table: out, notes: ['Changed ' + DL.pluralize(stats.tagged, 'cell') + '.'] };
   }
 });

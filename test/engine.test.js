@@ -346,6 +346,31 @@ test('stepRunsCode finds the steps that run code', () => {
   assert.strictEqual(DL.stepRunsCode(null), false);
 });
 
+test('replace op runs more pairs in order', () => {
+  const t = T(['A', 'B'], [['cat and dog', 'cat'], ['dog', 'x'], ['bird', 'y']]);
+  // Each pair reads what the pair before it wrote. A cell counts once.
+  const r = run('replace', { columns: ['A'], find: 'cat', replace: 'dog', more: [{ from: 'dog', to: 'fox' }, { from: '', to: 'x' }] }, t);
+  assert.deepStrictEqual(rowsOf(r.table), [['fox and fox', 'cat'], ['fox', 'x'], ['bird', 'y']]);
+  assert.deepStrictEqual(r.notes, ['Changed 2 cells.']);
+  // The options apply to every pair.
+  const states = T(['S'], [['CA'], ['ny'], ['TX'], ['CAL']]);
+  const r2 = run('replace', { columns: ['S'], find: 'CA', replace: 'California', more: [{ from: 'NY', to: 'New York' }], wholeCell: true }, states);
+  assert.deepStrictEqual(rowsOf(r2.table).map((x) => x[0]), ['California', 'New York', 'TX', 'CAL']);
+  assert.strictEqual(DL.getOp('replace').summary(DL.cleanParams('replace', { find: 'cat', replace: 'dog', more: [{ from: 'a', to: 'b' }, { from: 'c', to: 'd' }] })),
+    '"cat" → "dog" and 2 more pairs');
+});
+test('a saved Find & Replace step with no list works as before', () => {
+  const saved = { columns: ['Last'], find: 'smith', replace: 'S.' };
+  const p = DL.cleanParams('replace', saved);
+  assert.deepStrictEqual(DL.validateParams('replace', p, ['First', 'Last']), [], 'an empty list is not a problem');
+  assert.deepStrictEqual(rowsOf(run('replace', saved, people).table).map((x) => x[1]), ['S.', 'doe', 'Lee', 'S.']);
+  assert.strictEqual(DL.getOp('replace').summary(p), '"smith" → "S."');
+  // A bad pattern in the list names its row.
+  const bad = DL.validateParams('replace', { columns: [], find: 'a', regex: true, more: [{ from: 'b', to: '' }, { from: '(c', to: '' }] }, ['A']);
+  assert.strictEqual(bad.length, 1);
+  assert.ok(bad[0].indexOf('More to find and replace, row 2: ') === 0, bad[0]);
+});
+
 /* ---- verify ---- */
 test('verify op', () => {
   const r = run('verify', { rules: [{ column: 'Email', op: 'isEmail', allowEmpty: false }, { column: 'Age', op: 'gt', value: '18', allowEmpty: true }, { column: 'First', op: 'unique' }], action: 'flag' }, people);

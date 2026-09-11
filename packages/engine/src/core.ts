@@ -1231,7 +1231,9 @@ DL.registerParamType('mapping', {
       .map(function (m) { return { from: textOf(m.from), to: textOf(m.to) }; });
     return out.length ? out : this.empty();
   },
-  validate: function (v) {
+  // A list that the operation marks required: false can be empty.
+  validate: function (v, p) {
+    if (p && p.required === false) return [];
     return v.some(function (m) { return m.from !== ''; }) ? [] : ['Add at least one value to the lookup list.'];
   }
 });
