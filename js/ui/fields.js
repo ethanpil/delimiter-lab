@@ -195,6 +195,15 @@
 
   renderers.boolean = function (param, value, ctx) {
     var check = U.check(param.label, value, function (on) { ctx.onChange(on); }, { switch: true, help: param.help, class: ctx.compact ? '' : 'mt-4' });
+    // tutorial: the name of a dialog in DL.dialogs.tutorials that tells how to use the option. The link
+    // is not in the label, so a click on it does not change the switch.
+    if (param.tutorial) {
+      check.el.appendChild(U.el('a', { href: '#', class: 'ms-2 small', text: DL.t('fields.howToUse'), onclick: function (e) {
+        e.preventDefault();
+        var open = DL.dialogs.tutorials && DL.dialogs.tutorials[param.tutorial];
+        if (open) open();
+      } }));
+    }
     return U.el('div', { class: 'field', dataset: { key: param.key } }, [check.el]);
   };
 
@@ -350,10 +359,25 @@
 
   renderers.mapping = function (param, value, ctx) {
     var blank = DL.paramTypes.mapping.blank;
-    var editor = listEditor(param, value, ctx, {
+    // firstPair: [key of a find field, key of a replace field]. Those two fields are the first row of
+    // the list, and a change writes them and the list in one change. Empty rows of the list do not show.
+    var pair = param.firstPair;
+    var listCtx = ctx;
+    if (pair) {
+      var first = { from: ctx.values[pair[0]] || '', to: ctx.values[pair[1]] || '' };
+      value = [first].concat((value || []).filter(function (r) { return r.from !== '' || r.to !== ''; }));
+      listCtx = Object.assign({}, ctx, { onChange: function (rows, opts) {
+        var patch = {};
+        patch[pair[0]] = rows[0].from;
+        patch[pair[1]] = rows[0].to;
+        patch[param.key] = rows.slice(1);
+        ctx.onPatch(patch, opts);
+      } });
+    }
+    var editor = listEditor(param, value, listCtx, {
       addLabel: DL.t('fields.addValue'),
       focusSelector: 'input',
-      renderRow: function (r, api) {
+      renderRow: function (r, api, i) {
         var from = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.from, spellcheck: 'false', placeholder: DL.t('fields.findValue') });
         var to = U.el('input', { type: 'text', class: 'form-control form-control-sm', value: r.to, spellcheck: 'false', placeholder: DL.t('fields.replaceWith') });
         from.addEventListener('input', function () { r.from = from.value; api.emit(true); });
@@ -387,11 +411,25 @@
         };
         from.addEventListener('paste', function (e) { paste(e, false); });
         to.addEventListener('paste', function (e) { paste(e, true); });
-        return U.el('div', { class: 'rule-row' }, [from, U.el('i', { class: 'bi bi-arrow-right text-secondary', style: 'flex:0 0 auto' }), to, removeButton(DL.t('fields.remove'), api.remove)]);
+        // The first row holds the fields of firstPair, so its button empties the row and keeps it.
+        var remove = pair && i === 0
+          ? removeButton(DL.t('fields.clear'), function () { api.edit(function (rows) { rows[0] = blank(); }); })
+          : removeButton(DL.t('fields.remove'), api.remove);
+        return U.el('div', { class: 'rule-row pair-row' }, [from, U.el('i', { class: 'bi bi-arrow-right text-secondary', style: 'flex:0 0 auto' }), to, remove]);
       }
     });
     var hint = U.el('div', { class: 'form-text', text: DL.t('fields.pasteTip') });
-    return wrap(param, U.el('div', {}, [editor.box, editor.add, hint]), !param.stack);
+    var control = U.el('div', {}, [editor.box, editor.add, hint]);
+    if (!param.headers) return wrap(param, control, param.wide !== false && !param.stack);
+    // Headings over the two boxes, in place of the label. The hidden arrow and button keep them in
+    // line with the boxes.
+    var head = U.el('div', { class: 'rows-editor' }, [U.el('div', { class: 'rule-row pair-row pair-head' }, [
+      U.el('span', { class: 'field-label pair-label' }, [param.headers[0]].concat(param.help ? [U.helpIcon(param.help)] : [])),
+      U.el('i', { class: 'bi bi-arrow-right invisible', style: 'flex:0 0 auto' }),
+      U.el('span', { class: 'field-label pair-label', text: param.headers[1] }),
+      U.el('span', { class: 'btn btn-link btn-sm btn-remove invisible', 'aria-hidden': 'true' }, [U.el('i', { class: 'bi bi-x-lg' })])
+    ])]);
+    return U.el('div', { class: 'field' + (param.wide !== false && !param.stack ? ' field-wide' : ''), dataset: { key: param.key } }, [head, control]);
   };
 
   // Shared renderer for lists of rules (filter conditions and verify rules).
@@ -465,10 +503,15 @@
     var els = {};
     var cell = null;
     params.forEach(function (p) {
+      // A field with inForm: false has no box of its own. Another field shows it (see firstPair).
+      if (p.inForm === false) return;
       var el = F.render(p, values[p.key], {
         columns: ctx.columns,
         compact: ctx.compact,
-        onChange: function (value, opts) { onChange(p.key, value, opts); }
+        values: values,
+        onChange: function (value, opts) { onChange(p.key, value, opts); },
+        // Changes more than one field in one change: onChange gets an object of keys and values.
+        onPatch: function (patch, opts) { onChange(patch, undefined, opts); }
       });
       els[p.key] = el;
       // A field with stack: true goes under the field before it, in one cell of the grid.

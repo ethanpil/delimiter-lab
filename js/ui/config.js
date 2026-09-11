@@ -56,8 +56,9 @@
     }
 
     var rendered = DL.fields.renderAll(op.params, step.params, { columns: columns }, function (key, value, opts) {
+      // key is the key of a field, or an object of keys and values from onPatch.
       var patch = {};
-      patch[key] = value;
+      if (typeof key === 'object') patch = key; else patch[key] = value;
       self.store.updateParams(id, patch, opts);
     });
     this.fieldEls = rendered.els;

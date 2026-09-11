@@ -358,4 +358,65 @@
     ]);
     U.modal({ title: DL.t('dialog.help'), body: body, size: 'xl', scrollable: true });
   };
+
+  // Tutorials that an option of a step can open (the tutorial of a field).
+  D.tutorials = {
+    regex: function () {
+      function code(text) { return U.el('code', { text: text, style: 'white-space:pre' }); }
+      function table(head, rows) {
+        var parts = head ? [U.el('thead', {}, [U.el('tr', {}, head.map(function (h) { return U.el('th', { text: h }); }))])] : [];
+        parts.push(U.el('tbody', {}, rows.map(function (r) {
+          return U.el('tr', {}, r.map(function (c) { return U.el('td', {}, [c]); }));
+        })));
+        return U.el('div', { class: 'table-responsive' }, [U.el('table', { class: 'table table-sm mb-0' }, parts)]);
+      }
+      var pieces = table(null, [
+        [code('.'), DL.t('regex.anyChar')],
+        [code('\\d'), DL.t('regex.digit')],
+        [code('\\s'), DL.t('regex.space')],
+        [code('\\w'), DL.t('regex.word')],
+        [code('[abc]'), DL.t('regex.oneOf')],
+        [code('[^abc]'), DL.t('regex.noneOf')],
+        [code('[0-9]'), DL.t('regex.range')],
+        [code('*'), DL.t('regex.zeroOrMore')],
+        [code('+'), DL.t('regex.oneOrMore')],
+        [code('?'), DL.t('regex.optional')],
+        [code('{2,4}'), DL.t('regex.count')],
+        [code('^'), DL.t('regex.start')],
+        [code('$'), DL.t('regex.end')],
+        [code('a|b'), DL.t('regex.or')],
+        [code('( )'), DL.t('regex.group')],
+        [code('\\.'), DL.t('regex.escape')]
+      ]);
+      var replacing = table(null, [
+        [code('$1 $2'), DL.t('regex.captured')],
+        [code('$&'), DL.t('regex.whole')],
+        [code('$$'), DL.t('regex.dollar')],
+        [code('\\t \\n'), DL.t('regex.tabLine')]
+      ]);
+      var examples = table([DL.t('regex.colWhat'), DL.t('regex.colFind'), DL.t('regex.colReplace'), DL.t('regex.colBefore'), DL.t('regex.colAfter')], [
+        [DL.t('regex.ex1'), code('\\s+'), code(' '), code('a    b'), code('a b')],
+        [DL.t('regex.ex2'), code('^(\\w+), (\\w+)$'), code('$2 $1'), code('Smith, John'), code('John Smith')],
+        [DL.t('regex.ex3'), code('[^0-9]'), code(''), code('(555) 123-4567'), code('5551234567')],
+        [DL.t('regex.ex4'), code('^(\\d{3})(\\d{3})(\\d{4})$'), code('($1) $2-$3'), code('5551234567'), code('(555) 123-4567')],
+        [DL.t('regex.ex5'), code('^0+'), code(''), code('007'), code('7')],
+        [DL.t('regex.ex6'), code('colou?r'), code('color'), code('colour'), code('color')],
+        [DL.t('regex.ex7'), code('(\\d{2})/(\\d{2})/(\\d{4})'), code('$3-$2-$1'), code('31/01/2024'), code('2024-01-31')]
+      ]);
+      var notes = U.el('ul', { class: 'mb-0 ps-3' }, ['regex.note1', 'regex.note2', 'regex.note3', 'regex.note4'].map(function (k) { return U.el('li', { text: DL.t(k) }); }));
+      var body = U.el('div', {}, [
+        U.el('p', { text: DL.t('regex.intro') }),
+        U.el('div', { class: 'row g-4' }, [
+          U.el('div', { class: 'col-lg-6' }, [U.el('h6', { text: DL.t('regex.piecesTitle') }), pieces]),
+          U.el('div', { class: 'col-lg-6' }, [
+            U.el('h6', { text: DL.t('regex.replaceTitle') }), replacing,
+            U.el('h6', { class: 'mt-4', text: DL.t('regex.notesTitle') }), notes
+          ])
+        ]),
+        U.el('h6', { class: 'mt-4', text: DL.t('regex.examplesTitle') }),
+        examples
+      ]);
+      U.modal({ title: DL.t('dialog.regexHelp'), body: body, size: 'xl', scrollable: true });
+    }
+  };
 })(typeof self !== 'undefined' ? self : this);

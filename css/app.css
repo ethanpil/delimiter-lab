@@ -175,9 +175,11 @@ body {
 }
 .field-wide { grid-column: 1 / -1; }
 .field-stack { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-/* In one column of the form, a row of a list stays on one line. */
-.field-stack .rows-editor .rule-row { flex-wrap: nowrap; }
-.field-stack .rows-editor .rule-row > input { flex: 1 1 0; min-width: 0; }
+/* A row of a list of pairs stays on one line, and its headings line up with its boxes. */
+.rows-editor .pair-row { flex-wrap: nowrap; }
+.rows-editor .pair-row > input, .rows-editor .pair-row > .pair-label { flex: 1 1 0; min-width: 0; }
+.pair-head { margin-bottom: 4px; }
+.pair-head .pair-label { margin-bottom: 0; }
 /* Only the first switch of a column needs the space that puts it level with a text box. */
 .field-stack > .field + .field > .form-check.mt-4 { margin-top: 0 !important; }
 .field-label { font-weight: 500; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
