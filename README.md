@@ -8,7 +8,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 
 - Reads CSV, TSV, text files with any separator, and Excel workbooks (with sheet selection).
 - Detects the encoding and the column separator automatically. You can change both.
-- Says where a file has faults: the line and the character of a value with bad quotes, and the lines of the rows with a different number of values than the header.
+- Says where a file has faults. A note gives the line and the character of a value with bad quotes. It also gives the lines of rows with more or fewer values than the header.
 - Reads the numbers of a file by the separator that file uses. A file that writes 1.234,56 gives 1000 for 1.000, and a file that writes 1,234.56 gives 1. The reader says when it finds a comma file.
 - Builds a chain of steps. Each step reads the output of the step before it.
 - Shows a preview of each step. You can download the result of any step.
@@ -64,8 +64,10 @@ A link can open the page with a saved workflow and with data. Put the keys after
 address:
 
 ```
-https://ethanpil.github.io/delimiter-lab/#workflow=clean-contacts&source=bmFtZSxlbWFpbApBZGEgTG92ZWxhY2UsQURBQEVYQU1QTEUuQ09NCg==
+https://ethanpil.github.io/delimiter-lab/#workflow=clean-contacts&source=RnVsbCBOYW1lLEVtYWlsCkFkYSBMb3ZlbGFjZSxBREFARVhBTVBMRS5DT00K
 ```
+
+This example opens the workflow of "Workflow files" below, with one row of data.
 
 - `workflow` is the link name of a saved workflow. The page makes the link name from the name of
   the workflow. It uses small letters and digits, with one hyphen between words, and Latin letters
@@ -78,16 +80,18 @@ A link can hold one of the two keys, or both. The page does these steps:
 
 1. When the workspace holds steps or a file, the page asks the two questions of the New button.
    When you stop, nothing changes.
-2. The page opens the workflow. When no saved workflow has the link name, the page says so, and it
-   asks if you want to start a new workflow with that name. Save the new workflow after you add a
-   step. The link then opens it.
+2. The page opens the workflow. When no saved workflow has the link name, the page says so. It asks
+   if you want to start a new workflow with that name. Save the new workflow after you add a step.
+   The link then opens it.
 3. The page reads the data as the Source Data, with the reader settings of the workflow.
 4. When the data has faults, a dialog gives the place of each fault: the line, and for a bad quote
    the character. The page uses the data that it can read. The notes under Source Data keep the
    same list.
 
-Then the page removes the two keys from the address, so a reload does not open the link again.
-When the data holds nothing that the page can read, the page does not clear the workspace.
+The page removes the two keys from the address when it reads the link, before the first question.
+So a reload does not open the link again, also after you stop. A link that you open while a dialog
+is on the screen waits until the dialog closes. When the data holds nothing that the page can read,
+the page does not clear the workspace.
 
 When two workflows have the same link name, the link opens the workflow that you used or saved
 last. A link name comes from the name, so after you rename a workflow, its old link does not open
