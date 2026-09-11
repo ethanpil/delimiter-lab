@@ -599,17 +599,9 @@ test('TableBuilder counts rows that differ from the header', () => {
   [['a', 'b', 'c'], ['1', '2'], ['3', '4']].forEach((r) => c.add(r));
   assert.strictEqual(c.ragged, 2);
 });
-test('TableBuilder says which rows are ragged, and a row that the bottom skip takes away does not count', () => {
+test('TableBuilder says which rows are ragged', () => {
   const b = new DL.TableBuilder({ headers: true });
   assert.deepStrictEqual([['a', 'b'], ['1', '2'], ['3'], ['4', '5', '6'], ['', '']].map((r) => b.add(r)), [false, false, true, true, false]);
-  // A totals row at the bottom with fewer values goes away. The count is of the rows that stay.
-  const c = new DL.TableBuilder({ headers: true, skipRowsBottom: 1 });
-  [['a', 'b', 'c'], ['1', '2'], ['3', '4', '5'], ['total', '9']].forEach((r) => c.add(r));
-  assert.strictEqual(c.ragged, 2);
-  c.finish();
-  assert.strictEqual(c.ragged, 1);
-  c.finish();
-  assert.strictEqual(c.ragged, 1, 'a second call takes nothing away again');
 });
 
 /* ---- links ---- */

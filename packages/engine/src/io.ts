@@ -160,31 +160,44 @@ function checkSize(file, decoder, delimiter, quoteChar) {
   if (projected > DL.maxCells * 1.3) throw tooLarge(projected);
 }
 
-// Counts the line ends in text from "from" to "to". A line ends at "\n", at "\r\n" (one end) or
-// at a lone "\r", as an editor counts lines. A "\r" just before "to" looks at the next character.
-function countBreaks(text, from, to) {
+// Counts the line ends in text before "to", as an editor counts them. Each "\r" is a line end, and
+// each "\n" that does not come just after a "\r" is one. prev is the code of the character before
+// the text. The rule looks back, because the character after a chunk is not there yet.
+function countBreaks(text, to, prev) {
+  var s = to < text.length ? text.slice(0, to) : text;
   var n = 0;
-  for (var i = text.indexOf('\n', from); i >= 0 && i < to; i = text.indexOf('\n', i + 1)) n++;
-  for (var j = text.indexOf('\r', from); j >= 0 && j < to; j = text.indexOf('\r', j + 1)) {
-    if (text.charCodeAt(j + 1) !== 10) n++;
-  }
+  for (var i = s.indexOf('\r'); i >= 0; i = s.indexOf('\r', i + 1)) n++;
+  for (var j = s.indexOf('\n'); j >= 0; j = s.indexOf('\n', j + 1)) if ((j ? s.charCodeAt(j - 1) : prev) !== 13) n++;
   return n;
 }
 
-// The place where each row of text starts, up to row "last". Only a parse knows it: a value in
-// quotes can hold line ends, and with "\r\n" PapaParse drops a lone "\n" after a closing quote.
+// The line ends before each row of a chunk, from the line ends inside its values. A row ends with
+// one line end. It gives null when the sum is not the count of the text, for example when
+// PapaParse dropped a "\n" after a closing quote.
+function rowLines(data, breaks) {
+  var before = [0];
+  var total = 0;
+  for (var i = 0; i < data.length; i++) {
+    for (var c = 0; c < data[i].length; c++) {
+      var v = data[i][c];
+      if (typeof v === 'string' && (v.indexOf('\n') >= 0 || v.indexOf('\r') >= 0)) total += countBreaks(v, v.length, 0);
+    }
+    before.push(++total);
+  }
+  return total === breaks ? before : null;
+}
+
+// The place where each row of text starts, up to row "last". This parse is slow, so it runs only
+// when rowLines() fails. PapaParse removes a byte order mark at the start of a string. The stream
+// kept it, so the places move by one character then.
 function rowStarts(text, last, cfg) {
+  var shift = text.charCodeAt(0) === 0xFEFF ? 1 : 0;
   var starts = [0];
   DL.platform.papa.parse(text, {
     delimiter: cfg.delimiter, quoteChar: cfg.quoteChar, escapeChar: cfg.quoteChar, newline: cfg.newline, skipEmptyLines: false,
-    step: function (r, parser) { starts.push(r.meta.cursor); if (starts.length > last) parser.abort(); }
+    step: function (r, parser) { starts.push(r.meta.cursor + shift); if (starts.length > last) parser.abort(); }
   });
   return starts;
-}
-
-// "8", "8 and 12", "8, 12 and 20".
-function andList(items) {
-  return items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
 }
 
 // The number of places that a note names. The note counts the rest.
@@ -207,14 +220,14 @@ readers.delimited = function (file, opts) {
   var pending = '';
   var base = 0;
   var lineBase = 0;
-  var ragged = [];    // { row, line } of the first ragged rows
+  var prevCode = 0;   // the code of the character before "pending"
+  var ragged = [];    // the lines of the first ragged rows
   var quoted = [];    // the places of the first values with unbalanced quotes
   var unclosed = '';  // the place of a value with no end quote
-  var nextQuote = 0;  // a fault before this place in the whole text is counted already
   // "line 3, character 7" for a place in "pending". The character counts an emoji as one.
   var placeOf = function (at) {
     var from = Math.max(pending.lastIndexOf('\n', at - 1), pending.lastIndexOf('\r', at - 1)) + 1;
-    return 'line ' + (lineBase + 1 + countBreaks(pending, 0, at)) + ', character ' + (DL.charCount(pending.slice(from, at)) + 1);
+    return 'line ' + (lineBase + 1 + countBreaks(pending, at, prevCode)) + ', character ' + (DL.charCount(pending.slice(from, at)) + 1);
   };
   var config: any = {
     quoteChar: quoteChar,
@@ -225,7 +238,7 @@ readers.delimited = function (file, opts) {
       // follow with no sign. The error must go out through "stopped", as the size limit does.
       try {
         var data = results.data;
-        var wanted = []; // { at, row }: the ragged rows of this chunk that need a line
+        var wanted = []; // the indexes of the ragged rows of this chunk that need a line
         // A file with mixed line endings leaves "\r" on the last value, but only when the parser
         // took "\n" as the line ending. When the parser took "\r\n", a "\r" at the end of the last
         // value is part of the value, and to remove it takes a character out of the data.
@@ -236,17 +249,22 @@ readers.delimited = function (file, opts) {
             var lastCell = row[row.length - 1];
             if (typeof lastCell === 'string' && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
           }
-          if (builder.add(row) && ragged.length + wanted.length < PLACES) wanted.push({ at: i, row: builder.n - 1 });
+          if (builder.add(row) && ragged.length + wanted.length < PLACES) wanted.push(i);
         }
         var cut = results.meta.cursor - base; // the rows of this chunk end here in "pending"
-        var breaks = countBreaks(pending, 0, cut);
+        // When no row ended, "pending" only grows, and a count of it is work for nothing.
+        var breaks = cut ? countBreaks(pending, cut, prevCode) : 0;
         if (wanted.length) {
-          // When no value holds a line end, each row takes one line. Else a parse finds the rows.
-          var starts = breaks === data.length ? null
-            : rowStarts(pending.slice(0, cut), wanted[wanted.length - 1].at, { delimiter: config.delimiter, quoteChar: quoteChar, newline: results.meta.linebreak });
+          // Each row takes one line when no value holds a line end. Else the line ends in the values
+          // give the lines, and a parse finds the rows when they do not add up. Row 0 needs neither.
+          var lastAt = wanted[wanted.length - 1];
+          var many = lastAt > 0 && breaks !== data.length;
+          var before = many ? rowLines(data, breaks) : null;
+          var starts = many && !before
+            ? rowStarts(pending.slice(0, cut), lastAt, { delimiter: config.delimiter, quoteChar: quoteChar, newline: results.meta.linebreak }) : null;
           for (var w = 0; w < wanted.length; w++) {
-            var at = wanted[w].at;
-            ragged.push({ row: wanted[w].row, line: lineBase + 1 + (at === 0 ? 0 : starts ? countBreaks(pending, 0, starts[at]) : at) });
+            var at = wanted[w];
+            ragged.push(lineBase + 1 + (before ? before[at] : starts ? countBreaks(pending, starts[at], prevCode) : at));
           }
         }
         // PapaParse can give one fault twice, and one value as both kinds. "No end quote" says
@@ -260,18 +278,17 @@ readers.delimited = function (file, opts) {
             continue;
           }
           if (e.row >= data.length) continue;
-          var q = base + e.index - 1; // the opening quote: PapaParse points at the character after it
+          var q = e.index - 1; // the opening quote: PapaParse points at the character after it
           var last = found[found.length - 1];
           if (last && last.q === q) { if (e.code === 'MissingQuotes') last.missing = true; continue; }
-          if (q < nextQuote) continue;
           found.push({ q: q, missing: e.code === 'MissingQuotes' });
         }
         for (var f = 0; f < found.length; f++) {
-          if (found[f].missing) { if (!unclosed) unclosed = placeOf(found[f].q - base); }
-          else if (++errors.quotes <= PLACES) quoted.push(placeOf(found[f].q - base));
+          if (found[f].missing) { if (!unclosed) unclosed = placeOf(found[f].q); }
+          else if (++errors.quotes <= PLACES) quoted.push(placeOf(found[f].q));
         }
-        if (found.length) nextQuote = found[found.length - 1].q + 1;
         lineBase += breaks;
+        if (cut) prevCode = pending.charCodeAt(cut - 1);
         pending = pending.slice(cut);
         base = results.meta.cursor;
         if (builder.cells > DL.maxCells) { stopped = tooLarge(builder.cells * 1.2); parser.abort(); }
@@ -317,9 +334,14 @@ readers.delimited = function (file, opts) {
   if (unclosed) problems.push('The quoted value at ' + unclosed + ' has no end quote. The rest of the file is in that value.');
   if (errors.other) problems.push(DL.pluralize(errors.other, 'problem') + ' found while reading the file.');
   if (errors.delimiter && table.columns.length === 1) problems.push('The column separator could not be detected. Choose it in the options if the data looks wrong.');
-  // A row that "Skip rows at the bottom" took away is not in the table, so the note does not name it.
-  var lines = ragged.filter(function (r) { return r.row < table.length; }).map(function (r) { return r.line; });
-  if (builder.ragged) problems.push(RAGGED_NOTE(builder.ragged, lines));
+  if (builder.ragged) {
+    // "lines 8, 12 and 20", and the count of the rest. A row that "Skip rows at the bottom" removes
+    // still counts, because its extra values made new columns.
+    var list = ragged.length < 2 ? ragged.join('') : ragged.slice(0, -1).join(', ') + ' and ' + ragged[ragged.length - 1];
+    var rest = builder.ragged > ragged.length ? ', and ' + (builder.ragged - ragged.length) + ' more' : '';
+    problems.push(DL.pluralize(builder.ragged, 'row') + ' had a different number of values than the header (' + (ragged.length > 1 ? 'lines ' : 'line ') + list + rest +
+      '). Missing values were left empty and extra values were kept in new columns.');
+  }
   return { table: table, notes: notes, problems: problems, meta: { encoding: encoding, delimiter: delimiter } };
 };
 
@@ -350,13 +372,6 @@ readers.spreadsheet = function (file, opts) {
   DL.platform.progress('Reading sheet "' + sheetName + '"', 95);
   return { table: builder.finish(), notes: notes, problems: [], meta: { sheet: sheetName } };
 };
-
-// lines holds the lines of the first ragged rows. The note counts the rest.
-function RAGGED_NOTE(count, lines) {
-  var where = !lines.length ? ''
-    : ' (' + (lines.length > 1 ? 'lines ' : 'line ') + andList(lines) + (count > lines.length ? ', and ' + (count - lines.length) + ' more' : '') + ')';
-  return DL.pluralize(count, 'row') + ' had a different number of values than the header' + where + '. Missing values were left empty and extra values were kept in new columns.';
-}
 
 /* ---------- Zip (store only, no compression) ---------- */
 
@@ -611,8 +626,8 @@ DL.sheetNames = sheetNames;
 
 /* Reads files into one table.
  *
- * Gives { table, info }. info names every file with its rows, and carries the notes of the read
- * (info.problems holds the faults of the data again, for a caller that shows only those),
+ * Gives { table, info }. info.problems holds the faults of the data, for a caller that shows only
+ * those. info also names every file with its rows, and carries the notes of the read,
  * the encoding and the separator of the first file, and the time that the read took.
  *
  * The command line and the worker both call this. Neither has a reader of its own.

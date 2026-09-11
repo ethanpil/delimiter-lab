@@ -214,12 +214,12 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
   // The notes say where a fault of the data is: the line, and for a quote the character. A value in
   // quotes can hold line ends, so a row is not always one line. Each case runs with slices of many
   // sizes, so that faults and line ends also fall on the edge of two slices.
-  const faultsOf = (text, options, name, sizes) => {
+  const faultsOf = (text, options, sizes) => {
     let first = null;
     (sizes || [0, 1, 2, 5, 11]).forEach((size) => {
       globalThis.SLICE_OVERRIDE = size;
       try {
-        const r = send({ type: 'load', file: new FakeFile(text, name || 'f.csv'), options: Object.assign({ delimiter: ',' }, options) });
+        const r = send({ type: 'load', file: new FakeFile(text, 'f.csv'), options: Object.assign({ delimiter: ',' }, options) });
         assert.strictEqual(r.type, 'loaded', JSON.stringify(r));
         const got = JSON.stringify(r.info.problems);
         if (first === null) first = got;
@@ -241,13 +241,21 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     assert.deepStrictEqual(faultsOf(multi.replace(/\n/g, '\r\n')), faultsOf(multi), 'CRLF gives the same lines');
     // PapaParse guesses the line end once, from the first slice, so that slice must hold a line end.
     // A real slice holds 8 MB.
-    assert.deepStrictEqual(faultsOf('a,b\r1,2\r3\r4,5\r', {}, null, [0, 5, 6, 11]), ['1 row had a different number of values than the header (line 3)' + RAGGED_END]);
+    assert.deepStrictEqual(faultsOf('a,b\r1,2\r3\r4,5\r', {}, [0, 5, 6, 11]), ['1 row had a different number of values than the header (line 3)' + RAGGED_END]);
+    // A CRLF in a CR file is one line end, also when the edge of two slices falls in it.
+    assert.deepStrictEqual(faultsOf('a,b\r1,2\r\n3,4\r5\r6,7\r', {}, [0, 4, 8, 9]), ['1 row had a different number of values than the header (line 4)' + RAGGED_END]);
+    // In a CR file, the row after a CRLF starts at its LF. The LF is not a line of its own.
+    assert.deepStrictEqual(faultsOf('a,b\r1,"x\ry"\r1,2\r\n3\r4,5\r', {}, [0, 4, 7, 11]), ['1 row had a different number of values than the header (line 5)' + RAGGED_END]);
     // With CRLF, PapaParse drops a lone LF after a closing quote. An editor shows a line there.
-    assert.deepStrictEqual(faultsOf('a,b\r\n"z"\n,w\r\n5\r\n', {}, null, [0, 5, 6, 11]), ['1 row had a different number of values than the header (line 4)' + RAGGED_END]);
+    assert.deepStrictEqual(faultsOf('a,b\r\n"z"\n,w\r\n5\r\n', {}, [0, 5, 6, 11]), ['1 row had a different number of values than the header (line 4)' + RAGGED_END]);
+    // The decoder removes one byte order mark. A second one stays in the text, and the places must
+    // not move.
+    const twoBoms = Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF]), Buffer.from('a,b\r\n"z"\n,w\r\n5\r\n')]);
+    assert.deepStrictEqual(faultsOf(twoBoms, {}, [0, 11, 12]), ['1 row had a different number of values than the header (line 4)' + RAGGED_END]);
     // Five places, and a count of the rest.
     assert.deepStrictEqual(faultsOf('a,b\n' + '1\n'.repeat(7)), ['7 rows had a different number of values than the header (lines 2, 3, 4, 5 and 6, and 2 more)' + RAGGED_END]);
-    // A totals row that "Skip rows at the bottom" takes away is not a fault of the table.
-    assert.deepStrictEqual(faultsOf('a,b\n1,2\n3,4\ntotal\n', { skipRowsBottom: 1 }), []);
+    // A totals row that "Skip rows at the bottom" removes is still named: its values can make columns.
+    assert.deepStrictEqual(faultsOf('a,b\n1,2\n3,4\ntotal\n', { skipRowsBottom: 1 }), ['1 row had a different number of values than the header (line 4)' + RAGGED_END]);
     assert.deepStrictEqual(faultsOf('a,b\n1,2\n3,4\n'), []);
   });
 
@@ -257,7 +265,7 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     // The character counts an emoji as one.
     assert.deepStrictEqual(faultsOf('a,b\n\u{1F600}x,"q"z\n'), ['The quoted value at line 2, character 4 has no end quote. The rest of the file is in that value.']);
     const malformed = fs.readFileSync(path.join(root, 'test/data/malformed.csv'));
-    assert.deepStrictEqual(faultsOf(malformed, {}, 'malformed.csv'), ['1 value had unbalanced quotes (line 3, character 3). Check the text delimiter setting if data looks wrong.']);
+    assert.deepStrictEqual(faultsOf(malformed), ['1 value had unbalanced quotes (line 3, character 3). Check the text delimiter setting if data looks wrong.']);
   });
 
   test('each file of a source has its own note, with its name', () => {

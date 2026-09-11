@@ -869,9 +869,6 @@ DL.TableBuilder = function (opts) {
   this.n = 0;
   this.ragged = 0;
   this.cells = 0;
-  // The ragged flags of the last rows, at row % skipRowsBottom. "Skip rows at the bottom" takes
-  // those rows away, and a row that goes away is not a ragged row of the table.
-  this.tail = this.toSkipBottom ? [] : null;
 };
 
 // Adds a row. Gives true for a ragged row: a row with another number of values than the header.
@@ -893,7 +890,6 @@ DL.TableBuilder.prototype.add = function (row) {
   var ragged = false;
   if (this.expected < 0) this.expected = row.length;
   else if (row.length !== this.expected && row.length !== 0) { this.ragged++; ragged = true; }
-  if (this.tail) this.tail[this.n % this.toSkipBottom] = ragged ? 1 : 0;
   for (var c = this.cols.length; c < row.length; c++) { this.cols.push(new Array(this.n).fill('')); this.cells += this.n; }
   for (c = 0; c < this.cols.length; c++) this.cols[c][this.n] = c < row.length ? DL.cellText(row[c]) : '';
   this.n++;
@@ -911,9 +907,6 @@ DL.TableBuilder.prototype.finish = function () {
   if (this.toSkipBottom) {
     n = Math.max(0, n - this.toSkipBottom);
     for (var i = 0; i < this.cols.length; i++) this.cols[i].length = n;
-    // The flags go to zero, so a second call takes nothing away again.
-    for (var r = n; r < this.n; r++) this.ragged -= this.tail[r % this.toSkipBottom];
-    this.tail.fill(0);
   }
   return DL.makeTable(DL.cleanHeaders(names), this.cols, n);
 };

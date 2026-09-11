@@ -779,7 +779,6 @@
     this.n = 0;
     this.ragged = 0;
     this.cells = 0;
-    this.tail = this.toSkipBottom ? [] : null;
   };
   DL.TableBuilder.prototype.add = function(row) {
     if (this.toSkip > 0) {
@@ -800,7 +799,6 @@
       this.ragged++;
       ragged = true;
     }
-    if (this.tail) this.tail[this.n % this.toSkipBottom] = ragged ? 1 : 0;
     for (var c = this.cols.length; c < row.length; c++) {
       this.cols.push(new Array(this.n).fill(""));
       this.cells += this.n;
@@ -818,8 +816,6 @@
     if (this.toSkipBottom) {
       n = Math.max(0, n - this.toSkipBottom);
       for (var i = 0; i < this.cols.length; i++) this.cols[i].length = n;
-      for (var r = n; r < this.n; r++) this.ragged -= this.tail[r % this.toSkipBottom];
-      this.tail.fill(0);
     }
     return DL.makeTable(DL.cleanHeaders(names), this.cols, n);
   };
@@ -1671,15 +1667,27 @@
     var projected = cells * (file.size / Math.max(1, sampleBytes));
     if (projected > DL.maxCells * 1.3) throw tooLarge(projected);
   }
-  function countBreaks(text, from, to) {
+  function countBreaks(text, to, prev) {
+    var s = to < text.length ? text.slice(0, to) : text;
     var n = 0;
-    for (var i = text.indexOf("\n", from); i >= 0 && i < to; i = text.indexOf("\n", i + 1)) n++;
-    for (var j = text.indexOf("\r", from); j >= 0 && j < to; j = text.indexOf("\r", j + 1)) {
-      if (text.charCodeAt(j + 1) !== 10) n++;
-    }
+    for (var i = s.indexOf("\r"); i >= 0; i = s.indexOf("\r", i + 1)) n++;
+    for (var j = s.indexOf("\n"); j >= 0; j = s.indexOf("\n", j + 1)) if ((j ? s.charCodeAt(j - 1) : prev) !== 13) n++;
     return n;
   }
+  function rowLines(data, breaks) {
+    var before2 = [0];
+    var total = 0;
+    for (var i = 0; i < data.length; i++) {
+      for (var c = 0; c < data[i].length; c++) {
+        var v = data[i][c];
+        if (typeof v === "string" && (v.indexOf("\n") >= 0 || v.indexOf("\r") >= 0)) total += countBreaks(v, v.length, 0);
+      }
+      before2.push(++total);
+    }
+    return total === breaks ? before2 : null;
+  }
   function rowStarts(text, last, cfg) {
+    var shift = text.charCodeAt(0) === 65279 ? 1 : 0;
     var starts = [0];
     DL.platform.papa.parse(text, {
       delimiter: cfg.delimiter,
@@ -1688,14 +1696,11 @@
       newline: cfg.newline,
       skipEmptyLines: false,
       step: function(r, parser) {
-        starts.push(r.meta.cursor);
+        starts.push(r.meta.cursor + shift);
         if (starts.length > last) parser.abort();
       }
     });
     return starts;
-  }
-  function andList(items) {
-    return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
   }
   var PLACES = 5;
   readers.delimited = function(file, opts) {
@@ -1712,13 +1717,13 @@
     var pending = "";
     var base = 0;
     var lineBase = 0;
+    var prevCode = 0;
     var ragged = [];
     var quoted = [];
     var unclosed = "";
-    var nextQuote = 0;
     var placeOf = function(at) {
       var from = Math.max(pending.lastIndexOf("\n", at - 1), pending.lastIndexOf("\r", at - 1)) + 1;
-      return "line " + (lineBase + 1 + countBreaks(pending, 0, at)) + ", character " + (DL.charCount(pending.slice(from, at)) + 1);
+      return "line " + (lineBase + 1 + countBreaks(pending, at, prevCode)) + ", character " + (DL.charCount(pending.slice(from, at)) + 1);
     };
     var config = {
       quoteChar,
@@ -1735,15 +1740,18 @@
               var lastCell = row[row.length - 1];
               if (typeof lastCell === "string" && lastCell.charCodeAt(lastCell.length - 1) === 13) row[row.length - 1] = lastCell.slice(0, -1);
             }
-            if (builder.add(row) && ragged.length + wanted.length < PLACES) wanted.push({ at: i, row: builder.n - 1 });
+            if (builder.add(row) && ragged.length + wanted.length < PLACES) wanted.push(i);
           }
           var cut = results.meta.cursor - base;
-          var breaks = countBreaks(pending, 0, cut);
+          var breaks = cut ? countBreaks(pending, cut, prevCode) : 0;
           if (wanted.length) {
-            var starts = breaks === data.length ? null : rowStarts(pending.slice(0, cut), wanted[wanted.length - 1].at, { delimiter: config.delimiter, quoteChar, newline: results.meta.linebreak });
+            var lastAt = wanted[wanted.length - 1];
+            var many = lastAt > 0 && breaks !== data.length;
+            var before2 = many ? rowLines(data, breaks) : null;
+            var starts = many && !before2 ? rowStarts(pending.slice(0, cut), lastAt, { delimiter: config.delimiter, quoteChar, newline: results.meta.linebreak }) : null;
             for (var w = 0; w < wanted.length; w++) {
-              var at = wanted[w].at;
-              ragged.push({ row: wanted[w].row, line: lineBase + 1 + (at === 0 ? 0 : starts ? countBreaks(pending, 0, starts[at]) : at) });
+              var at = wanted[w];
+              ragged.push(lineBase + 1 + (before2 ? before2[at] : starts ? countBreaks(pending, starts[at], prevCode) : at));
             }
           }
           var found = [];
@@ -1755,22 +1763,21 @@
               continue;
             }
             if (e.row >= data.length) continue;
-            var q = base + e.index - 1;
+            var q = e.index - 1;
             var last = found[found.length - 1];
             if (last && last.q === q) {
               if (e.code === "MissingQuotes") last.missing = true;
               continue;
             }
-            if (q < nextQuote) continue;
             found.push({ q, missing: e.code === "MissingQuotes" });
           }
           for (var f = 0; f < found.length; f++) {
             if (found[f].missing) {
-              if (!unclosed) unclosed = placeOf(found[f].q - base);
-            } else if (++errors.quotes <= PLACES) quoted.push(placeOf(found[f].q - base));
+              if (!unclosed) unclosed = placeOf(found[f].q);
+            } else if (++errors.quotes <= PLACES) quoted.push(placeOf(found[f].q));
           }
-          if (found.length) nextQuote = found[found.length - 1].q + 1;
           lineBase += breaks;
+          if (cut) prevCode = pending.charCodeAt(cut - 1);
           pending = pending.slice(cut);
           base = results.meta.cursor;
           if (builder.cells > DL.maxCells) {
@@ -1818,12 +1825,11 @@
     if (unclosed) problems.push("The quoted value at " + unclosed + " has no end quote. The rest of the file is in that value.");
     if (errors.other) problems.push(DL.pluralize(errors.other, "problem") + " found while reading the file.");
     if (errors.delimiter && table.columns.length === 1) problems.push("The column separator could not be detected. Choose it in the options if the data looks wrong.");
-    var lines = ragged.filter(function(r) {
-      return r.row < table.length;
-    }).map(function(r) {
-      return r.line;
-    });
-    if (builder.ragged) problems.push(RAGGED_NOTE(builder.ragged, lines));
+    if (builder.ragged) {
+      var list = ragged.length < 2 ? ragged.join("") : ragged.slice(0, -1).join(", ") + " and " + ragged[ragged.length - 1];
+      var rest = builder.ragged > ragged.length ? ", and " + (builder.ragged - ragged.length) + " more" : "";
+      problems.push(DL.pluralize(builder.ragged, "row") + " had a different number of values than the header (" + (ragged.length > 1 ? "lines " : "line ") + list + rest + "). Missing values were left empty and extra values were kept in new columns.");
+    }
     return { table, notes, problems, meta: { encoding, delimiter } };
   };
   function readWorkbook(file, sheetsOnly) {
@@ -1851,10 +1857,6 @@
     DL.platform.progress('Reading sheet "' + sheetName + '"', 95);
     return { table: builder.finish(), notes, problems: [], meta: { sheet: sheetName } };
   };
-  function RAGGED_NOTE(count, lines) {
-    var where = !lines.length ? "" : " (" + (lines.length > 1 ? "lines " : "line ") + andList(lines) + (count > lines.length ? ", and " + (count - lines.length) + " more" : "") + ")";
-    return DL.pluralize(count, "row") + " had a different number of values than the header" + where + ". Missing values were left empty and extra values were kept in new columns.";
-  }
   var CRC_TABLE = (function() {
     var t = new Int32Array(256);
     for (var n = 0; n < 256; n++) {
