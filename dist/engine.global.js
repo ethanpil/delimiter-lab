@@ -2579,18 +2579,20 @@
     params: [
       { key: "columns", label: "Columns", type: "columns", required: false, help: "Leave empty to search all columns." },
       { key: "find", label: "Find", type: "text", default: "", required: true },
-      { key: "replace", label: "Replace with", type: "text", default: "", help: "With regular expressions you can use $1, $2 for captured groups." },
+      // stack: the field goes under the field before it, in the same column of the form.
+      { key: "replace", label: "Replace with", type: "text", default: "", stack: true, help: "With regular expressions you can use $1, $2 for captured groups." },
       {
         key: "more",
         label: "More to find and replace",
         type: "mapping",
         required: false,
+        stack: true,
         help: "Each row finds one more text and replaces it. The rows run in order, after the pair above, and each row reads what the rows before it wrote. The options below apply to every row."
       },
       { key: "matchCase", label: "Match case", type: "boolean", default: false },
-      { key: "wholeWord", label: "Whole words only", type: "boolean", default: false },
-      { key: "wholeCell", label: "Whole cell must match", type: "boolean", default: false },
-      { key: "regex", label: "Use regular expression", type: "boolean", default: false }
+      { key: "wholeWord", label: "Whole words only", type: "boolean", default: false, stack: true },
+      { key: "wholeCell", label: "Whole cell must match", type: "boolean", default: false, stack: true },
+      { key: "regex", label: "Use regular expression", type: "boolean", default: false, stack: true }
     ],
     summary: function(p) {
       var more = morePairs(p).length;
