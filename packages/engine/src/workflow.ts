@@ -15,6 +15,13 @@ DL.uid = function () {
   return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 };
 
+// True for a step that is turned on and runs code from the workflow. The page asks before it opens
+// such a workflow, and the dl command refuses it without --allow-code.
+DL.stepRunsCode = function (s) {
+  var op = s && DL.getOp(s.opId);
+  return !!(op && op.runsCode) && s.enabled !== false;
+};
+
 // The link name of a workflow: its name in a form that a web address can carry. It holds small
 // letters and digits of any script, with one "-" between words, and Latin letters lose their
 // accents. "Clean Contacts (2024)" gives "clean-contacts-2024". An empty result means that the

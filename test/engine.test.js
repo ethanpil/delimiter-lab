@@ -309,6 +309,42 @@ test('javascript op', () => {
   assert.strictEqual(r3.table.columns.length, 4);
   assert.strictEqual(rowsOf(r3.table)[0][0], 'JOHN');
 });
+test('javascriptRow op changes values and removes rows', () => {
+  const r = run('javascriptRow', { code: 'if (row.First === "john") row.Last = "Smith"; if (row.Email === "") return false;' }, people);
+  assert.deepStrictEqual(rowsOf(r.table), [['john', 'Smith', '34', 'john@x.com'], ['  Jane ', 'doe', '2,000', 'bad email'], ['john', 'Smith', '34', 'john@x.com']]);
+  assert.deepStrictEqual(r.notes, ['Changed 2 cells in 2 rows.', 'Removed 1 row.']);
+  assert.deepStrictEqual(Array.from(r.table.rowMap), [0, 1, 3], 'the Changes view follows the rows that stay');
+  assert.strictEqual(r.status, 'ok');
+  // An object sets values by column name, and a number becomes text.
+  const r2 = run('javascriptRow', { code: 'return { A: num(row.A) * 10 };' }, T(['A', 'B'], [['1', 'x'], ['2', 'y']]));
+  assert.deepStrictEqual(rowsOf(r2.table), [['10', 'x'], ['20', 'y']]);
+  // A filtered (lazy) table works the same.
+  const lazy = DL.selectRows(people, [3, 1]);
+  const r3 = run('javascriptRow', { code: 'if (row.Last === "doe") return false; row.First = row.First.trim().toUpperCase();' }, lazy);
+  assert.deepStrictEqual(rowsOf(r3.table), [['JOHN', 'smith', '34', 'john@x.com']]);
+  // Zero rows in give zero rows out.
+  const r4 = run('javascriptRow', { code: 'return false;' }, T(['A'], []));
+  assert.strictEqual(r4.table.length, 0);
+  assert.deepStrictEqual(r4.notes, ['No row changed.']);
+});
+test('javascriptRow op names a column that is not there, and keeps a row with an error', () => {
+  const r = run('javascriptRow', { code: 'row.Emial = "x"; if (index === 1) throw new Error("boom");' }, people);
+  assert.deepStrictEqual(rowsOf(r.table), rowsOf(people));
+  assert.deepStrictEqual(r.notes, [
+    'No row changed.',
+    '1 row caused an error. The rows with an error did not change. First error: boom',
+    'No column has the name "Emial", so the code wrote nothing there. To add a column, use Custom JavaScript Column.'
+  ]);
+  assert.strictEqual(r.status, 'warning');
+});
+test('stepRunsCode finds the steps that run code', () => {
+  assert.strictEqual(DL.stepRunsCode({ opId: 'javascript', enabled: true }), true);
+  assert.strictEqual(DL.stepRunsCode({ opId: 'javascriptRow' }), true);
+  assert.strictEqual(DL.stepRunsCode({ opId: 'javascriptRow', enabled: false }), false);
+  assert.strictEqual(DL.stepRunsCode({ opId: 'case' }), false);
+  assert.strictEqual(DL.stepRunsCode({ opId: 'nope' }), false);
+  assert.strictEqual(DL.stepRunsCode(null), false);
+});
 
 /* ---- verify ---- */
 test('verify op', () => {
@@ -693,7 +729,7 @@ test('every op has metadata and defaults', () => {
     assert.ok(typeof op.summary === 'function', op.id + ' summary');
     op.params.forEach((p) => assert.ok(p.key && p.label && p.type, op.id + ' param'));
   });
-  assert.strictEqual(DL.ops.length, 27);
+  assert.strictEqual(DL.ops.length, 28);
   // Every operation that changes the columns must predict them correctly (or say null).
   const fixture = T(['Full Name', 'Email', 'Amount'], [['John Smith', 'j@x.com', '1'], ['Ann Lee', 'a@y.com', '2']]);
   const cases = {
@@ -707,6 +743,7 @@ test('every op has metadata and defaults', () => {
     addColumn: { name: 'N' },
     calculate: { left: 'Amount', rightKind: 'number', rightNumber: 2, output: 'D' },
     javascript: { output: 'J', code: 'return 1;' },
+    javascriptRow: { code: 'row.Email = "x";' },
     verify: { rules: [{ column: 'Email', op: 'isEmail' }], action: 'flag' },
     split: { column: 'Full Name', separator: ' ', maxParts: 2 },
     extract: { column: 'Email', pattern: '@(.+)$', group: 1, output: 'Domain' },

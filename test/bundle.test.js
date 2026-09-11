@@ -74,7 +74,7 @@ test('every file that the page loads is on disk, with the same letters', () => {
 });
 
 test('the build brings every operation', () => {
-  assert.strictEqual(DL.ops.length, 27);
+  assert.strictEqual(DL.ops.length, 28);
   assert.strictEqual(DL.getOp('unpivot').id, 'unpivot');
 });
 

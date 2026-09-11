@@ -337,13 +337,29 @@ DL.registerOp({
 });
 
 /* ---------- JavaScript ---------- */
+// The two JavaScript operations run the code of the user as the body of the function
+// (row, index, num, date). That code comes from the workflow, so both say runsCode. The page then
+// asks before it opens such a workflow, and the dl command refuses it without --allow-code.
+function codeProblems(code) {
+  if (!code.trim()) return ['Write some code.'];
+  try { new Function('row', 'index', 'num', 'date', code); } catch (e) { return ['The code has a syntax error: ' + e.message]; }
+  return [];
+}
+
+// date(x) in the code: a Date, or null for text that is not a date.
+function jsDate(x) { var t = DL.toDate(x); return isNaN(t) ? null : new Date(t); }
+
+// The text of a cell for a value from the code. An object that is not a date becomes JSON.
+function jsCell(v) { return v != null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : DL.cellText(v); }
+
 DL.registerOp({
   id: 'javascript',
-  name: 'Custom JavaScript',
+  name: 'Custom JavaScript Column',
   category: 'Advanced',
   icon: 'bi-code-slash',
   description: 'Write a small JavaScript function that returns the value for a new column. Use row["Column name"] to read values.',
-  keywords: 'code script formula custom function',
+  keywords: 'code script formula custom function column',
+  runsCode: true,
   params: [
     { key: 'output', label: 'New column name', type: 'text', default: RESULT, notBlank: true },
     { key: 'code', label: 'Code', type: 'code', default: '// row is an object with one property per column.\n// index is the row number, starting at 0.\n// Return the value for the new column.\nreturn row["Column name"];',
@@ -351,18 +367,13 @@ DL.registerOp({
     { key: 'replaceColumn', label: 'Write into an existing column instead', type: 'column', required: false, help: 'Leave empty to create a new column.' }
   ],
   summary: function (p) { return (p.replaceColumn ? 'Update ' + p.replaceColumn : 'Add ' + p.output); },
-  validate: function (p) {
-    if (!p.code.trim()) return ['Write some code.'];
-    try { new Function('row', 'index', 'num', 'date', p.code); } catch (e) { return ['The code has a syntax error: ' + e.message]; }
-    return [];
-  },
+  validate: function (p) { return codeProblems(p.code); },
   outputColumns: function (cols, p) { return p.replaceColumn ? cols : cols.concat([DL.newColumnName(cols, p.output, RESULT)]); },
   apply: function (table, p) {
     var fn = new Function('row', 'index', 'num', 'date', p.code);
     var cols = table.columns;
     var target = p.replaceColumn ? DL.requireCol(table, p.replaceColumn) : -1;
     var errors = 0, firstError = '';
-    var dateFn = function (x) { var t = DL.toDate(x); return isNaN(t) ? null : new Date(t); };
     var n = table.length;
     var w = cols.length;
     var get = cols.map(function (name, c) { return DL.cellGetter(table, c); });
@@ -372,13 +383,13 @@ DL.registerOp({
       for (var c = 0; c < w; c++) row[cols[c]] = get[c](i);
       var v;
       try {
-        v = fn(row, i, DL.toNumber, dateFn);
+        v = fn(row, i, DL.toNumber, jsDate);
       } catch (e) {
         errors++;
         if (!firstError) firstError = e.message;
         v = '';
       }
-      values[i] = v != null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : DL.cellText(v);
+      values[i] = jsCell(v);
     }
     var notes = errors ? [DL.pluralize(errors, 'row') + ' caused an error. First error: ' + firstError] : [];
     var out;
@@ -391,6 +402,96 @@ DL.registerOp({
   }
 });
 
-// Row objects for the JavaScript operation: no prototype, so column names never clash with Object members.
+/* ---------- JavaScript row edit ---------- */
+var ROW_CODE = '// row is an object with one property per column. index is the row number, starting at 0.\n' +
+  '// Change a value:  row["Column name"] = "new value";\n' +
+  '// Remove the row:  return false;\n' +
+  '// Return nothing to keep the row with its changes.\n' +
+  'if (row["Column name"] === "some value") {\n' +
+  '  row["Column name"] = "new value";\n' +
+  '}';
+
+DL.registerOp({
+  id: 'javascriptRow',
+  name: 'JavaScript Row Edit',
+  category: 'Advanced',
+  icon: 'bi-braces',
+  description: 'Write a small JavaScript function that changes the values of a row, or removes the row. Use it for the rows that need a special change.',
+  keywords: 'code script custom function edit fix change remove delete hide row special case',
+  runsCode: true,
+  params: [
+    { key: 'code', label: 'Code', type: 'code', default: ROW_CODE,
+      help: 'The code runs once per row as the body of a function (row, index, num, date). Set row["Column name"] to change a value. Return false to remove the row. Return an object to set values by column name. num(x) and date(x) turn text into a number or a date.' }
+  ],
+  summary: function () { return 'Edit rows with code'; },
+  validate: function (p) { return codeProblems(p.code); },
+  outputColumns: function (cols) { return cols; },
+  apply: function (table, p) {
+    var fn = new Function('row', 'index', 'num', 'date', p.code);
+    var cols = table.columns;
+    var n = table.length;
+    var w = cols.length;
+    var get = cols.map(function (name, c) { return DL.cellGetter(table, c); });
+    var place = Object.create(null); // the index of each column name
+    for (var c = 0; c < w; c++) place[cols[c]] = c;
+    var out = new Array(w);   // a copy of a column, made at its first change
+    var keep = null;          // the rows that stay, from the first row that the code removes
+    var cells = 0, rows = 0, errors = 0, firstError = '';
+    var unknown = Object.create(null);
+    for (var i = 0; i < n; i++) {
+      var row = new Row();
+      for (c = 0; c < w; c++) row[cols[c]] = get[c](i);
+      var result;
+      try {
+        result = fn(row, i, DL.toNumber, jsDate);
+      } catch (e) {
+        // A row with an error stays as it was.
+        errors++;
+        if (!firstError) firstError = e.message;
+        if (keep) keep.push(i);
+        continue;
+      }
+      if (result === false) {
+        if (!keep) { keep = []; for (var k = 0; k < i; k++) keep.push(k); }
+        continue;
+      }
+      if (keep) keep.push(i);
+      // An object that the code gives sets values by column name, after the changes to row.
+      if (result != null && typeof result === 'object' && result !== row && !(result instanceof Date)) {
+        var given = Object.keys(result);
+        for (var g = 0; g < given.length; g++) row[given[g]] = result[given[g]];
+      }
+      var touched = false;
+      for (var key in row) {
+        var at = place[key];
+        if (at === undefined) { unknown[key] = true; continue; }
+        var value = jsCell(row[key]);
+        if (value === get[at](i)) continue;
+        if (!out[at]) { out[at] = new Array(n); for (var j = 0; j < n; j++) out[at][j] = get[at](j); }
+        out[at][i] = value;
+        cells++;
+        touched = true;
+      }
+      if (touched) rows++;
+    }
+    var t = DL.makeTable(cols, table.cols.map(function (col, ci) { return out[ci] || col; }), n);
+    var removed = keep ? n - keep.length : 0;
+    // The rows that stay keep a map to their rows in the input, so the Changes view follows them.
+    if (keep) t = DL.selectRows(t, keep);
+    var notes = [];
+    if (cells) notes.push('Changed ' + DL.pluralize(cells, 'cell') + ' in ' + DL.pluralize(rows, 'row') + '.');
+    if (removed) notes.push('Removed ' + DL.pluralize(removed, 'row') + '.');
+    if (!cells && !removed) notes.push('No row changed.');
+    if (errors) notes.push(DL.pluralize(errors, 'row') + ' caused an error. The rows with an error did not change. First error: ' + firstError);
+    var names = Object.keys(unknown);
+    if (names.length) {
+      notes.push('No column has the name ' + names.slice(0, 5).map(function (s) { return '"' + s + '"'; }).join(', ') +
+        (names.length > 5 ? ' and ' + (names.length - 5) + ' more' : '') + ', so the code wrote nothing there. To add a column, use Custom JavaScript Column.');
+    }
+    return { table: t, notes: notes, status: errors || names.length ? 'warning' : 'ok' };
+  }
+});
+
+// Row objects for the JavaScript operations: no prototype, so column names never clash with Object members.
 function Row() {}
 Row.prototype = Object.create(null);
