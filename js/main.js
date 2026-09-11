@@ -634,8 +634,8 @@
   });
 
   // Empties the steps and closes the file, so that the user can start again. opts is for a caller
-  // that goes on after the clear, such as a link: opts.intro goes before the first question,
-  // opts.then runs after the clear (or at once when there is nothing to remove), and
+  // that continues after that, such as a link. opts.intro goes before the first question.
+  // opts.then runs when the workspace is empty, at once when there is nothing to remove.
   // opts.onCancel runs when the steps and the file stay.
   function newWorkflow(opts) {
     opts = opts || {};
@@ -704,6 +704,22 @@
     });
   }
 
+  // The reader settings of a saved workflow, with the sheet and the "Many files" setting of the
+  // source on the screen. "Many files" is a habit of the user, not of the data. go() in
+  // applyWorkflow() compares these settings as JSON, so every caller makes them here.
+  function workflowSourceOptions(wf) {
+    var options = DL.cleanSourceOptions(wf && wf.sourceOptions);
+    options.sheet = store.state.source.options.sheet;
+    options.multiFile = store.state.source.options.multiFile;
+    return options;
+  }
+
+  // True when steps of the workflow use columns that the source does not have.
+  function columnsMissing(wf, columns) {
+    var level = DL.workflows.matchLevel(wf, columns);
+    return level === 'partial' || level === 'none';
+  }
+
   // Opens a saved workflow. then() runs when its steps are on the screen. onCancel() runs when the
   // user stops and the workflow does not open.
   function applyWorkflow(wf, then, onCancel) {
@@ -719,16 +735,13 @@
       if (then) then();
       if (wf.id) DL.workflows.touch(wf.id);
       if (wf.sourceOptions && store.state.source.file) {
-        var wanted = DL.cleanSourceOptions(wf.sourceOptions);
-        wanted.sheet = store.state.source.options.sheet;
-        wanted.multiFile = store.state.source.options.multiFile; // a habit of the user, not of the data
+        var wanted = workflowSourceOptions(wf);
         if (JSON.stringify(wanted) !== JSON.stringify(store.state.source.options)) {
           store.setSourceOptions(wanted);
           loadSource();
         }
       }
-      var level = DL.workflows.matchLevel(wf, store.sourceColumns());
-      if (level === 'partial' || level === 'none') U.toast(DL.t('msg.columnsMissing'), 'warning');
+      if (columnsMissing(wf, store.sourceColumns())) U.toast(DL.t('msg.columnsMissing'), 'warning');
     };
     var saveThenGo = function () {
       saveWorkflow(function (rec) {
@@ -804,8 +817,9 @@
   // A link can open a saved workflow and data: #workflow=<link name>&source=<data in base64>. The
   // same keys also work after "?", but GitHub Pages refuses an address above about 8 KB, and a
   // query goes to the server. A key after "#" wins.
+  var LINK_KEYS = ['workflow', 'source'];
   var linkBusy = false; // a link is on its way through its questions
-  var linkLoad = null;  // { file, badAt, wf }: the data of a link, until its read ends
+  var linkLoad = null;  // { file, badAt, wf }: the data of a link, until the page has read it
 
   // Gives { workflow, source } from the address, or null when the address holds neither. An empty
   // value counts as no value. Only the name is trimmed: a space in the data is a "+".
@@ -813,7 +827,7 @@
     var hash = new URLSearchParams(location.hash.slice(1));
     var query = new URLSearchParams(location.search);
     var get = function (k) { return hash.get(k) || query.get(k) || ''; };
-    var link = { workflow: get('workflow').trim().slice(0, 80), source: get('source') };
+    var link = { workflow: get('workflow').trim(), source: get('source') };
     return link.workflow || link.source ? link : null;
   }
 
@@ -822,12 +836,18 @@
   function forgetLink() {
     var parts = [location.search.slice(1), location.hash.slice(1)].map(function (text) {
       var p = new URLSearchParams(text);
-      if (!p.has('workflow') && !p.has('source')) return text;
-      p.delete('workflow');
-      p.delete('source');
+      if (!LINK_KEYS.some(function (k) { return p.has(k); })) return text;
+      LINK_KEYS.forEach(function (k) { p.delete(k); });
       return p.toString();
     });
     history.replaceState(history.state, '', location.pathname + (parts[0] ? '?' + parts[0] : '') + (parts[1] ? '#' + parts[1] : ''));
+  }
+
+  // Runs fn when no dialog is on the screen. A dialog is in #modals from its start to its end, also
+  // while it opens or closes. A dialog that closes can open the next one, so the check repeats.
+  function whenNoDialog(fn) {
+    if (!document.querySelector('#modals .modal')) { fn(); return; }
+    document.addEventListener('hidden.bs.modal', function () { whenNoDialog(fn); }, { once: true });
   }
 
   // The words for a fault of the base64 data in a link.
@@ -849,8 +869,10 @@
   function openLinkFromAddress() {
     var link = readLink();
     if (!link) return;
-    // Bootstrap shows one dialog at a time. The keys stay in the address, so a reload opens the link.
-    if (linkBusy || batchRunning || document.querySelector('.modal.show')) { U.toast(DL.t('link.wait'), 'info'); return; }
+    // Bootstrap shows one dialog at a time, so the link waits until a dialog closes. The keys stay in
+    // the address until then.
+    if (document.querySelector('#modals .modal')) { whenNoDialog(openLinkFromAddress); return; }
+    if (linkBusy || batchRunning) { U.toast(DL.t('link.wait'), 'info'); return; }
     forgetLink();
     var data = link.source ? DL.decodeBase64(link.source) : null;
     if (data && !data.bytes.length) { showLinkProblems([linkDataFault(data.badAt)], DL.t('link.noDataIntro')); return; }
@@ -862,35 +884,33 @@
         if (!name) { openLinkData(null, data); return; }
         var wf = DL.workflows.findBySlug(name);
         if (wf) {
-          // A stop at the warning about code opens the data without the workflow.
+          // When the user stops at the warning about code, the data opens without the workflow.
           applyWorkflow(wf, function () { openLinkData(wf, data); }, function () { openLinkData(null, data); });
           return;
         }
-        U.confirm({ title: DL.t('link.notFoundTitle'), message: DL.t('link.notFoundMessage', { name: name }), yes: DL.t('link.startNew') },
-          function () { store.setWorkflowMeta({ name: name }); openLinkData(null, data); },
+        // A new workflow takes the name as the link gives it. The name box holds 80 characters.
+        U.confirm({ title: DL.t('link.notFoundTitle'), message: DL.t('link.notFoundMessage', { name: name }), yes: DL.t('msg.newYes') },
+          function () { store.setWorkflowMeta({ name: Array.from(name).slice(0, 80).join('') }); openLinkData(null, data); },
           function () { openLinkData(null, data); });
       },
       onCancel: function () { linkBusy = false; U.toast(DL.t('link.notOpened'), 'info'); }
     });
   }
 
-  // Puts the data of a link in the source, with the reader settings of the workflow. The settings are
-  // set each time: a workspace with no steps and no file keeps the settings of an older file.
-  // applyWorkflow() calls this before it compares the settings, so it finds them equal and does not
-  // read the data a second time.
+  // Puts the data of a link in the source, with the reader settings of the workflow, or the defaults
+  // without one. The settings are set each time, because a workspace with no steps and no file keeps
+  // the settings of an older file. applyWorkflow() calls this before it compares the settings. It
+  // then finds them equal, and it does not read the data a second time.
   function openLinkData(wf, data) {
     linkBusy = false;
     if (!data) return;
-    var options = DL.cleanSourceOptions(wf && wf.sourceOptions);
-    options.sheet = '';
-    options.multiFile = store.state.source.options.multiFile; // a habit of the user, not of the data
-    store.setSourceOptions(options);
+    store.setSourceOptions(workflowSourceOptions(wf));
     linkLoad = { file: new File([data.bytes], 'link-data.csv', { type: 'text/csv' }), badAt: data.badAt, wf: wf };
     openFile(linkLoad.file);
   }
 
-  // When the read of the data of a link ends, this says how it went: the faults of the data in a
-  // dialog, or a short message when there are none.
+  // Tells the user how the page read the data of a link, after the read. A dialog lists the faults
+  // of the data. With no fault, a short message says that the data is open.
   function linkLoadEnded(st) {
     var l = linkLoad;
     if (st.source.file !== l.file) { linkLoad = null; return; } // other data took its place
@@ -901,11 +921,9 @@
     var info = st.source.info;
     var faults = (l.badAt ? [linkDataFault(l.badAt)] : []).concat(info.problems);
     // The check of the columns in applyWorkflow() ran before the data was there.
-    var level = l.wf ? DL.workflows.matchLevel(l.wf, info.columns) : 'unknown';
-    if (level === 'partial' || level === 'none') faults.push(DL.t('msg.columnsMissing'));
+    if (l.wf && columnsMissing(l.wf, info.columns)) faults.push(DL.t('msg.columnsMissing'));
     if (!faults.length) U.toast(DL.t('link.opened', { rows: DL.rowsAndColumns(info.rowCount, info.columns.length) }), 'success');
-    else if (document.querySelector('.modal.show')) U.toast(DL.t('link.problemsToast', { n: DL.pluralize(faults.length, 'problem') }), 'warning');
-    else showLinkProblems(faults, DL.t('link.problemsIntro'));
+    else whenNoDialog(function () { showLinkProblems(faults, DL.t('link.problemsIntro')); });
   }
 
   /* ---------- Download ---------- */
