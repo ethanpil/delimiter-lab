@@ -107,6 +107,10 @@
 
   function stacking(st) { return st.source.options.multiFile === 'stack'; }
 
+  function multiFileParam() {
+    return DL.inputFormats[0].options.filter(function (p) { return p.key === 'multiFile'; })[0];
+  }
+
   // The files of the source, with the rows that each one gave and a way to move or take one out.
   // The list element lives as long as the view. A drag holds a row of it, and a redraw in the
   // middle of the drag takes that row away and stops the drag with no word to the user.
@@ -127,8 +131,20 @@
     }
     if (this.fileDragging) this.fillPending = true;
     else this.fillFiles();
+    // "Many files" says what a drop of many files does, before any file is open. So it goes with the
+    // list of files and not with the settings that read each file.
+    var param = multiFileParam();
+    var st = this.store.state;
+    var mode = U.select(param.options, st.source.options.multiFile, function (v) {
+      self.store.setSourceOptions({ multiFile: v });
+      // The column with the name of the file belongs to a source that stacks. With that setting on,
+      // the change changes the data.
+      if (st.source.file && self.store.state.source.options.fileNameColumn) self.actions.reload();
+      else self.render();
+    }, { class: 'form-select form-select-sm mb-2', 'aria-label': param.label, title: param.help });
     return U.el('div', { class: 'source-files' }, [
-      U.el('div', { class: 'field-label', text: DL.t('source.files') }),
+      U.el('div', { class: 'field-label' }, [DL.t('source.files'), U.helpIcon(param.help)]),
+      mode,
       this.filesEl,
       this.addFilesRow()
     ]);
@@ -225,17 +241,14 @@
     var format = DL.inputFormatFor(st.source.file.name);
     var apply = U.debounce(function () { self.actions.reload(); }, 400);
 
-    var params = format.options;
+    // "Many files" is above, with the list of files.
+    var params = format.options.filter(function (p) { return p.key !== 'multiFile'; });
     // Typed values (merge) reload after a pause; switches and choices reload at once.
     var rendered = DL.fields.renderAll(params, o, { columns: null, compact: false }, function (key, value, opts) {
       var patch = {};
       patch[key] = value;
       self.store.setSourceOptions(patch);
       DL.fields.updateVisibility(params, self.store.state.source.options, rendered.els);
-      // This one says what a new file does, and it does not change how the bytes are read. But the
-      // column with the name of the file belongs to a source that stacks, so with that setting on,
-      // the change does change the data.
-      if (key === 'multiFile' && !self.store.state.source.options.fileNameColumn) { self.render(); return; }
       if (opts && opts.merge) apply();
       else { apply.cancel(); self.actions.reload(); }
     });
