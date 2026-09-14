@@ -1331,7 +1331,7 @@
     key: "multiFile",
     label: "Many files",
     type: "select",
-    default: "batch",
+    default: "stack",
     help: "Batch: each file goes through the steps on its own and the results download together. Stack: the files become one Data Source, one after the other.",
     options: [{ value: "batch", label: "Work on each file on its own (batch)" }, { value: "stack", label: "Put the files together (stack)" }]
   };

@@ -1441,7 +1441,7 @@ DL.fileExtension = function (name) {
 };
 
 var headerOption = { key: 'headers', label: 'First row holds the column names', type: 'boolean', default: true, help: 'Turn this off if the first row is data. Columns are then named "Column 1", "Column 2", …' };
-var multiFileOption = { key: 'multiFile', label: 'Many files', type: 'select', default: 'batch',
+var multiFileOption = { key: 'multiFile', label: 'Many files', type: 'select', default: 'stack',
   help: 'Batch: each file goes through the steps on its own and the results download together. Stack: the files become one Data Source, one after the other.',
   options: [{ value: 'batch', label: 'Work on each file on its own (batch)' }, { value: 'stack', label: 'Put the files together (stack)' }] };
 var fileColumnOption = { key: 'fileNameColumn', label: 'Add a column with the name of the file', type: 'boolean', default: false,
