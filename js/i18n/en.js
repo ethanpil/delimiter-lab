@@ -319,6 +319,9 @@
     'chain.turnOff': 'Turn off (skip this step)',
     'chain.duplicate': 'Duplicate',
     // Step configuration panel (js/ui/config.js)
+    'config.note': 'Note',
+    'config.noteHelp': 'Your notes about this step, for later. The note is saved with the workflow and goes into the workflow file. It does not change the data.',
+    'config.notePlaceholder': 'For example: why this step is here, or what to check in the result.',
     'config.changeOpTitle': 'Change to a different operation, keeping the position in the chain',
     'config.changeOp': 'Change operation',
     'config.deleteStep': 'Delete this step',

@@ -1170,6 +1170,13 @@
         store.saveSession();
         if (autosaveOn) autosaveSoon();
         break;
+      case 'note':
+        // A note changes no result, so nothing runs again and the preview stays.
+        updateUndoButtons();
+        updateSaveState();
+        store.saveSession();
+        if (autosaveOn) autosaveSoon();
+        break;
       case 'selection':
         chain.render(true);
         renderConfig();

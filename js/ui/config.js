@@ -65,7 +65,26 @@
     el.appendChild(rendered.grid);
     el.appendChild(U.el('div', { class: 'problems', dataset: { role: 'problems' } }));
     el.appendChild(U.el('div', { dataset: { role: 'result' } }));
+    el.appendChild(this.noteField(step));
     this.update();
+  };
+
+  // The note of the step: text that the user keeps about the step, across the whole width. The
+  // value goes in as the value of the box and never as HTML, so any text shows as it is.
+  ConfigView.prototype.noteField = function (step) {
+    var self = this;
+    var id = step.id;
+    var fid = 'step-note-' + id;
+    var box = U.el('textarea', {
+      id: fid, class: 'form-control step-note', rows: '3', maxlength: String(DL.STEP_NOTE_MAX),
+      placeholder: DL.t('config.notePlaceholder')
+    });
+    box.value = step.note || '';
+    box.addEventListener('input', function () { self.store.setStepNote(id, box.value, { merge: true }); });
+    return U.el('div', { class: 'step-note-field' }, [
+      U.el('label', { class: 'field-label', for: fid }, [DL.t('config.note'), U.helpIcon(DL.t('config.noteHelp'))]),
+      box
+    ]);
   };
 
   // Light update: field visibility, problems and results. Keeps the focus in inputs.
