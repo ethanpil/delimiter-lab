@@ -22,7 +22,8 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Copies a saved workflow under a new name. "Copy" in the workflow list saves the copy and opens it, so you can change it. The first workflow does not change.
 - Opens a saved workflow and data from a link: `#workflow=<link name>&source=<data in base64>`. See "Open from a link".
 - Reads many files as one Data Source. "Many files" is at stack at the start, and you can add files at any time. The columns go by name, and a column that a file does not have is empty for the rows of that file.
-- Takes pasted data: the text of a CSV or TSV file, or cells that you copied from a spreadsheet. Click "Paste data" beside the files of the source. The data becomes a file of the source. The pencil button of that file opens the data again, so you can change it.
+- Takes pasted data: the text of a CSV or TSV file, or cells that you copied from a spreadsheet. Click "Paste data" beside the files of the source. The data becomes a file of the source. The pencil button of that file opens the data again, so you can change it. The button opens files
+  of at most 5 MB that hold UTF-8 text.
 - Lists the files of the source with the size, the rows and the columns of each. You can change their order, take one out, or remove all of them. The steps stay.
 - Keeps the workspace in the browser. After a reload, or after the power goes off, the steps are there again, and the file too when it is smaller than 100 MB.
 - Applies the steps to many files at once. Put "Many files" at batch, drop the files and choose the output format. The result is a zip file.
@@ -389,10 +390,10 @@ The Saved workflows dialog has two buttons at the top: "Full Backup" and "Full R
   It does not hold your data files.
 - **Full Restore** reads such a file. A question tells you what goes and what comes. When you
   agree, the page removes everything that Delimiter Lab keeps in this browser and puts the backup
-  in its place. Then the page loads again. When the backup has steps with code, the question warns you. Restore
-  such a backup only when you trust its source. You cannot undo a restore, so make a Full Backup first
-  if you want to keep what you have now. Close the other tabs of Delimiter Lab before a restore,
-  because an open tab can write its steps again.
+  in its place. Then the page loads again, and each other tab of Delimiter Lab loads again too.
+  You cannot undo a restore, so make a Full Backup first if you want to keep what you have now.
+  A backup that holds steps with code gets a question of its own. Restore such a backup only when
+  you trust the person who made it.
 
 The file has this shape:
 
@@ -422,7 +423,10 @@ Versions:
   Delimiter Lab reads the old keys and moves them to a new shape when it must. So a backup from an
   older version restores into a newer one.
 - A restore checks the whole file before it removes anything. When the browser storage is full
-  during the restore, the page puts the keys of before back, and nothing changes.
+  during the restore, the page puts the keys of before back, and nothing changes. When the storage
+  takes neither the backup nor the keys of before, a message says so: your workflows are then in
+  the backup file only.
+- Full Restore takes a file of at most 32 MB, because the browser storage holds less than that.
 
 ## License
 
