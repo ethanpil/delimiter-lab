@@ -99,7 +99,7 @@
       return U.el('li', {}, [U.el('span', { text: f.name }), U.el('span', { class: 'text-secondary', text: U.fmtBytes(f.size) })]);
     })) : null;
     var body = U.el('div', { class: 'd-flex flex-column gap-3' }, [
-      opts.note ? U.el('div', { class: 'alert alert-info py-2 mb-0', text: opts.note }) : null,
+      opts.note ? U.el('div', { class: 'alert py-2 mb-0 ' + (opts.warn ? 'alert-warning' : 'alert-info'), text: opts.note }) : null,
       fileList,
       U.el('div', {}, [U.el('label', { class: 'form-label mb-1', text: DL.t('dialog.format') }), fmt]),
       U.el('div', {}, [U.el('label', { class: 'form-label mb-1', text: DL.t('dialog.fileName') }), name]),

@@ -1136,27 +1136,41 @@
   /* ---------- Download ---------- */
   var exportToken = 0;
 
+  // The step whose result is the result of the whole workflow: the last step that is on. With no step
+  // on, that is the source.
+  function finalStepId() {
+    var steps = store.state.workflow.steps;
+    for (var i = steps.length - 1; i >= 0; i--) if (steps[i].enabled !== false) return steps[i].id;
+    return 'source';
+  }
+
+  // The words that say where the data of a step stands in the workflow, or null for the final
+  // result. A copy and a download of an earlier step are real work, but the person must know that the
+  // steps after it do not apply.
+  function notFinalNote(stepId) {
+    if (stepId === finalStepId()) return null;
+    var steps = store.state.workflow.steps;
+    if (stepId === 'source') return DL.t('preview.notFinalSource', { steps: DL.pluralize(steps.length, 'step') });
+    var idx = store.stepIndex(stepId);
+    var op = idx >= 0 ? DL.getOp(steps[idx].opId) : null;
+    return DL.t('preview.notFinalStep', { n: idx + 1, total: steps.length, op: op ? op.name : steps[idx].opId });
+  }
+
   function download() {
     grid.closeProfile();
     var st = store.state;
     if (st.source.status !== 'ready') { U.toast(DL.t('msg.openFileFirst'), 'info'); return; }
-    var sel = st.selectedId;
-    var shown = store.displayResultFor(sel);
-    var note = null;
-    if (sel !== 'source') {
-      var idx = store.stepIndex(sel);
-      var op = DL.getOp(st.workflow.steps[idx].opId);
-      if (shown.stepId !== sel) note = DL.t('msg.downloadNoteBlocked', { n: idx + 1 });
-      else note = DL.t('msg.downloadNoteStep', { n: idx + 1, op: op ? ' (' + op.name + ')' : '' });
-    } else if (st.workflow.steps.length) {
-      note = DL.t('msg.downloadNoteSource');
-    }
+    // The download holds what the preview shows: the selected step, or the step before it when the
+    // selected step cannot run yet.
+    var shown = store.displayResultFor(st.selectedId);
+    var where = notFinalNote(shown.stepId);
+    var note = where ? where + ' ' + DL.t('preview.notFinalDownload') : null;
     var base = U.baseName(st.source.file.name);
     var wfName = (st.workflow.name || '').trim();
     var shortName = wfName.toLowerCase().indexOf(base.toLowerCase()) === 0 ? wfName.slice(base.length).trim() : wfName;
     var shownStep = shown.stepId === 'source' ? -1 : store.stepIndex(shown.stepId);
     var suffix = shownStep < 0 ? '' : (wfName ? '-' + U.safeFileName(shortName || wfName) : '-step' + (shownStep + 1));
-    DL.dialogs.download({ baseName: base + suffix, note: note, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
+    DL.dialogs.download({ baseName: base + suffix, note: note, warn: !!where, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
       if (exporting) { U.toast(DL.t('msg.downloadRunning'), 'info'); return; }
@@ -1368,7 +1382,15 @@
   $('btnDownload').addEventListener('click', download);
   $('btnHelp').addEventListener('click', DL.dialogs.help);
   // The preview shows the result of the step that can run; Copy takes that result.
-  $('btnCopy').addEventListener('click', function () { copyData(grid.stepId, 'table'); });
+  $('btnCopy').addEventListener('click', function () {
+    var stepId = grid.stepId;
+    var where = stepId ? notFinalNote(stepId) : null;
+    if (!where) { copyData(stepId, 'table'); return; }
+    // The question runs the copy after the dialog closes, still close to the click, so the browser
+    // takes the write.
+    U.confirm({ title: DL.t('preview.notFinalTitle'), message: where + ' ' + DL.t('preview.notFinalCopy'), yes: DL.t('preview.copyThisStep') },
+      function () { copyData(stepId, 'table'); });
+  });
   $('btnTiming').addEventListener('click', function () {
     engine.memory().then(function (m) { DL.showTiming(store, m); }).catch(function () { DL.showTiming(store, null); });
   });
