@@ -95,11 +95,23 @@
       self.closeProfile();
       U.contextMenu(e, [{ label: DL.t('grid.copyColumn'), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'column', col); } }]);
     });
+    // A right click on a cell copies its value, its row or its column. The value comes from the
+    // rows on the screen, so it needs no answer from the worker.
     this.rowsEl.addEventListener('contextmenu', function (e) {
-      var cell = e.target.closest('.grid-cell.rownum[data-row]');
-      if (!cell || !self.onCopy) return;
-      var row = Number(cell.getAttribute('data-row'));
-      U.contextMenu(e, [{ label: DL.t('grid.copyRow', { n: row + 1 }), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'row', row); } }]);
+      var rowEl = e.target.closest('.grid-row');
+      var num = rowEl && rowEl.querySelector('.grid-cell.rownum[data-row]');
+      if (!num || !self.onCopy) return;
+      var row = Number(num.getAttribute('data-row'));
+      var copyRow = { label: DL.t('grid.copyRow', { n: (row + 1).toLocaleString() }), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'row', row); } };
+      if (e.target.closest('.grid-cell.rownum')) { U.contextMenu(e, [copyRow]); return; }
+      var col = self.columnAt(e.clientX);
+      var value = col >= 0 ? self.cellValue(row, col) : null;
+      if (value === null) { U.contextMenu(e, [copyRow]); return; }
+      U.contextMenu(e, [
+        { label: DL.t('grid.copyValue'), icon: 'bi-clipboard', onClick: function () { self.onCopyValue(value, row, self.columns[col]); } },
+        copyRow,
+        { label: DL.t('grid.copyColumnNamed', { name: self.columns[col] }), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'column', col); } }
+      ]);
     });
     this.header.addEventListener('dblclick', function (e) {
       var grip = e.target.closest ? e.target.closest('.grid-grip') : null;
@@ -294,6 +306,20 @@
     else { delete this.widthSet[name]; this.widths[c] = this.naturalWidth(c); this.fillWidth(); }
     this.renderHeader(true);
     this.renderRows();
+  };
+
+  // The column under a point of the screen, or -1. The left edges come from layout().
+  GridView.prototype.columnAt = function (clientX) {
+    var x = clientX - this.scroll.getBoundingClientRect().left + this.scroll.scrollLeft;
+    for (var c = 0; c < this.columns.length; c++) if (x >= this.lefts[c] && x < this.lefts[c + 1]) return c;
+    return -1;
+  };
+
+  // The value of a cell from the pages on the screen, or null when its page is not there yet.
+  GridView.prototype.cellValue = function (row, col) {
+    var page = this.pages.get(Math.floor(row / this.page));
+    var values = page ? page.rows[row - page.start] : null;
+    return values && col < values.length ? values[col] : null;
   };
 
   // The columns that are inside the view (plus a small buffer): [first, last).

@@ -503,6 +503,7 @@
     if (!gridBefore) {
       gridBefore = new DL.GridView(wrap, engine, { title: DL.t('preview.before') });
       gridBefore.onCopy = copyData; // a right click copies from the input as well
+      gridBefore.onCopyValue = copyValue;
       gridBefore.onScroll = function (top) { if (Math.abs(grid.scroll.scrollTop - top) > 1) grid.scroll.scrollTop = top; };
       grid.onScroll = function (top) { if (gridBefore && Math.abs(gridBefore.scroll.scrollTop - top) > 1) gridBefore.scroll.scrollTop = top; };
     }
@@ -997,6 +998,14 @@
     }, function () { U.toast(DL.t('preview.copyFailed'), 'danger'); });
   }
   grid.onCopy = copyData;
+
+  // Copies the value of one cell as it is, with no quotes, so it pastes into a box or a cell alike.
+  function copyValue(value, row, name) {
+    U.copyText(value).then(function (ok) {
+      U.toast(ok ? DL.t('preview.copiedValue', { n: (row + 1).toLocaleString(), name: name }) : DL.t('preview.copyFailed'), ok ? 'success' : 'danger');
+    });
+  }
+  grid.onCopyValue = copyValue;
 
   function openWorkflows() {
     DL.dialogs.workflows({ currentColumns: store.sourceColumns(), currentId: store.state.workflow.id }, {

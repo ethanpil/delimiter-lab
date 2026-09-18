@@ -47,6 +47,7 @@
     'preview.copyTitle': 'Copy the result in the preview, to paste it into a spreadsheet',
     'preview.copied': 'Copied {rows} and {columns}. Paste them into a spreadsheet.',
     'preview.copiedRow': 'Copied row {n}.',
+    'preview.copiedValue': 'Copied the value of row {n}, column "{name}".',
     'preview.copiedColumn': 'Copied the column "{name}" with {rows}.',
     'preview.copyTooBig': 'This is {cells}. A copy takes at most {max}. Use Download for a result of this size.',
     'preview.copyFailed': 'The browser did not copy the data.',
@@ -189,6 +190,8 @@
     'grid.copy': 'Copy',
     'grid.copyRow': 'Copy row {n}',
     'grid.copyColumn': 'Copy column',
+    'grid.copyColumnNamed': 'Copy column "{name}"',
+    'grid.copyValue': 'Copy value',
     'grid.copyColumnTitle': 'Copy this column, with its name, to paste it into a spreadsheet',
     // Common
     'common.cancel': 'Cancel',
