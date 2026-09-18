@@ -2174,16 +2174,24 @@
   DL.workflowSlug = function(name) {
     return DL.stripLatinAccents(String(name == null ? "" : name).normalize("NFKC")).toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
   };
+  DL.STEP_NOTE_MAX = 1e4;
+  DL.cleanNote = function(note) {
+    return typeof note === "string" ? note.slice(0, DL.STEP_NOTE_MAX) : "";
+  };
   DL.normalizeStep = function(s, keepId) {
     return {
       id: keepId && s.id ? String(s.id) : DL.uid(),
       opId: s.opId,
       params: DL.cleanParams(s.opId, s.params),
-      enabled: s.enabled !== false
+      enabled: s.enabled !== false,
+      note: DL.cleanNote(s.note)
     };
   };
   DL.cleanStep = function(s) {
-    return { id: s.id, opId: s.opId, params: s.params, enabled: s.enabled !== false };
+    var out = { id: s.id, opId: s.opId, params: s.params, enabled: s.enabled !== false };
+    var note = DL.cleanNote(s.note);
+    if (note) out.note = note;
+    return out;
   };
   DL.parseWorkflow = function(text) {
     var data;

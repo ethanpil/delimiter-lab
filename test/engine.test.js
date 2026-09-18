@@ -749,6 +749,37 @@ test('a workflow file of 1.0 reads as before, and no file holds a link name', ()
   // The file that the application writes has the keys of 1.0, and no link name.
   assert.deepStrictEqual(Object.keys(JSON.parse(DL.workflowToJSON(wf))), ['format', 'version', 'name', 'exportedAt', 'columns', 'sourceOptions', 'steps']);
 });
+// A note is free text. Any text must go into a workflow file and come back the same, and a note
+// must never change what the engine runs.
+test('a step note goes through a workflow file unchanged, and the engine does not see it', () => {
+  const odd = [
+    'plain',
+    'quotes " and \' and `backticks`, a backslash \\ and \\n as two characters',
+    'line one\nline two\r\nline three\ttab',
+    'control      and a line separator    ',
+    '{"format":"delimiter-lab-workflow","steps":[]} </script><script>alert(1)</script> ${x}',
+    'unicode: café, 中文, emoji 👍🏽, a lone half \ud800 of a pair',
+    '   spaces kept   '
+  ];
+  const steps = odd.map((note, i) => ({ id: 's' + i, opId: 'case', params: { columns: ['a'], mode: 'upper' }, enabled: true, note: note }));
+  const text = DL.workflowToJSON({ name: 'Notes', steps: steps });
+  const back = DL.parseWorkflow(text);
+  assert.strictEqual(JSON.stringify(back.steps.map((s) => s.note)), JSON.stringify(odd));
+  // A second trip gives the same file, apart from the time.
+  const again = JSON.parse(DL.workflowToJSON(Object.assign({}, back, { steps: back.steps })));
+  assert.strictEqual(JSON.stringify(again.steps.map((s) => s.note)), JSON.stringify(odd));
+  // A step with no note has no "note" key, as in 1.0. A note that is not text is dropped.
+  const plain = JSON.parse(DL.workflowToJSON({ name: 'x', steps: [{ id: 'a', opId: 'case', params: {}, enabled: true, note: '' }] }));
+  assert.ok(!('note' in plain.steps[0]));
+  const bad = DL.parseWorkflow(JSON.stringify({ format: 'delimiter-lab-workflow', version: 1, steps: [
+    { opId: 'case', note: 42 }, { opId: 'case', note: { a: 1 } }, { opId: 'case', note: null }, { opId: 'case' }] }));
+  assert.deepStrictEqual(bad.steps.map((s) => s.note), ['', '', '', '']);
+  // A long note is cut to the limit.
+  assert.strictEqual(DL.parseWorkflow(JSON.stringify({ format: 'delimiter-lab-workflow', version: 1,
+    steps: [{ opId: 'case', note: 'x'.repeat(DL.STEP_NOTE_MAX + 50) }] })).steps[0].note.length, DL.STEP_NOTE_MAX);
+  // The steps that the engine runs carry no note, so a note never changes a result.
+  assert.ok(DL.workerSteps(back.steps).every((s) => !('note' in s)));
+});
 test('split with names but no maximum has unknown columns', () => {
   const p = Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',', names: 'P, Q' });
   assert.strictEqual(DL.predictColumns('split', p, ['A']), null);

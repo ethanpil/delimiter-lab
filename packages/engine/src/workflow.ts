@@ -33,19 +33,36 @@ DL.workflowSlug = function (name) {
     .toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
 };
 
+// The longest note that a step keeps, in characters.
+DL.STEP_NOTE_MAX = 10000;
+
+// The note of a step: the text that the user wrote about the step. The engine does not read it, so
+// a note never changes a result. A value that is not text gives no note, and a long text is cut.
+// JSON.stringify escapes every character that the file format needs escaped (quotes, backslashes,
+// line ends, control characters and lone halves of a surrogate pair), so any text goes into a file
+// and comes back the same.
+DL.cleanNote = function (note) {
+  return typeof note === 'string' ? note.slice(0, DL.STEP_NOTE_MAX) : '';
+};
+
 // A step with settings of the right shape. keepId keeps the name that the step came with.
 DL.normalizeStep = function (s, keepId) {
   return {
     id: keepId && s.id ? String(s.id) : DL.uid(),
     opId: s.opId,
     params: DL.cleanParams(s.opId, s.params),
-    enabled: s.enabled !== false
+    enabled: s.enabled !== false,
+    note: DL.cleanNote(s.note)
   };
 };
 
-// A step as the file holds it.
+// A step as the file holds it. A step with no note has no "note" key, so a file of a workflow with
+// no notes is the same as a file of 1.0.
 DL.cleanStep = function (s) {
-  return { id: s.id, opId: s.opId, params: s.params, enabled: s.enabled !== false };
+  var out: any = { id: s.id, opId: s.opId, params: s.params, enabled: s.enabled !== false };
+  var note = DL.cleanNote(s.note);
+  if (note) out.note = note;
+  return out;
 };
 
 // Reads a workflow file. Throws with a plain message when the text is not one.
