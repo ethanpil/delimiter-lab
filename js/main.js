@@ -1156,6 +1156,15 @@
     return DL.t('preview.notFinalStep', { n: idx + 1, total: steps.length, op: op ? op.name : steps[idx].opId });
   }
 
+  // The start of the name of a download: the workflow name as a link name, the name of the source
+  // file and the time, for example clean-contacts-orders-2026-09-18-14-05. The dialog adds the
+  // extension of the format.
+  function downloadName() {
+    var slug = DL.workflowSlug(store.state.workflow.name || '');
+    var file = U.safeFileName(U.baseName(store.state.source.file.name));
+    return (slug ? slug + '-' : '') + file + '-' + DL.formatDate(Date.now(), 'YYYY-MM-DD-HH-mm');
+  }
+
   function download() {
     grid.closeProfile();
     var st = store.state;
@@ -1165,12 +1174,7 @@
     var shown = store.displayResultFor(st.selectedId);
     var where = notFinalNote(shown.stepId);
     var note = where ? where + ' ' + DL.t('preview.notFinalDownload') : null;
-    var base = U.baseName(st.source.file.name);
-    var wfName = (st.workflow.name || '').trim();
-    var shortName = wfName.toLowerCase().indexOf(base.toLowerCase()) === 0 ? wfName.slice(base.length).trim() : wfName;
-    var shownStep = shown.stepId === 'source' ? -1 : store.stepIndex(shown.stepId);
-    var suffix = shownStep < 0 ? '' : (wfName ? '-' + U.safeFileName(shortName || wfName) : '-step' + (shownStep + 1));
-    DL.dialogs.download({ baseName: base + suffix, note: note, warn: !!where, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
+    DL.dialogs.download({ baseName: downloadName(), note: note, warn: !!where, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
       if (exporting) { U.toast(DL.t('msg.downloadRunning'), 'info'); return; }
