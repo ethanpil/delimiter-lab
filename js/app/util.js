@@ -137,7 +137,10 @@
         U.el('div', { class: 'modal-content' }, [
           U.el('div', { class: 'modal-header' }, [
             U.el('h5', { class: 'modal-title', text: opts.title || '' }),
-            U.el('button', { type: 'button', class: 'btn-close', 'data-bs-dismiss': 'modal', 'aria-label': DL.t('common.close') })
+            // opts.headerTools: buttons on the right of the header. They take the free space, so the
+            // close button stays at the edge.
+            opts.headerTools ? U.el('div', { class: 'modal-header-tools ms-auto me-3 d-flex gap-2 flex-wrap' }, opts.headerTools) : null,
+            U.el('button', { type: 'button', class: 'btn-close' + (opts.headerTools ? ' ms-0' : ''), 'data-bs-dismiss': 'modal', 'aria-label': DL.t('common.close') })
           ]),
           U.el('div', { class: 'modal-body' }, opts.body),
           opts.footer ? U.el('div', { class: 'modal-footer' }, opts.footer) : null
