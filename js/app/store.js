@@ -139,7 +139,7 @@
     var steps = this.state.workflow.steps;
     var idx = afterId === 'source' ? -1 : this.stepIndex(afterId);
     if (afterId !== 'source' && idx < 0) idx = steps.length - 1;
-    var step = { id: DL.uid(), opId: opId, params: DL.defaultParams(opId), enabled: true };
+    var step = { id: DL.uid(), opId: opId, params: DL.defaultParams(opId), enabled: true, note: '' };
     steps.splice(idx + 1, 0, step);
     DL.initParams(opId, step.params, this.inputColumnsFor(step.id));
     this.invalidateResultsFrom(idx + 1);
@@ -227,6 +227,23 @@
     this.invalidateResultsFrom(this.stepIndex(id));
     this.state.dirty = true;
     this.emit('params');
+  };
+
+  // Sets the note of a step. Typing merges into one undo entry, as for the settings. A note does not
+  // change a result, so the steps do not run again.
+  Store.prototype.setStepNote = function (id, note, opts) {
+    var step = this.getStep(id);
+    if (!step) return;
+    note = DL.cleanNote(note);
+    if ((step.note || '') === note) return;
+    var now = Date.now();
+    var key = id + ':note';
+    if (!(opts && opts.merge && this.lastEditKey === key && now - this.lastEditAt < 1500)) this.pushHistory();
+    this.lastEditKey = key;
+    this.lastEditAt = now;
+    step.note = note;
+    this.state.dirty = this.workflowSnapshot() !== this.savedSnapshot;
+    this.emit('note');
   };
 
   // Replaces all steps, for example when a saved workflow is opened.
