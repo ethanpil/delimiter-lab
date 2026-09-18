@@ -132,6 +132,29 @@ test('saved workflows of 1.0 stay readable, and a link finds them with no write'
   assert.strictEqual(saved['dl.workflows.v1'], text, 'to read and to find writes nothing');
 });
 
+test('a copy of a saved workflow is a new record, and the first record does not change', () => {
+  const first = { id: 'c1', name: 'Clean', steps: [{ id: 'a', opId: 'case', params: { columns: ['Email'], mode: 'lower' }, enabled: false }], columns: ['Email'], sourceOptions: { delimiter: ';' }, createdAt: 1, updatedAt: 2, lastUsedAt: 3 };
+  const later = { id: 'later', name: 'From a later build', steps: [{ opId: 42 }] };
+  const saved = { 'dl.workflows.v1': JSON.stringify([first, later]) };
+  const fake = { getItem: (k) => (k in saved ? saved[k] : null), setItem: (k, v) => { saved[k] = String(v); }, removeItem: (k) => { delete saved[k]; } };
+  Object.defineProperty(globalThis, 'localStorage', { value: fake, configurable: true, writable: true });
+  const W = DL.workflows;
+  const copy = W.copy('c1', 'Clean for Europe');
+  assert.ok(copy && copy.id !== 'c1');
+  assert.strictEqual(copy.name, 'Clean for Europe');
+  assert.deepStrictEqual(copy.steps, first.steps);
+  assert.deepStrictEqual(copy.columns, first.columns);
+  assert.deepStrictEqual(copy.sourceOptions, first.sourceOptions);
+  assert.ok(!copy.lastUsedAt, 'the copy was never used');
+  assert.deepStrictEqual(W.get('c1'), first, 'the first record is as it was');
+  assert.deepStrictEqual(W.list().map((w) => w.id), [copy.id, 'c1']);
+  assert.ok(saved['dl.workflows.v1'].indexOf('From a later build') >= 0, 'a record of a later build stays');
+  // A change to the copy does not reach the first record.
+  W.rename(copy.id, 'Clean for Asia');
+  assert.strictEqual(W.get('c1').name, 'Clean');
+  assert.strictEqual(W.copy('no-such-id', 'X'), null);
+});
+
 // The page reads the IIFE build; a program that takes the engine as a module reads the other one.
 // Both come from one source, so both must hold the same engine.
 (async () => {

@@ -87,6 +87,13 @@
     write(state, state.list);
   };
 
+  // Saves a copy of a workflow under a new name, as a new record. The first record does not change.
+  // Gives the copy, or null when the record is gone or the save failed.
+  W.copy = function (id, name) {
+    var w = W.get(id);
+    return w ? W.save({ name: name, steps: w.steps, columns: w.columns, sourceOptions: w.sourceOptions }) : null;
+  };
+
   W.remove = function (id) {
     var state = readAll();
     write(state, state.list.filter(function (w) { return w.id !== id; }));
