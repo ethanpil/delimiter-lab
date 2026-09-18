@@ -814,11 +814,31 @@
     reader.readAsText(file);
   }
 
+  // Saves a copy of a saved workflow under a new name and opens the copy. Gives the copy, or null.
+  // A copy of the open workflow takes the steps on the screen, also the changes that are not saved.
+  // The screen then belongs to the copy, and the first record keeps its saved steps.
+  function copyWorkflow(wf, name) {
+    if (wf.id !== store.state.workflow.id) {
+      var copy = DL.workflows.copy(wf.id, name);
+      if (copy) applyWorkflow(copy);
+      return copy;
+    }
+    // With autosave on, the first record takes a change that waits, as it would without the copy.
+    autosaveSoon.cancel();
+    autosaveNow();
+    var rec = currentRecord(name);
+    rec.id = null;
+    rec = DL.workflows.save(rec);
+    if (rec) store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
+    return rec;
+  }
+
   function openWorkflows() {
     DL.dialogs.workflows({ currentColumns: store.sourceColumns(), currentId: store.state.workflow.id }, {
       apply: applyWorkflow,
       quickRun: quickRunWorkflow,
       importFile: importWorkflowFile,
+      copy: copyWorkflow,
       renamed: function (id, name) { if (store.state.workflow.id === id) store.setWorkflowMeta({ name: name }, !store.state.dirty); },
       removed: function (id) { if (store.state.workflow.id === id) store.setWorkflowMeta({ id: null }); }
     });

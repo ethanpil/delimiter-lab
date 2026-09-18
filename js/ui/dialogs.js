@@ -276,6 +276,19 @@
                 U.prompt({ title: DL.t('dialog.renameWorkflow'), value: w.name }, function (v) { DL.workflows.rename(w.id, v); if (actions.renamed) actions.renamed(w.id, v); D.workflows(opts, actions); }, function () { D.workflows(opts, actions); });
               });
             } }, [U.el('i', { class: 'bi bi-pencil' }), ' ' + DL.t('common.rename')]),
+            U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('wf.copyTitle'), onclick: function () {
+              // The first free name of "<name> (copy)", "<name> (copy) 2", and so on.
+              var names = all.map(function (r) { return r.name; });
+              var base = DL.t('wf.copyName', { name: w.name }).slice(0, 80), name = base;
+              for (var n = 2; names.indexOf(name) >= 0; n++) name = base.slice(0, 80 - String(n).length - 1) + ' ' + n;
+              m.closeThen(function () {
+                U.prompt({ title: DL.t('dialog.copyWorkflow'), message: DL.t('wf.copyMessage'), value: name, yes: DL.t('wf.copy') }, function (v) {
+                  var rec = actions.copy(w, v);
+                  if (rec) U.toast(DL.t('wf.copied', { name: rec.name }), 'success');
+                  else D.workflows(opts, actions);
+                }, function () { D.workflows(opts, actions); });
+              });
+            } }, [U.el('i', { class: 'bi bi-copy' }), ' ' + DL.t('wf.copy')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('dialog.exportWorkflow'), onclick: function () {
               U.downloadBlob(new Blob([DL.workflows.toJSON(w)], { type: 'application/json' }), U.safeFileName(w.name) + '.workflow.json');
             } }, [U.el('i', { class: 'bi bi-download' }), ' ' + DL.t('wf.exportFile')]),
