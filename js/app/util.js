@@ -198,7 +198,13 @@
     if (opts.alt) {
       buttons.push(U.el('button', { type: 'button', class: 'btn btn-outline-primary', text: opts.alt, onclick: function () { chosen = true; m.closeThen(function () { if (onAlt) onAlt(); }); } }));
     }
-    buttons.push(U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () { chosen = true; m.closeThen(function () { if (onYes) onYes(); }); } }));
+    // opts.inClick: onYes runs inside the click, before the dialog closes. A write to the clipboard
+    // needs that in Safari. Such an answer must not open another dialog.
+    buttons.push(U.el('button', { type: 'button', class: 'btn btn-' + (opts.danger ? 'danger' : 'primary'), text: opts.yes || DL.t('common.ok'), autofocus: true, onclick: function () {
+      chosen = true;
+      if (opts.inClick) { if (onYes) onYes(); m.close(); return; }
+      m.closeThen(function () { if (onYes) onYes(); });
+    } }));
     m = U.modal({
       onHidden: function () { if (!chosen && onCancel) onCancel(); },
       enterSubmits: true,
@@ -253,18 +259,21 @@
   };
 
   // Puts text on the clipboard. source is the text, or a promise of it; a promise that gives null
-  // copies nothing. container holds the helper box of the older copy command: an open dialog keeps
-  // the focus inside itself, so the box must go inside that dialog. Gives a promise of true when
-  // the text is on the clipboard.
+  // copies nothing. container holds the helper box of the older copy command. Gives a promise of true
+  // when the text is on the clipboard.
   //
   // A browser takes a write only close to the click that asks for it. The text of a step comes from
-  // the worker a moment later, so it goes to the clipboard as a promise, and the click still counts.
+  // the worker a moment later. So the write starts in the click, with the text as a promise.
   U.copyText = function (source, container) {
     var text = Promise.resolve(source);
     var older = function (t) {
+      // A large text in a text box stops the page for seconds, and the command then fails anyway,
+      // because the click is long gone.
+      if (t.length > 2000000) return false;
       var box = U.el('textarea', { class: 'visually-hidden', readonly: true });
       box.value = t;
-      (container || document.body).appendChild(box);
+      // An open dialog keeps the focus inside itself, so the box must go into that dialog.
+      (container || document.querySelector('.modal.show') || document.body).appendChild(box);
       box.select();
       var ok = false;
       try { ok = document.execCommand('copy'); } catch (e) { /* this browser has no copy command */ }
@@ -308,6 +317,23 @@
     menu.style.top = Math.max(0, y) + 'px';
     var first = menu.querySelector('button');
     if (first) first.focus();
+    // The arrow keys move between the items, and Escape closes the menu. These keys stop at the
+    // window: the key handler of Bootstrap for a .dropdown-menu listens on the document in the capture
+    // phase, looks for a dropdown button, finds none on this page, and throws. The window hears the
+    // key before the document.
+    var arrows = function (ev) {
+      var keys = { ArrowDown: 1, ArrowUp: -1, Home: 0, End: 0, Escape: 0 };
+      if (!(ev.key in keys) || !menu.contains(ev.target)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (ev.key === 'Escape') { U.closeContextMenu(); return; }
+      var buttons = Array.prototype.slice.call(menu.querySelectorAll('button'));
+      var at = buttons.indexOf(document.activeElement);
+      var next = ev.key === 'Home' ? 0 : ev.key === 'End' ? buttons.length - 1 : (at + keys[ev.key] + buttons.length) % buttons.length;
+      buttons[next].focus();
+    };
+    window.addEventListener('keydown', arrows, true);
+    menu.arrows = arrows;
     var close = function (ev) {
       if (ev && ev.type === 'mousedown' && menu.contains(ev.target)) return;
       if (ev && ev.type === 'keydown' && ev.key !== 'Escape') return;
@@ -329,6 +355,7 @@
     document.removeEventListener('keydown', close, true);
     window.removeEventListener('scroll', close, true);
     window.removeEventListener('resize', close);
+    window.removeEventListener('keydown', openMenu.arrows, true);
     openMenu.remove();
     openMenu = null;
   };
