@@ -455,6 +455,31 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     if (zlib.crc32) assert.strictEqual(DL.crcEnd(c), zlib.crc32(buf));
   });
 
+  // A report often starts with a title and a date, and the column names come after them. The names
+  // come from the top row: the first row that "Skip rows at the top" keeps. The form therefore shows
+  // the skip before the setting of the names.
+  test('the column names come from the first row after the skipped rows, in CSV and in Excel', () => {
+    const csv = 'Monthly report;;\n\nName;City;Amount\nAda;London;10\nAlan;Wilmslow;20\n';
+    const r = send({ type: 'load', file: new FakeFile(csv, 'report.csv'), options: { skipRows: 2, headers: true } });
+    assert.strictEqual(r.type, 'loaded');
+    assert.deepStrictEqual(r.info.columns, ['Name', 'City', 'Amount']);
+    assert.strictEqual(r.info.rowCount, 2);
+    assert.strictEqual(r.info.delimiter, ';', 'the skipped title does not decide the separator');
+    const off = send({ type: 'load', file: new FakeFile(csv, 'report.csv'), options: { skipRows: 2, headers: false } });
+    assert.deepStrictEqual(off.info.columns, ['Column 1', 'Column 2', 'Column 3']);
+    assert.strictEqual(off.info.rowCount, 3, 'with the setting off, the top row is data');
+    const X = global.XLSX || require(path.join(root, 'vendor/xlsx.full.min.js'));
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['Monthly report'], ['Exported 2026-09-01'], ['Name', 'City'], ['Ada', 'London']]), 'Report');
+    const x = send({ type: 'load', file: new FakeFile(X.write(wb, { type: 'buffer', bookType: 'xlsx' }), 'report.xlsx'), options: { skipRows: 2 } });
+    assert.deepStrictEqual(x.info.columns, ['Name', 'City']);
+    assert.strictEqual(x.info.rowCount, 1);
+    DL.inputFormats.forEach((f) => {
+      const keys = f.options.map((o) => o.key);
+      assert.ok(keys.indexOf('skipRows') < keys.indexOf('headers'), f.id + ': the skip must come before the names in the form');
+    });
+  });
+
   await Promise.all(pending);
   console.log(passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed ? 1 : 0;

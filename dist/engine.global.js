@@ -1326,7 +1326,7 @@
     var m = /\.([a-z0-9]+)$/i.exec(name || "");
     return m ? m[1].toLowerCase() : "";
   };
-  var headerOption = { key: "headers", label: "First row holds the column names", type: "boolean", default: true, help: 'Turn this off if the first row is data. Columns are then named "Column 1", "Column 2", \u2026' };
+  var headerOption = { key: "headers", label: "Top row holds the column names", type: "boolean", default: true, help: 'The top row is the first row after "Skip rows at the top". Turn this off if that row is data. The columns are then named "Column 1", "Column 2", \u2026' };
   var multiFileOption = {
     key: "multiFile",
     label: "Many files",
@@ -1345,7 +1345,7 @@
       return o.multiFile === "stack";
     }
   };
-  var skipRowsOption = { key: "skipRows", label: "Skip rows at the top", type: "number", default: 0, min: 0, max: 1e5, integer: true, help: "Use this when the file starts with notes or a title before the real header row." };
+  var skipRowsOption = { key: "skipRows", label: "Skip rows at the top", type: "number", default: 0, min: 0, max: 1e5, integer: true, help: "Use this when the file starts with notes or a title. The rows go away first, and the row after them is the top row, which can hold the column names." };
   var skipRowsBottomOption = { key: "skipRowsBottom", label: "Skip rows at the bottom", type: "number", default: 0, min: 0, max: 1e5, integer: true, help: "Use this when the file ends with totals, notes or an empty block. The last rows go away." };
   DL.inputFormats = [
     {
@@ -1355,8 +1355,8 @@
       options: [
         multiFileOption,
         fileColumnOption,
-        headerOption,
         skipRowsOption,
+        headerOption,
         skipRowsBottomOption,
         {
           key: "delimiter",
@@ -1396,8 +1396,8 @@
       options: [
         multiFileOption,
         fileColumnOption,
-        headerOption,
         skipRowsOption,
+        headerOption,
         skipRowsBottomOption,
         { key: "skipEmptyLines", label: "Skip empty rows", type: "boolean", default: true }
       ]

@@ -1440,14 +1440,17 @@ DL.fileExtension = function (name) {
   return m ? m[1].toLowerCase() : '';
 };
 
-var headerOption = { key: 'headers', label: 'First row holds the column names', type: 'boolean', default: true, help: 'Turn this off if the first row is data. Columns are then named "Column 1", "Column 2", …' };
+// The column names come from the top row: the first row that "Skip rows at the top" keeps. The
+// reader skips the rows first and then reads the names (DL.TableBuilder), so the label says "top
+// row" and the form shows this setting after the skip.
+var headerOption = { key: 'headers', label: 'Top row holds the column names', type: 'boolean', default: true, help: 'The top row is the first row after "Skip rows at the top". Turn this off if that row is data. The columns are then named "Column 1", "Column 2", …' };
 var multiFileOption = { key: 'multiFile', label: 'Many files', type: 'select', default: 'stack',
   help: 'Batch: each file goes through the steps on its own and the results download together. Stack: the files become one Data Source, one after the other.',
   options: [{ value: 'batch', label: 'Work on each file on its own (batch)' }, { value: 'stack', label: 'Put the files together (stack)' }] };
 var fileColumnOption = { key: 'fileNameColumn', label: 'Add a column with the name of the file', type: 'boolean', default: false,
   help: 'The first column then holds the name of the file that gave each row. Use it to keep the source of the rows after the files are together.',
   showIf: function (o) { return o.multiFile === 'stack'; } };
-var skipRowsOption = { key: 'skipRows', label: 'Skip rows at the top', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file starts with notes or a title before the real header row.' };
+var skipRowsOption = { key: 'skipRows', label: 'Skip rows at the top', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file starts with notes or a title. The rows go away first, and the row after them is the top row, which can hold the column names.' };
 var skipRowsBottomOption = { key: 'skipRowsBottom', label: 'Skip rows at the bottom', type: 'number', default: 0, min: 0, max: 100000, integer: true, help: 'Use this when the file ends with totals, notes or an empty block. The last rows go away.' };
 
 // Input formats. The worker registers a reader for each id. options are field definitions.
@@ -1459,8 +1462,8 @@ DL.inputFormats = [
     options: [
       multiFileOption,
       fileColumnOption,
-      headerOption,
       skipRowsOption,
+      headerOption,
       skipRowsBottomOption,
       { key: 'delimiter', label: 'Column separator', type: 'select', default: 'auto', help: 'The character between values. It is detected automatically in most files.',
         options: [{ value: 'auto', label: 'Detect automatically' }, { value: ',', label: 'Comma ( , )' }, { value: '\\t', label: 'Tab' }, { value: ';', label: 'Semicolon ( ; )' }, { value: '|', label: 'Pipe ( | )' }, { value: 'custom', label: 'Other…' }] },
@@ -1480,8 +1483,8 @@ DL.inputFormats = [
     options: [
       multiFileOption,
       fileColumnOption,
-      headerOption,
       skipRowsOption,
+      headerOption,
       skipRowsBottomOption,
       { key: 'skipEmptyLines', label: 'Skip empty rows', type: 'boolean', default: true }
     ]
