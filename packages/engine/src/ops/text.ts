@@ -553,7 +553,10 @@ var CLEAN_STEPS = [
   // Only Latin letters lose their marks. Other scripts, such as Cyrillic, keep their letters.
   { value: 'accents', label: 'Remove accents from Latin letters (é → e)', fn: function (s) { return DL.stripLatinAccents(s); } },
   { value: 'unicode', label: 'Normalize Unicode (same letter, one code)', fn: function (s) { return s.normalize('NFC'); } },
-  { value: 'spaces', label: 'Replace odd spaces and line breaks with one space, trim', fn: function (s) { return s.replace(/\s+/g, ' ').trim(); } }
+  { value: 'spaces', label: 'Replace odd spaces and line breaks with one space, trim', fn: function (s) { return s.replace(/\s+/g, ' ').trim(); } },
+  // Spaces in a row, also no-break spaces, become one plain space. Line breaks and the spaces at the
+  // ends stay, so this option changes less than the option above.
+  { value: 'squeeze', label: 'Reduce 2 or more consecutive spaces down to 1 space', fn: function (s) { return DL.squeezeSpaces(s); } }
 ];
 
 DL.registerOp({
@@ -565,7 +568,8 @@ DL.registerOp({
   keywords: 'accent diacritic html tags entities unicode normalize whitespace nbsp smart quotes control characters',
   params: [
     { key: 'columns', label: 'Columns', type: 'columns', required: false, help: 'Leave empty to clean all columns.' },
-    { key: 'steps', label: 'Clean', type: 'checkboxes', default: ['html', 'control', 'spaces', 'unicode'],
+    // wide: the list goes across the panel, so each label stays on one line.
+    { key: 'steps', label: 'Clean', type: 'checkboxes', wide: true, default: ['html', 'control', 'spaces', 'unicode'],
       options: CLEAN_STEPS.map(function (s) { return { value: s.value, label: s.label }; }) }
   ],
   summary: function (p) { return p.steps.join(', ') + ': ' + (p.columns.length ? p.columns.join(', ') : 'all columns'); },

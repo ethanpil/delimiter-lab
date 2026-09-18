@@ -680,6 +680,10 @@
   DL.plainSpaces = function(s) {
     return s.replace(ALL_SPACES, " ");
   };
+  var SPACE_RUNS = new RegExp("[" + SPACE_CHARS + "]{2,}", "g");
+  DL.squeezeSpaces = function(s) {
+    return s.replace(SPACE_RUNS, " ");
+  };
   DL.buildRegex = function(find, opts) {
     var flags = "g" + (opts.matchCase ? "" : "i");
     var src = opts.regex ? find : DL.escapeRegExp(find).replace(ALL_SPACES, "[" + SPACE_CHARS + "]");
@@ -2909,6 +2913,11 @@
     } },
     { value: "spaces", label: "Replace odd spaces and line breaks with one space, trim", fn: function(s) {
       return s.replace(/\s+/g, " ").trim();
+    } },
+    // Spaces in a row, also no-break spaces, become one plain space. Line breaks and the spaces at the
+    // ends stay, so this option changes less than the option above.
+    { value: "squeeze", label: "Reduce 2 or more consecutive spaces down to 1 space", fn: function(s) {
+      return DL.squeezeSpaces(s);
     } }
   ];
   DL.registerOp({
@@ -2920,10 +2929,12 @@
     keywords: "accent diacritic html tags entities unicode normalize whitespace nbsp smart quotes control characters",
     params: [
       { key: "columns", label: "Columns", type: "columns", required: false, help: "Leave empty to clean all columns." },
+      // wide: the list goes across the panel, so each label stays on one line.
       {
         key: "steps",
         label: "Clean",
         type: "checkboxes",
+        wide: true,
         default: ["html", "control", "spaces", "unicode"],
         options: CLEAN_STEPS.map(function(s) {
           return { value: s.value, label: s.label };

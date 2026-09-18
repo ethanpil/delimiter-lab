@@ -748,6 +748,11 @@ DL.hasSpace = function (s) { return ONE_SPACE.test(s); };
 // The text with each of those spaces made a plain space.
 DL.plainSpaces = function (s) { return s.replace(ALL_SPACES, ' '); };
 
+// The text with each run of two or more of those spaces made one plain space. A single space, a
+// tab and a line break stay as they are.
+var SPACE_RUNS = new RegExp('[' + SPACE_CHARS + ']{2,}', 'g');
+DL.squeezeSpaces = function (s) { return s.replace(SPACE_RUNS, ' '); };
+
 DL.buildRegex = function (find, opts) {
   var flags = 'g' + (opts.matchCase ? '' : 'i');
   // In a plain search, a space finds any of the spaces above. A regular expression says for

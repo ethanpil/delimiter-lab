@@ -828,6 +828,18 @@ test('the text of a copy is a table that a spreadsheet reads', () => {
     assert.strictEqual(DL.clipboardText(t, 'row', 1).text, 'Alan\t"two\nlines"', 'one row is small');
   } finally { DL.COPY_MAX_CELLS = keep; }
 });
+// "Reduce 2 or more consecutive spaces down to 1 space" makes each run of spaces one plain space. A
+// run can hold no-break spaces. A single space, a line break and the spaces at the ends change less.
+test('Clean Text reduces 2 or more spaces in a row to 1 space', () => {
+  const nb = String.fromCharCode(0xA0);
+  const nl = String.fromCharCode(10);
+  const t = T(['d'], [['A  B   C'], ['12 ' + nb + ' oz'], ['one' + nl + nl + 'two'], ['  ends  '], ['single' + nb + 'space'], ['ok']]);
+  const r = run('textClean', { steps: ['squeeze'] }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((x) => x[0]), ['A B C', '12 oz', 'one' + nl + nl + 'two', ' ends ', 'single' + nb + 'space', 'ok']);
+  assert.deepStrictEqual(r.notes, ['Changed 3 cells.']);
+  // The option is off at the start, so a saved step does not change.
+  assert.ok(DL.defaultParams('textClean').steps.indexOf('squeeze') < 0);
+});
 test('split with names but no maximum has unknown columns', () => {
   const p = Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',', names: 'P, Q' });
   assert.strictEqual(DL.predictColumns('split', p, ['A']), null);
