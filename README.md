@@ -13,7 +13,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Reads the numbers of a file by the separator that file uses. A file that writes 1.234,56 gives 1000 for 1.000, and a file that writes 1,234.56 gives 1. The reader says when it finds a comma file.
 - Builds a chain of steps. Each step reads the output of the step before it.
 - Shows a preview of each step. Download and Copy beside the preview take the data that it shows, at any step. When that is not the final step, they ask first. A download is named after the workflow, the file and the time.
-- Copies the preview to the clipboard, to paste it into a spreadsheet. The Copy button beside Changes copies the result of the step. A right click on a cell copies its value, its row or its column. A right click on a row number copies that row. A right click on a column name copies that column with its name, and the profile of a column has a Copy button too. A copy takes at most 1,000,000 cells.
+- Copies the preview to the clipboard, to paste it into a spreadsheet. The Copy button in the toolbar of the preview copies the result of the step. A right click on a cell copies its value, its row or its column. A right click on a row number copies that row. A right click on a column name copies that column with its name, and the profile of a column has a Copy button too. A copy takes at most 1,000,000 cells.
 - Shows a profile of a column (type, empty cells, different values, smallest and largest, most common values) when you click its name.
 - Marks the cells that a step changed (the "Changes" button). The marks follow moved rows and renamed columns.
 - Shows the rows that failed a Verify rule when you click the rule in the result.
@@ -356,11 +356,11 @@ page. The files go to the `release-files` artifact, and the notes go to the summ
 run takes the workflow from the branch that starts it, so start it from the branch when the workflow
 changed. A run with `ref` and `publish` on stops at once: a branch is not the tag.
 
-Every file of the page carries `?v=` with the version and the time of the deploy, so a browser takes the files of one deploy together.
-`js/manifest.js` and `css/app.css` load before that version exists, so `index.html` asks for them
-with the number written by hand. `npm test` fails when that number and `DL.VERSION` disagree, so
-change all three together. `index.html` itself carries no version: a browser takes it again when
-its copy is old enough, which on GitHub Pages is ten minutes.
+Every file of the page carries `?v=` with the time of the deploy, so a browser takes the files of
+one deploy together. `index.html` reads that time from the server (`document.lastModified`) and
+writes the tags of `css/app.css` and `js/manifest.js` with it. You change no number in `index.html`
+for a release. `index.html` itself carries no stamp: a browser takes it again when its copy is old
+enough, which on GitHub Pages is ten minutes.
 
 ## Workflow files
 
