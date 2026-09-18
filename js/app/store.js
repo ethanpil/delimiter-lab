@@ -242,8 +242,23 @@
     this.lastEditKey = key;
     this.lastEditAt = now;
     step.note = note;
-    this.state.dirty = this.workflowSnapshot() !== this.savedSnapshot;
+    this.state.dirty = true;
     this.emit('note');
+  };
+
+  // The workflow on the screen belongs to another record from now on, for example after a copy.
+  // The snapshots of undo and redo carry the id and the name too, so they take the new ones. Without
+  // that, one undo would move the screen back to the first record and write the steps into it.
+  Store.prototype.rebindWorkflow = function (id, name) {
+    var move = function (snap) {
+      var data = JSON.parse(snap);
+      data.workflow.id = id;
+      data.workflow.name = name;
+      return JSON.stringify(data);
+    };
+    this.undoStack = this.undoStack.map(move);
+    this.redoStack = this.redoStack.map(move);
+    this.setWorkflowMeta({ id: id, name: name }, true);
   };
 
   // Replaces all steps, for example when a saved workflow is opened.
