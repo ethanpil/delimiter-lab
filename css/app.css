@@ -66,6 +66,8 @@ body {
   white-space: nowrap;
 }
 .app-header .btn { white-space: nowrap; }
+/* A thin line on each side of the Download button of the header, which holds the final result. */
+.header-spacer { align-self: stretch; width: 1px; margin: 8px 4px; background: var(--dl-border); }
 .brand-mark img { display: block; width: 28px; height: 28px; }
 .workflow-name { width: 260px; font-weight: 500; }
 .workflow-name:not(:focus) { border-color: transparent; background: transparent; }

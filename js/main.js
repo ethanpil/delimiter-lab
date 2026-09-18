@@ -1161,16 +1161,46 @@
     return DL.t('preview.notFinalStep', { n: idx + 1, total: steps.length, op: op ? op.name : steps[idx].opId });
   }
 
-  function download() {
+  // The step whose data is the final result of the workflow: the last step that is on, because a
+  // step that is off gives its input on. With no step on, that is the source. Gives
+  // { stepId, blockedAt }: blockedAt is the number of the first step that is on and cannot run
+  // (needs setup or failed), or 0.
+  function finalResult() {
+    var steps = store.state.workflow.steps;
+    var last = 'source', blockedAt = 0;
+    for (var i = 0; i < steps.length; i++) {
+      if (steps[i].enabled === false) continue;
+      last = steps[i].id;
+      var r = store.state.results[last];
+      if (!blockedAt && (store.validateStep(last).length || (r && (r.status === 'error' || r.status === 'invalid')))) blockedAt = i + 1;
+    }
+    return { stepId: last, blockedAt: blockedAt };
+  }
+
+  // Downloads the data that the preview shows (the button of the preview and Ctrl+D), or with final
+  // the final result of the workflow, whatever step the preview shows (the button of the header).
+  function download(final) {
     grid.closeProfile();
     var st = store.state;
     if (st.source.status !== 'ready') { U.toast(DL.t('msg.openFileFirst'), 'info'); return; }
-    // The download holds what the preview shows: the selected step, or the step before it when the
-    // selected step cannot run yet.
-    // The download takes the step that the preview shows, as Copy does.
-    var shown = { stepId: grid.stepId || store.displayResultFor(st.selectedId).stepId };
-    var where = notFinalNote(shown.stepId);
-    var note = where ? where + ' ' + DL.t('preview.notFinalDownload') : null;
+    var shown, note = null, where = null;
+    if (final) {
+      var result = finalResult();
+      if (result.blockedAt) { U.toast(DL.t('preview.finalBlocked', { n: result.blockedAt }), 'warning'); return; }
+      shown = { stepId: result.stepId };
+      // The note tells a person who looks at another step which data the file holds.
+      if (grid.stepId !== result.stepId) {
+        var idx = store.stepIndex(result.stepId);
+        var op = idx >= 0 ? DL.getOp(st.workflow.steps[idx].opId) : null;
+        note = idx < 0 ? DL.t('preview.finalSource')
+          : DL.t('preview.finalNote', { n: idx + 1, total: st.workflow.steps.length, op: op ? op.name : st.workflow.steps[idx].opId });
+      }
+    } else {
+      // The download takes the step that the preview shows, as Copy does.
+      shown = { stepId: grid.stepId || store.displayResultFor(st.selectedId).stepId };
+      where = notFinalNote(shown.stepId);
+      note = where ? where + ' ' + DL.t('preview.notFinalDownload') : null;
+    }
     // The name: the workflow name as a link name, the name of the source file and the time, for
     // example clean-contacts-orders-2026-09-18-14-05. The dialog keeps at most 100 characters with the
     // extension, so each of the two names keeps at most 36, and the time stays whole.
@@ -1387,7 +1417,8 @@
   $('btnNew').addEventListener('click', function () { newWorkflow(); }); // the click event is not opts
   $('btnSave').addEventListener('click', function () { saveWorkflow(); });
   $('btnWorkflows').addEventListener('click', openWorkflows);
-  $('btnDownload').addEventListener('click', download);
+  $('btnDownload').addEventListener('click', function () { download(false); });
+  $('btnDownloadFinal').addEventListener('click', function () { download(true); });
   $('btnHelp').addEventListener('click', DL.dialogs.help);
   // The preview shows the result of the step that can run; Copy takes that result.
   $('btnCopy').addEventListener('click', function () {
@@ -1428,7 +1459,7 @@
     if (mod && !e.shiftKey && key === 'z') { if (!typing || e.target.type === 'checkbox') { e.preventDefault(); store.undo(); } return; }
     if (mod && (key === 'y' || (e.shiftKey && key === 'z'))) { if (!typing || e.target.type === 'checkbox') { e.preventDefault(); store.redo(); } return; }
     if (mod && key === 's') { e.preventDefault(); saveWorkflow(); return; }
-    if (mod && key === 'd') { e.preventDefault(); download(); return; }
+    if (mod && key === 'd') { e.preventDefault(); download(false); return; }
     if (mod && key === 'o') { e.preventDefault(); store.select('source'); var dz = document.querySelector('.dropzone'); if (dz) dz.click(); return; }
     if (mod && key === 'f') { e.preventDefault(); $('previewSearch').focus(); $('previewSearch').select(); return; }
     if (typing || document.querySelector('.modal.show')) return;
