@@ -4,6 +4,7 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Add: Copy puts the preview on the clipboard, to paste into a spreadsheet. A right click on a row number or a column name copies that row or column (cf09a77, 79acbcd, 01e560a, 4afefbf).
 - Fix: a space in Find & Replace also finds a no-break space, as many exports write it. Before, some cells changed and others did not (6439db1).
 - Change: "First row holds the column names" is now "Top row holds the column names", after "Skip rows at the top". The names come from the first row after the skipped rows, as before (ca51658).
 - Fix: a new width of a column moves the cells below the name, not only the name (3939ca5).
