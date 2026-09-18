@@ -149,12 +149,16 @@
 
   /* ---------- Paste data ---------- */
   // A box for text that the user pastes. onText(text) runs when the text is not empty.
-  // opts.adding says that the source has files, so the text goes into that source.
+  // opts.adding says that the source has files, so the text goes into that source. opts.editing with
+  // opts.text opens the text of a pasted file, so the user can change it.
   D.paste = function (opts, onText) {
+    var title = DL.t(opts.editing ? 'dialog.pasteEditTitle' : 'dialog.pasteTitle');
+    // The lines do not wrap, so each row of the data takes one line of the box.
     var box = U.el('textarea', {
-      class: 'form-control font-monospace', rows: '12', spellcheck: 'false', autofocus: true,
-      placeholder: DL.t('dialog.pastePlaceholder'), 'aria-label': DL.t('dialog.pasteTitle')
+      class: 'form-control font-monospace paste-box', rows: '18', wrap: 'off', spellcheck: 'false', autofocus: true,
+      placeholder: DL.t('dialog.pastePlaceholder'), 'aria-label': title
     });
+    if (opts.editing) box.value = opts.text || '';
     var m;
     var submit = function () {
       if (!box.value.trim()) { box.classList.add('is-invalid'); box.focus(); return; }
@@ -163,13 +167,15 @@
     };
     box.addEventListener('input', function () { box.classList.remove('is-invalid'); });
     m = U.modal({
-      title: DL.t('dialog.pasteTitle'),
+      title: title,
       size: 'lg',
-      body: [U.el('p', { class: 'small text-secondary', text: DL.t('dialog.pasteHelp') }), box],
+      body: [U.el('p', { class: 'small text-secondary', text: DL.t(opts.editing ? 'dialog.pasteEditHelp' : 'dialog.pasteHelp') }), box],
       footer: [
         U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: DL.t('common.cancel') }),
-        U.el('button', { type: 'button', class: 'btn btn-primary', onclick: submit },
-          [U.el('i', { class: 'bi bi-clipboard-plus me-1' }), DL.t(opts.adding ? 'dialog.pasteAdd' : 'dialog.pasteOpen')])
+        opts.editing
+          ? U.el('button', { type: 'button', class: 'btn btn-primary', onclick: submit }, [U.el('i', { class: 'bi bi-check-lg me-1' }), DL.t('dialog.pasteSave')])
+          : U.el('button', { type: 'button', class: 'btn btn-primary', onclick: submit },
+            [U.el('i', { class: 'bi bi-clipboard-plus me-1' }), DL.t(opts.adding ? 'dialog.pasteAdd' : 'dialog.pasteOpen')])
       ]
     });
   };

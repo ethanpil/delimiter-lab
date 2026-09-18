@@ -25,7 +25,8 @@
     // this, a read that fails on a new delimiter takes the file out of the workspace.
     reload: function () { restoredLoad = false; loadSource(); },
     loadSample: function () { openFile(DL.SourceView.sampleFile()); },
-    paste: pasteData
+    paste: pasteData,
+    editPasted: editPastedFile
   });
   var configView = new DL.ConfigView($('config'), store, {
     changeOp: function (id) {
@@ -171,7 +172,8 @@
   // Asks for pasted data and makes a file of it. When the source holds delimited files, the file goes
   // into the source, as "Add more files" does. Else it opens as the source, as a dropped file does,
   // because a workbook source cannot take a text file. A name that the source has already gets a
-  // number, so each pasted file has its own name in the list.
+  // number, so each pasted file has its own name in the list. The source view knows a pasted file by
+  // this name (PASTED_NAME in js/ui/source.js) and gives it an edit button.
   function pasteData() {
     var adding = function () {
       var first = store.state.source.files[0];
@@ -185,6 +187,22 @@
       if (adding()) addSourceFiles([file]);
       else openFile(file);
     });
+  }
+
+  // Opens the text of a pasted file in the paste box. The changed text takes the place of the file,
+  // with the same name, and the source reads it again. The steps stay.
+  function editPastedFile(index) {
+    var file = store.state.source.files[index];
+    if (!file) return;
+    file.text().then(function (text) {
+      DL.dialogs.paste({ text: text, editing: true }, function (changed) {
+        // The list can change while the box is open. The file keeps its place by its identity.
+        var at = store.state.source.files.indexOf(file);
+        if (at < 0 || changed === text) return;
+        store.replaceSourceFile(at, new File([changed], file.name, { type: 'text/csv' }));
+        afterSourceFilesChanged();
+      });
+    }, function () { U.toast(DL.t('msg.fileNotRead'), 'danger'); });
   }
 
   // Reads the files again after a change of the list, or stops the work when no file remains.

@@ -14,10 +14,14 @@
     'Amara Okafor,amara@example.com,Lagos,-45,2024-06-30,active\n' +
     'Sam O\'Neil,sam@example.com,Dublin,120,not a date,ACTIVE\n';
 
+  // The name that pasteData() in js/main.js gives to pasted data. A file with this name gets an edit
+  // button. The name comes back with the workspace after a reload, so the button comes back too.
+  var PASTED_NAME = /^pasted-data(-\d+)?\.csv$/;
+
   function SourceView(container, store, actions) {
     this.el = container;
     this.store = store;
-    // { openFile, openFiles, addFiles, removeFile, clearFiles, moveFile, reload, loadSample, paste }
+    // { openFile, openFiles, addFiles, removeFile, clearFiles, moveFile, reload, loadSample, paste, editPasted }
     this.actions = actions;
   }
 
@@ -170,6 +174,14 @@
         onclick: function () { self.actions.removeFile(i); }
       }, [U.el('i', { class: 'bi bi-x-lg' })]);
     }
+    function editButton(f, i) {
+      if (!PASTED_NAME.test(f.name)) return null;
+      return U.el('button', {
+        type: 'button', class: 'btn btn-sm btn-link text-secondary p-0',
+        title: DL.t('source.editPasted'), 'aria-label': DL.t('source.editPasted'),
+        onclick: function () { self.actions.editPasted(i); }
+      }, [U.el('i', { class: 'bi bi-pencil' })]);
+    }
     // A drag needs a second file to go to, so one file alone gets no grip and no drag. The buttons
     // do the work of the drag for a user who does not use a pointer.
     var items = files.map(function (f, i) {
@@ -197,8 +209,9 @@
             type: 'button', class: 'btn btn-sm btn-link text-secondary p-0', disabled: i === files.length - 1 ? 'disabled' : null,
             title: DL.t('source.moveDown'), 'aria-label': DL.t('source.moveDown'), onclick: move(i + 2)
           }, [U.el('i', { class: 'bi bi-chevron-down' })]),
+          editButton(f, i),
           removeButton(i)
-        ] : [removeButton(i)])
+        ] : [editButton(f, i), removeButton(i)])
       ]);
     });
     items.forEach(function (li) { self.filesEl.appendChild(li); });

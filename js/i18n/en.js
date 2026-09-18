@@ -194,6 +194,9 @@
     'dialog.pastePlaceholder': 'Name,Email\nAda Lovelace,ada@example.com',
     'dialog.pasteOpen': 'Open the data',
     'dialog.pasteAdd': 'Add to the source',
+    'dialog.pasteEditTitle': 'Edit pasted data',
+    'dialog.pasteEditHelp': 'Change the data. The source reads it again when you save. The steps stay.',
+    'dialog.pasteSave': 'Save changes',
     'dialog.regexHelp': 'Regular expressions',
 
     // The tutorial of "Use regular expression". The patterns themselves are in dialogs.js.
@@ -335,6 +338,7 @@
     'source.removeFile': 'Take this file out of the source',
     'source.removeAll': 'Remove all',
     'source.paste': 'Paste data',
+    'source.editPasted': 'Edit the pasted data',
     'source.pasteTitle': 'Paste CSV or TSV text, or cells that you copied from a spreadsheet',
     'source.removeAllTitle': 'Take every file out of the source?',
     'source.removeAllMessage': 'This takes {n} out of the source. The steps stay.',
