@@ -17,6 +17,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Shows the rows that failed a Verify rule when you click the rule in the result.
 - Saves workflows in the browser and as files, so you can apply them again to new files. Autosave writes each change of the steps to the open workflow.
 - Runs a saved workflow on a file from the workflow list, and downloads the result. You do not need to build the steps again.
+- Keeps a note on each step. Write why the step is there or what to check. The note goes into the saved workflow and the workflow file. It does not change the data.
 - Copies a saved workflow under a new name. "Copy" in the workflow list saves the copy and opens it, so you can change it. The first workflow does not change.
 - Opens a saved workflow and data from a link: `#workflow=<link name>&source=<data in base64>`. See "Open from a link".
 - Reads many files as one Data Source. "Many files" is at stack at the start, and you can add files at any time. The columns go by name, and a column that a file does not have is empty for the rows of that file.
@@ -368,10 +369,15 @@ Saved workflows are JSON files with this shape:
   "name": "Clean contacts",
   "columns": ["Full Name", "Email"],
   "steps": [
-    { "opId": "case", "params": { "columns": ["Email"], "mode": "lower" }, "enabled": true }
+    { "opId": "case", "params": { "columns": ["Email"], "mode": "lower" }, "enabled": true,
+      "note": "The mail system wants lower case." }
   ]
 }
 ```
+
+`note` is optional. It is text of at most 10,000 characters. A step with no note has no `note` key.
+Any text can go in a note, because JSON escapes the quotes, the line ends and the control
+characters. An older version of Delimiter Lab reads the file too, but it does not keep the notes.
 
 ## License
 
