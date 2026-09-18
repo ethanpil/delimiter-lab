@@ -86,6 +86,21 @@
       document.addEventListener('mousemove', move);
       document.addEventListener('mouseup', up);
     });
+    // A right click on a column name or on a row number opens a menu that copies it. onCopy is set by
+    // the page: onCopy(stepId, 'row' | 'column', index). Without it, the browser keeps its own menu.
+    this.header.addEventListener('contextmenu', function (e) {
+      var cell = e.target.closest('.grid-hcell[data-col]');
+      if (!cell || !self.onCopy) return;
+      var col = Number(cell.getAttribute('data-col'));
+      self.closeProfile();
+      U.contextMenu(e, [{ label: DL.t('grid.copyColumn'), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'column', col); } }]);
+    });
+    this.rowsEl.addEventListener('contextmenu', function (e) {
+      var cell = e.target.closest('.grid-cell.rownum[data-row]');
+      if (!cell || !self.onCopy) return;
+      var row = Number(cell.getAttribute('data-row'));
+      U.contextMenu(e, [{ label: DL.t('grid.copyRow', { n: row + 1 }), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'row', row); } }]);
+    });
     this.header.addEventListener('dblclick', function (e) {
       var grip = e.target.closest ? e.target.closest('.grid-grip') : null;
       if (!grip) return;
@@ -402,7 +417,7 @@
       var hitCols = this.hits ? this.hits.get(i) : null;
       var changed = page && page.changes ? page.changes[i - page.start] : null;
       html += '<div class="grid-row' + (hitCols ? ' is-hit' : '') + '" style="top:' + top + 'px;width:' + this.totalW + 'px">';
-      html += '<div class="grid-cell rownum" style="width:' + this.rowNumW + 'px">' + (i + 1) + '</div>' + spacer;
+      html += '<div class="grid-cell rownum" data-row="' + i + '" style="width:' + this.rowNumW + 'px">' + (i + 1) + '</div>' + spacer;
       if (row) {
         for (var c = range[0]; c < range[1]; c++) {
           var v = row[c];
@@ -523,15 +538,20 @@
     cell.classList.add('no-tip');
     U.hideTooltips();
     var known = this.profiles[col];
+    // The title holds the copy button, because the body changes when the numbers come.
+    var copyBtn = this.onCopy ? '<button type="button" class="btn btn-sm btn-outline-secondary profile-copy" title="' + U.esc(DL.t('grid.copyColumnTitle')) + '">' +
+      '<i class="bi bi-copy"></i> ' + U.esc(DL.t('grid.copy')) + '</button>' : '';
     var pop = new bootstrap.Popover(cell, {
       html: true, sanitize: false, trigger: 'manual', placement: 'bottom', container: 'body',
-      customClass: 'profile-popover', title: U.esc(this.columns[col]),
+      customClass: 'profile-popover', title: '<span class="profile-title"><span class="profile-name">' + U.esc(this.columns[col]) + '</span>' + copyBtn + '</span>',
       content: known ? profileHtml(known) : '<div class="text-secondary small">' + U.esc(DL.t('profile.calculating')) + '</div>'
     });
     pop.col = col;
     pop.cell = cell;
     pop.show();
     this.popover = pop;
+    var copy = pop.tip && pop.tip.querySelector('.profile-copy');
+    if (copy) copy.addEventListener('click', function () { self.onCopy(stepId, 'column', col); });
     if (known) return;
     this.engine.columnStats(stepId, col).then(function (r) {
       if (r.stats && self.stepId === stepId) self.profiles[col] = r.stats; // kept even when the panel moved

@@ -321,6 +321,11 @@ body.is-col-resize { cursor: col-resize; user-select: none; }
 .note-link { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
 .note-link:hover { color: var(--dl-link); }
 .profile-popover { max-width: 340px; }
+.profile-title { display: flex; align-items: center; gap: 10px; }
+.profile-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.profile-copy { flex: 0 0 auto; padding: 0 6px; font-size: 12px; }
+/* The menu of a right click on the grid. */
+.dl-context-menu { position: fixed; z-index: 1090; min-width: 160px; }
 .profile-table { width: 100%; font-size: 13px; border-collapse: collapse; }
 .profile-table th { font-weight: 500; color: var(--dl-muted); padding: 1px 10px 1px 0; white-space: nowrap; text-align: left; }
 .profile-table td { padding: 1px 0; word-break: break-all; }

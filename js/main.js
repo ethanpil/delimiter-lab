@@ -502,6 +502,7 @@
     wrap.hidden = false;
     if (!gridBefore) {
       gridBefore = new DL.GridView(wrap, engine, { title: DL.t('preview.before') });
+      gridBefore.onCopy = copyData; // a right click copies from the input as well
       gridBefore.onScroll = function (top) { if (Math.abs(grid.scroll.scrollTop - top) > 1) grid.scroll.scrollTop = top; };
       grid.onScroll = function (top) { if (gridBefore && Math.abs(gridBefore.scroll.scrollTop - top) > 1) gridBefore.scroll.scrollTop = top; };
     }
@@ -970,6 +971,33 @@
     }, function () { U.toast(DL.t('msg.fileNotRead'), 'danger'); });
   }
 
+  /* ---------- Copy from the preview ---------- */
+  // Copies the table, a row or a column of the step that the preview shows, as text that a
+  // spreadsheet reads as cells. The worker makes the text; the clipboard takes it as a promise, so
+  // the click that asked for it still counts when the text comes.
+  function copyData(stepId, what, index) {
+    if (!stepId || !store.state.source.file) { U.toast(DL.t('msg.openFileFirst'), 'info'); return; }
+    var answer = null;
+    var text = engine.copy(stepId, what, index).then(function (r) {
+      answer = r.result;
+      return answer.tooBig || !answer.cells ? null : answer.text;
+    });
+    U.copyText(text).then(function (ok) {
+      if (!answer) { U.toast(DL.t('preview.copyFailed'), 'danger'); return; }
+      if (answer.tooBig) {
+        U.toast(DL.t('preview.copyTooBig', { cells: DL.pluralize(answer.cells, 'cell'), max: DL.pluralize(DL.COPY_MAX_CELLS, 'cell') }), 'warning');
+        return;
+      }
+      if (!answer.cells) { U.toast(DL.t('preview.copyNothing'), 'info'); return; }
+      if (!ok) { U.toast(DL.t('preview.copyFailed'), 'danger'); return; }
+      var message = what === 'row' ? DL.t('preview.copiedRow', { n: (index + 1).toLocaleString() })
+        : what === 'column' ? DL.t('preview.copiedColumn', { name: answer.name, rows: DL.pluralize(answer.rows, 'row') })
+        : DL.t('preview.copied', { rows: DL.pluralize(answer.rows, 'row'), columns: DL.pluralize(answer.columns, 'column') });
+      U.toast(message, 'success');
+    }, function () { U.toast(DL.t('preview.copyFailed'), 'danger'); });
+  }
+  grid.onCopy = copyData;
+
   function openWorkflows() {
     DL.dialogs.workflows({ currentColumns: store.sourceColumns(), currentId: store.state.workflow.id }, {
       apply: applyWorkflow,
@@ -1339,6 +1367,8 @@
   $('btnWorkflows').addEventListener('click', openWorkflows);
   $('btnDownload').addEventListener('click', download);
   $('btnHelp').addEventListener('click', DL.dialogs.help);
+  // The preview shows the result of the step that can run; Copy takes that result.
+  $('btnCopy').addEventListener('click', function () { copyData(grid.stepId, 'table'); });
   $('btnTiming').addEventListener('click', function () {
     engine.memory().then(function (m) { DL.showTiming(store, m); }).catch(function () { DL.showTiming(store, null); });
   });
