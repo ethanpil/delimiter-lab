@@ -186,13 +186,21 @@
 
   /* ---------- Saved workflows ---------- */
   D.workflows = function (opts, actions) {
-    // opts: { currentColumns, currentId }, actions: { apply(wf), importFile(file) }
+    // opts: { currentColumns, currentId }, actions: { apply(wf), importFile(file), quickRun(wf, files),
+    // copy(wf, name), renamed(id, name), removed(id), backup(), restore(file) }
     var search = U.el('input', { type: 'search', class: 'form-control', placeholder: DL.t('wf.search'), autofocus: true });
     var list = U.el('div', { class: 'mt-3' });
     var m;
     var importInput = U.el('input', { type: 'file', accept: '.json,application/json', hidden: true });
     importInput.addEventListener('change', function () {
       if (importInput.files[0]) { actions.importFile(importInput.files[0]); m.close(); }
+    });
+    // Full Restore reads one backup file. The question about it comes after this dialog is gone.
+    var restoreInput = U.el('input', { type: 'file', accept: '.json,application/json', hidden: true });
+    restoreInput.addEventListener('change', function () {
+      var file = restoreInput.files[0];
+      restoreInput.value = '';
+      if (file) m.closeThen(function () { actions.restore(file); });
     });
     // One file input for "Run a file". runWf holds the workflow that the user chose.
     var runWf = null;
@@ -315,6 +323,13 @@
       title: DL.t('dialog.savedWorkflows'),
       size: 'lg',
       scrollable: true,
+      headerTools: [
+        U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary text-nowrap', title: DL.t('backup.buttonTitle'), onclick: function () { actions.backup(); } },
+          [U.el('i', { class: 'bi bi-box-arrow-down' }), ' ' + DL.t('backup.button')]),
+        U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-danger text-nowrap', title: DL.t('backup.restoreTitle'), onclick: function () { restoreInput.click(); } },
+          [U.el('i', { class: 'bi bi-box-arrow-up' }), ' ' + DL.t('backup.restore')]),
+        restoreInput
+      ],
       body: [
         U.el('div', { class: 'd-flex gap-2' }, [search, U.el('button', { type: 'button', class: 'btn btn-outline-secondary text-nowrap', onclick: function () { importInput.click(); } }, [U.el('i', { class: 'bi bi-upload' }), ' ' + DL.t('wf.importFile')]), importInput, runInput]),
         U.el('div', { class: 'form-text', text: DL.t('wf.kept') }),

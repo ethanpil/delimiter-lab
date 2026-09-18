@@ -652,7 +652,7 @@
     autosaveNow();
   }, 800);
 
-  window.addEventListener('pagehide', function () { autosaveSoon.cancel(); autosaveNow(); });
+  window.addEventListener('pagehide', function () { if (restoring) return; autosaveSoon.cancel(); autosaveNow(); });
 
   $('btnAutosave').addEventListener('click', function () {
     if (autosaveOn) { setAutosave(false); U.toast(DL.t('msg.autosaveOff'), 'info'); return; }
@@ -851,12 +851,64 @@
     return rec;
   }
 
+  /* ---------- Full backup and full restore ---------- */
+  // A restore removes the keys of the application and writes the keys of the backup. From then until
+  // the page loads again, nothing may write the storage: a session or an autosave of this page
+  // would take the place of the restored one.
+  var restoring = false;
+
+  // Downloads one file with every key of the application. A waiting autosave and the session go in
+  // first, so the backup holds the steps on the screen.
+  function fullBackup() {
+    autosaveSoon.cancel();
+    autosaveNow();
+    store.saveSession();
+    var b;
+    try { b = DL.backup.make(); } catch (e) { U.toast(DL.t('backup.notMade'), 'danger'); return; }
+    var name = 'delimiter-lab-backup-' + DL.formatDate(Date.now(), 'YYYY-MM-DD') + '.json';
+    U.downloadBlob(new Blob([b.text], { type: 'application/json' }), name);
+    U.toast(DL.t('backup.saved', { name: name, workflows: DL.pluralize(b.workflows, 'saved workflow') }), 'success');
+  }
+
+  // Reads a backup file, asks one clear question, and puts the backup in the place of everything
+  // that the application keeps. The page then loads again, so every part reads the new keys.
+  function fullRestore(file) {
+    if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
+    file.text().then(function (text) {
+      var parsed;
+      try { parsed = DL.backup.parse(text); } catch (e) { U.toast(e.message, 'danger'); return; }
+      U.confirm({
+        title: DL.t('backup.confirmTitle'),
+        message: DL.t('backup.confirmMessage', {
+          current: DL.pluralize(DL.backup.currentWorkflows(), 'saved workflow'),
+          when: parsed.createdAt ? U.fmtTime(Date.parse(parsed.createdAt)) : DL.t('backup.unknownDate'),
+          version: parsed.appVersion ? DL.t('backup.version', { v: parsed.appVersion }) : DL.t('backup.unknownVersion'),
+          workflows: DL.pluralize(parsed.workflows, 'saved workflow')
+        }),
+        yes: DL.t('backup.confirmYes'),
+        danger: true
+      }, function () {
+        restoring = true;
+        autosaveSoon.cancel();
+        if (!DL.backup.restore(parsed)) {
+          restoring = false;
+          U.toast(DL.t('backup.failed'), 'danger');
+          return;
+        }
+        // The file of the workspace belongs to the steps that are gone.
+        DL.fileStore.clear().then(function () { location.reload(); });
+      });
+    }, function () { U.toast(DL.t('msg.fileNotRead'), 'danger'); });
+  }
+
   function openWorkflows() {
     DL.dialogs.workflows({ currentColumns: store.sourceColumns(), currentId: store.state.workflow.id }, {
       apply: applyWorkflow,
       quickRun: quickRunWorkflow,
       importFile: importWorkflowFile,
       copy: copyWorkflow,
+      backup: fullBackup,
+      restore: fullRestore,
       renamed: function (id, name) { if (store.state.workflow.id === id) store.setWorkflowMeta({ name: name }, !store.state.dirty); },
       removed: function (id) { if (store.state.workflow.id === id) store.setWorkflowMeta({ id: null }); }
     });
@@ -1150,6 +1202,7 @@
   }
 
   store.subscribe(function (what, st) {
+    if (restoring) return; // the page loads again soon, and a write now would undo the restore
     switch (what) {
       case 'steps':
         chain.render(true);
