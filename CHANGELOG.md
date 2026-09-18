@@ -4,6 +4,8 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Add: the step Duplicate Column copies a column into a new column with the name that you choose (ecf5478).
+- Fix: a no-break space typed in Find & Replace finds only no-break spaces again, as in 1.0. Find in preview finds the spaces that Find & Replace finds. The copy menu keeps the step that it opened on, and its arrow keys work. A step that is off after the last step that is on counts as final. Download stays on a narrow screen (e67e9ff, 175539c, 3171aab, 64255b0, 383312d).
 - Add: a right click on a cell copies its value (a4c79f9).
 - Change: the name of a download is the workflow name, the file name and the time, for example clean-contacts-orders-2026-09-18-14-05.csv (3e6b211).
 - Fix: after a deploy, a browser could mix new and old files for ten minutes, and a button showed the key of its text. The files of one deploy now load together (1e4a677).
