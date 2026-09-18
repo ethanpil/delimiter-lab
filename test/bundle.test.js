@@ -142,7 +142,7 @@ test('the width where a field with fill moves beside the field before it agrees 
 });
 
 test('the build brings every operation', () => {
-  assert.strictEqual(DL.ops.length, 28);
+  assert.strictEqual(DL.ops.length, 29);
   assert.strictEqual(DL.getOp('unpivot').id, 'unpivot');
 });
 

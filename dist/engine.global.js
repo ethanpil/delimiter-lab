@@ -3711,6 +3711,39 @@
       return { table: DL.addColumn(table, name, values, p.position) };
     }
   });
+  function copyColumnName(cols, p) {
+    return DL.newColumnName(cols, p.name, (p.column || "Column") + " copy");
+  }
+  DL.registerOp({
+    id: "duplicateColumn",
+    name: "Duplicate Column",
+    category: "Columns",
+    icon: "bi-layers",
+    description: "Copy a column into a new column, with a name that you choose. The copy goes right after the column.",
+    keywords: "copy clone duplicate twin same second",
+    params: [
+      { key: "column", label: "Column to copy", type: "column" },
+      { key: "name", label: "Name of the new column", type: "text", default: "", help: 'Leave empty to use the name of the column with "copy" after it.' }
+    ],
+    summary: function(p) {
+      return '"' + p.column + '" \u2192 "' + (p.name.trim() || p.column + " copy") + '"';
+    },
+    outputColumns: function(cols, p) {
+      var at = cols.indexOf(p.column);
+      if (at < 0) return cols;
+      var out = cols.slice();
+      out.splice(at + 1, 0, copyColumnName(cols, p));
+      return out;
+    },
+    apply: function(table, p) {
+      var idx = DL.requireCol(table, p.column);
+      var columns = table.columns.slice();
+      var cols = table.cols.slice();
+      columns.splice(idx + 1, 0, copyColumnName(table.columns, p));
+      cols.splice(idx + 1, 0, table.cols[idx]);
+      return { table: DL.makeTable(columns, cols, table.length) };
+    }
+  });
   DL.registerOp({
     id: "fill",
     name: "Fill Empty Values",

@@ -845,6 +845,24 @@ test('Clean Text reduces 2 or more spaces in a row to 1 space', () => {
   // The option is off at the start, so a saved step does not change.
   assert.ok(DL.defaultParams('textClean').steps.indexOf('squeeze') < 0);
 });
+test('Duplicate Column puts a copy of a column right after it, with the name that the user chose', () => {
+  const t = T(['Name', 'City'], [['Ada', 'London'], ['Alan', 'Wilmslow']]);
+  const r = run('duplicateColumn', { column: 'Name', name: 'Full Name' }, t);
+  assert.deepStrictEqual(r.table.columns, ['Name', 'Full Name', 'City']);
+  assert.deepStrictEqual(rowsOf(r.table), [['Ada', 'Ada', 'London'], ['Alan', 'Alan', 'Wilmslow']]);
+  // No name gives "<column> copy"; a name that is there already gets a number.
+  assert.deepStrictEqual(run('duplicateColumn', { column: 'City', name: '' }, t).table.columns, ['Name', 'City', 'City copy']);
+  assert.deepStrictEqual(run('duplicateColumn', { column: 'City', name: 'Name' }, t).table.columns, ['Name', 'City', 'Name 2']);
+  // The list of columns that the page knows before a run agrees with the run.
+  const p = Object.assign(DL.defaultParams('duplicateColumn'), { column: 'Name', name: 'Full Name' });
+  assert.deepStrictEqual(DL.predictColumns('duplicateColumn', p, t.columns), r.table.columns);
+  // The input does not change, and a later step reads the copy as a column of its own.
+  assert.deepStrictEqual(t.columns, ['Name', 'City']);
+  const upper = run('case', { columns: ['Full Name'], mode: 'upper' }, r.table);
+  assert.deepStrictEqual(rowsOf(upper.table)[0], ['Ada', 'ADA', 'London']);
+  // A column that the table does not have stops the step with a clear message.
+  assert.throws(() => run('duplicateColumn', { column: 'Missing', name: 'x' }, t), /Column "Missing" was not found/);
+});
 test('split with names but no maximum has unknown columns', () => {
   const p = Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',', names: 'P, Q' });
   assert.strictEqual(DL.predictColumns('split', p, ['A']), null);
@@ -861,7 +879,7 @@ test('every op has metadata and defaults', () => {
     assert.ok(typeof op.summary === 'function', op.id + ' summary');
     op.params.forEach((p) => assert.ok(p.key && p.label && p.type, op.id + ' param'));
   });
-  assert.strictEqual(DL.ops.length, 28);
+  assert.strictEqual(DL.ops.length, 29);
   // Every operation that changes the columns must predict them correctly (or say null).
   const fixture = T(['Full Name', 'Email', 'Amount'], [['John Smith', 'j@x.com', '1'], ['Ann Lee', 'a@y.com', '2']]);
   const cases = {
