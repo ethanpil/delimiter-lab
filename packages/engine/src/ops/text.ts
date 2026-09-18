@@ -290,21 +290,23 @@ function replacePairs(p) {
 function replacer(findText, replaceText, p) {
   var find = p.regex ? findText : unescapeText(findText);
   if (p.wholeCell) {
-    var test = p.regex ? new RegExp('^(?:' + find + ')$', p.matchCase ? 'u' : 'iu') : null;
-    // A plain search compares the cell with every kind of space made a plain space (DL.buildRegex).
-    var target = DL.plainSpaces(p.matchCase ? find : find.toLowerCase());
+    // A plain text with a plain space compares through the pattern of DL.buildRegex, so that the
+    // space finds the other spaces too. Other plain texts compare as they are.
+    var test = p.regex ? new RegExp('^(?:' + find + ')$', p.matchCase ? 'u' : 'iu')
+      : find.indexOf(' ') >= 0 ? new RegExp('^(?:' + DL.buildRegex(find, { matchCase: p.matchCase }).source + ')$', p.matchCase ? '' : 'i') : null;
+    var target = p.matchCase ? find : find.toLowerCase();
     var plain = unescapeText(replaceText);
     return function (v) {
-      var hit = test ? test.test(v) : DL.plainSpaces(p.matchCase ? v : v.toLowerCase()) === target;
+      var hit = test ? test.test(v) : (p.matchCase ? v === target : v.toLowerCase() === target);
       if (!hit) return v;
-      return test ? v.replace(test, plain) : plain;
+      return p.regex ? v.replace(test, plain) : plain;
     };
   }
   var replacement = p.regex ? unescapeText(replaceText) : unescapeText(replaceText).replace(/\$/g, '$$$$');
   var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
-  // indexOf is a quick first check. It looks for the exact characters, so a text with a space, which
-  // finds other spaces too, does not take it.
-  var quick = !p.regex && !p.wholeWord && p.matchCase && !DL.hasSpace(find) ? find : null;
+  // indexOf is a quick first check. It looks for the exact characters, so a text with a plain space,
+  // which finds other spaces too, does not take it.
+  var quick = !p.regex && !p.wholeWord && p.matchCase && find.indexOf(' ') < 0 ? find : null;
   return function (v) {
     if (!v) return v;
     if (quick !== null && v.indexOf(quick) < 0) return v;

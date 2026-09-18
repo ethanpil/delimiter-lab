@@ -804,6 +804,11 @@ test('Find & Replace finds a no-break space and the other spaces with a plain sp
   // Whole words and a whole cell follow the same rule.
   assert.strictEqual(rowsOf(run('replace', { find: '52 oz', replace: 'x', wholeWord: true }, t).table)[1][0], 'MILK x');
   assert.strictEqual(rowsOf(run('replace', { find: 'milk 52 oz', replace: 'x', wholeCell: true }, t).table)[1][0], 'x');
+  // A no-break space in Find finds only a no-break space, as in 1.0. A saved step that removes the
+  // no-break spaces of "1 234,56" must not remove the plain spaces of the other cells too.
+  const kept = run('replace', { find: sp(0xA0), replace: '' }, T(['d'], [['Jean Dupont'], ['1' + sp(0xA0) + '234,56']]));
+  assert.deepStrictEqual(rowsOf(kept.table).map((x) => x[0]), ['Jean Dupont', '1234,56']);
+  assert.strictEqual(rowsOf(run('replace', { find: '52' + sp(0xA0) + 'oz', replace: 'x', wholeCell: true }, T(['d'], [['52 oz']])).table)[0][0], '52 oz');
   // A regular expression keeps its own rules: a space there is a plain space only.
   assert.strictEqual(rowsOf(run('replace', { find: ' oz', replace: 'oz', regex: true }, t).table)[1][0], 'MILK 52' + sp(0xA0) + 'oz');
 });

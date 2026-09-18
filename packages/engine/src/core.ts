@@ -736,17 +736,10 @@ DL.regexProblem = function (src, flags) {
 };
 
 // The spaces of Unicode that go across a line: the plain space, the no-break space (U+00A0) and
-// the thin, wide and narrow spaces. An export from a till or a spreadsheet often writes a no-break
-// space where a person sees and types a plain space. The two look the same in the grid.
-var SPACE_CHARS = ' \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000';
-var ONE_SPACE = new RegExp('[' + SPACE_CHARS + ']');
-var ALL_SPACES = new RegExp('[' + SPACE_CHARS + ']', 'g');
-
-// True when a text holds any of those spaces.
-DL.hasSpace = function (s) { return ONE_SPACE.test(s); };
-
-// The text with each of those spaces made a plain space.
-DL.plainSpaces = function (s) { return s.replace(ALL_SPACES, ' '); };
+// the thin, wide and narrow spaces. It is the list of DL.isBlank. An export from a till or a
+// spreadsheet often writes a no-break space where a person sees and types a plain space. The grid
+// shows the two in the same way.
+var SPACE_CHARS = ' \u00A0\u2000-\u200A\u202F\u205F\u3000';
 
 // The text with each run of two or more of those spaces made one plain space. A single space, a
 // tab and a line break stay as they are.
@@ -755,9 +748,10 @@ DL.squeezeSpaces = function (s) { return s.replace(SPACE_RUNS, ' '); };
 
 DL.buildRegex = function (find, opts) {
   var flags = 'g' + (opts.matchCase ? '' : 'i');
-  // In a plain search, a space finds any of the spaces above. A regular expression says for
-  // itself what it finds, so it keeps its own rules.
-  var src = opts.regex ? find : DL.escapeRegExp(find).replace(ALL_SPACES, '[' + SPACE_CHARS + ']');
+  // In a plain search, a plain space finds any of the spaces above. Another space that the text
+  // holds finds only itself, as in 1.0: a saved step that removes the no-break spaces must not
+  // remove the plain spaces too. A regular expression says for itself what it finds.
+  var src = opts.regex ? find : DL.escapeRegExp(find).replace(/ /g, '[' + SPACE_CHARS + ']');
   if (opts.wholeWord) {
     // A boundary applies only at an end of the text that is a word character; "-" or "." can match anywhere.
     var left = /^[\p{L}\p{N}_]/u.test(find) ? '(?<![\\p{L}\\p{N}_])' : '';

@@ -671,22 +671,14 @@
       return "The regular expression is not valid: " + e.message;
     }
   };
-  var SPACE_CHARS = " \xA0\u1680\u2000-\u200A\u202F\u205F\u3000";
-  var ONE_SPACE = new RegExp("[" + SPACE_CHARS + "]");
-  var ALL_SPACES = new RegExp("[" + SPACE_CHARS + "]", "g");
-  DL.hasSpace = function(s) {
-    return ONE_SPACE.test(s);
-  };
-  DL.plainSpaces = function(s) {
-    return s.replace(ALL_SPACES, " ");
-  };
+  var SPACE_CHARS = " \xA0\u2000-\u200A\u202F\u205F\u3000";
   var SPACE_RUNS = new RegExp("[" + SPACE_CHARS + "]{2,}", "g");
   DL.squeezeSpaces = function(s) {
     return s.replace(SPACE_RUNS, " ");
   };
   DL.buildRegex = function(find, opts) {
     var flags = "g" + (opts.matchCase ? "" : "i");
-    var src = opts.regex ? find : DL.escapeRegExp(find).replace(ALL_SPACES, "[" + SPACE_CHARS + "]");
+    var src = opts.regex ? find : DL.escapeRegExp(find).replace(/ /g, "[" + SPACE_CHARS + "]");
     if (opts.wholeWord) {
       var left = /^[\p{L}\p{N}_]/u.test(find) ? "(?<![\\p{L}\\p{N}_])" : "";
       var right = /[\p{L}\p{N}_]$/u.test(find) ? "(?![\\p{L}\\p{N}_])" : "";
@@ -1996,13 +1988,8 @@
     if (what === "column" && !(index >= 0 && index < w)) return { text: "", rows: 0, columns: 0, cells: 0 };
     var cells = what === "row" ? w : what === "column" ? n + 1 : (n + 1) * w;
     if (cells > DL.COPY_MAX_CELLS) return { tooBig: true, cells };
+    if (what === "row") return { text: DL.rowAt(table, index).map(clipValue).join("	"), rows: 1, columns: w, cells };
     var lines = [];
-    if (what === "row") {
-      var values = [];
-      for (c = 0; c < w; c++) values.push(clipValue(DL.cellGetter(table, c)(index)));
-      lines.push(values.join("	"));
-      return { text: lines.join("\n"), rows: 1, columns: w, cells };
-    }
     if (what === "column") {
       var get = DL.cellGetter(table, index);
       lines.push(clipValue(table.columns[index]));
@@ -2012,10 +1999,10 @@
     var getters = [];
     for (c = 0; c < w; c++) getters.push(DL.cellGetter(table, c));
     lines.push(table.columns.map(clipValue).join("	"));
+    var values = new Array(w);
     for (i = 0; i < n; i++) {
-      var line = "";
-      for (c = 0; c < w; c++) line += (c ? "	" : "") + clipValue(getters[c](i));
-      lines.push(line);
+      for (c = 0; c < w; c++) values[c] = clipValue(getters[c](i));
+      lines.push(values.join("	"));
     }
     return { text: lines.join("\n"), rows: n, columns: w, cells };
   };
@@ -2608,18 +2595,18 @@
   function replacer(findText, replaceText, p) {
     var find = p.regex ? findText : unescapeText(findText);
     if (p.wholeCell) {
-      var test = p.regex ? new RegExp("^(?:" + find + ")$", p.matchCase ? "u" : "iu") : null;
-      var target = DL.plainSpaces(p.matchCase ? find : find.toLowerCase());
+      var test = p.regex ? new RegExp("^(?:" + find + ")$", p.matchCase ? "u" : "iu") : find.indexOf(" ") >= 0 ? new RegExp("^(?:" + DL.buildRegex(find, { matchCase: p.matchCase }).source + ")$", p.matchCase ? "" : "i") : null;
+      var target = p.matchCase ? find : find.toLowerCase();
       var plain = unescapeText(replaceText);
       return function(v) {
-        var hit = test ? test.test(v) : DL.plainSpaces(p.matchCase ? v : v.toLowerCase()) === target;
+        var hit = test ? test.test(v) : p.matchCase ? v === target : v.toLowerCase() === target;
         if (!hit) return v;
-        return test ? v.replace(test, plain) : plain;
+        return p.regex ? v.replace(test, plain) : plain;
       };
     }
     var replacement = p.regex ? unescapeText(replaceText) : unescapeText(replaceText).replace(/\$/g, "$$$$");
     var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
-    var quick = !p.regex && !p.wholeWord && p.matchCase && !DL.hasSpace(find) ? find : null;
+    var quick = !p.regex && !p.wholeWord && p.matchCase && find.indexOf(" ") < 0 ? find : null;
     return function(v) {
       if (!v) return v;
       if (quick !== null && v.indexOf(quick) < 0) return v;

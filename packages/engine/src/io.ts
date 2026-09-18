@@ -519,13 +519,8 @@ DL.clipboardText = function (table, what, index) {
   if (what === 'column' && !(index >= 0 && index < w)) return { text: '', rows: 0, columns: 0, cells: 0 };
   var cells = what === 'row' ? w : what === 'column' ? n + 1 : (n + 1) * w;
   if (cells > DL.COPY_MAX_CELLS) return { tooBig: true, cells: cells };
+  if (what === 'row') return { text: DL.rowAt(table, index).map(clipValue).join('\t'), rows: 1, columns: w, cells: cells };
   var lines = [];
-  if (what === 'row') {
-    var values = [];
-    for (c = 0; c < w; c++) values.push(clipValue(DL.cellGetter(table, c)(index)));
-    lines.push(values.join('\t'));
-    return { text: lines.join('\n'), rows: 1, columns: w, cells: cells };
-  }
   if (what === 'column') {
     var get = DL.cellGetter(table, index);
     lines.push(clipValue(table.columns[index]));
@@ -535,10 +530,11 @@ DL.clipboardText = function (table, what, index) {
   var getters = [];
   for (c = 0; c < w; c++) getters.push(DL.cellGetter(table, c));
   lines.push(table.columns.map(clipValue).join('\t'));
+  // One array and one join for each row. A string that grows by += keeps every piece until the end.
+  var values = new Array(w);
   for (i = 0; i < n; i++) {
-    var line = '';
-    for (c = 0; c < w; c++) line += (c ? '\t' : '') + clipValue(getters[c](i));
-    lines.push(line);
+    for (c = 0; c < w; c++) values[c] = clipValue(getters[c](i));
+    lines.push(values.join('\t'));
   }
   return { text: lines.join('\n'), rows: n, columns: w, cells: cells };
 };
