@@ -213,7 +213,9 @@
 
   renderers.checkboxes = function (param, value, ctx) {
     var chosen = (value || []).slice();
-    var box = U.el('div', { class: 'column-list' });
+    // A list of options is short and fixed, so it shows all of them. param.wide puts it across the
+    // panel, so that a long label stays on one line.
+    var box = U.el('div', { class: 'column-list option-list' });
     param.options.forEach(function (o) {
       var check = U.check(o.label, chosen.indexOf(o.value) >= 0, function (on) {
         chosen = param.options.map(function (x) { return x.value; }).filter(function (v) {
@@ -223,7 +225,7 @@
       });
       box.appendChild(check.el);
     });
-    return wrap(param, box);
+    return wrap(param, box, !!param.wide);
   };
 
   renderers.column = function (param, value, ctx) {
