@@ -17,7 +17,21 @@
       document.documentElement.setAttribute('data-bs-theme', t);
     })();
   </script>
-  <link rel="stylesheet" href="css/app.css?v=1.0">
+  <script>
+    // The stamp of the files of this deploy. A web server gives every file of one deploy the same
+    // Last-Modified time, and the page reads that time as document.lastModified. A new page then
+    // asks for new files, and a page from the cache asks for the files of its own deploy, so the
+    // files of two deploys never mix. On a computer for development, each load gets its own stamp.
+    // The desktop application (app://) reads its files from the disk and needs no stamp.
+    // js/manifest.js puts the stamp in DL.BUILD, which every other file of the page carries.
+    (function () {
+      var DL = window.DL = window.DL || {};
+      var local = /^(localhost|127\.0\.0\.1|)$/.test(location.hostname);
+      var deployed = /^https?:$/.test(location.protocol) ? Date.parse(document.lastModified) : NaN;
+      DL.STAMP = local ? String(Date.now()) : deployed > 0 ? String(deployed) : '';
+      document.write('<link rel="stylesheet" href="css/app.css?v=' + (DL.STAMP || 'app') + '">');
+    })();
+  </script>
 </head>
 <body>
   <noscript><div class="p-4">Delimiter Lab needs JavaScript to run.</div></noscript>
@@ -100,7 +114,7 @@
   <div id="toasts" class="toast-container position-fixed bottom-0 end-0 p-3" aria-live="polite"></div>
 
   <script src="vendor/bootstrap.bundle.min.js"></script>
-  <script src="js/manifest.js?v=1.0"></script>
+  <script>document.write('<script src="js/manifest.js?v=' + (DL.STAMP || 'app') + '"><\/script>');</script>
   <script>
     // Loads the application files listed in the manifest, in order. The texts of the language of the
     // user (?lang=xx or the browser language) load when js/i18n/ has a file for it.

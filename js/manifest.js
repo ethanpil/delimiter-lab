@@ -9,8 +9,12 @@
   // The files carry this number, so that a browser takes the new ones after a change. The version
   // stays at 1.0 while the work continues, so on a computer for development each load gets its own
   // number. Without it the browser keeps the files of the last load.
+  // index.html sets DL.STAMP: the time of the deploy on a web server, a new number at each load on
+  // a computer for development, and nothing in the desktop application. The worker has no stamp;
+  // it takes the number of the page from its own address.
   var host = (root.location && root.location.hostname) || '';
-  DL.BUILD = (host === 'localhost' || host === '127.0.0.1' || host === '') ? DL.VERSION + '.' + Date.now() : DL.VERSION;
+  var local = host === 'localhost' || host === '127.0.0.1' || host === '';
+  DL.BUILD = DL.STAMP ? DL.VERSION + '.' + DL.STAMP : local ? DL.VERSION + '.' + Date.now() : DL.VERSION;
   // Languages with a file in js/i18n/. English is always loaded; the page adds the language of the user.
   DL.LOCALES = ['en'];
   DL.FILES = {

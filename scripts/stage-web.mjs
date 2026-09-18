@@ -31,7 +31,8 @@ for (const part of PARTS) cpSync(path.join(root, part), path.join(out, part), { 
 const staged = new Set(readdirSync(out, { recursive: true }).map((f) => f.split(path.sep).join('/')));
 const html = readFileSync(path.join(out, 'index.html'), 'utf8');
 const worker = readFileSync(path.join(out, 'js/engine/worker.js'), 'utf8');
-const needed = [...new Set(['index.html', 'js/engine/worker.js']
+// index.html writes the tags of css/app.css and js/manifest.js in a script, so they are named here.
+const needed = [...new Set(['index.html', 'js/engine/worker.js', 'css/app.css', 'js/manifest.js']
   .concat(...Object.values(DL.FILES))
   .concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js'))
   .concat([...html.matchAll(/(?:src|href)="([^"#?:]+)(?:\?[^"]*)?"/g)].map((m) => m[1]))

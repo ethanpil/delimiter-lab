@@ -356,7 +356,7 @@ page. The files go to the `release-files` artifact, and the notes go to the summ
 run takes the workflow from the branch that starts it, so start it from the branch when the workflow
 changed. A run with `ref` and `publish` on stops at once: a branch is not the tag.
 
-Every file that the manifest lists carries `?v=` with the version, so a browser takes the new one.
+Every file of the page carries `?v=` with the version and the time of the deploy, so a browser takes the files of one deploy together.
 `js/manifest.js` and `css/app.css` load before that version exists, so `index.html` asks for them
 with the number written by hand. `npm test` fails when that number and `DL.VERSION` disagree, so
 change all three together. `index.html` itself carries no version: a browser takes it again when

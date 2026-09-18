@@ -86,16 +86,26 @@ test('the version of the build is the version of the manifest', () => {
   assert.strictEqual(DL.VERSION, manifestVersion);
 });
 
-test('index.html asks for the version that the manifest holds', () => {
-  // js/manifest.js and css/app.css are loaded before DL.BUILD exists, so their version is written
-  // in index.html by hand. When it falls behind, a browser keeps an old manifest or an old
-  // stylesheet beside new files, and nothing says so. This keeps the three in step.
+test('index.html asks for every file with the stamp of its deploy', () => {
+  // GitHub Pages lets a browser keep a file for ten minutes. With one fixed ?v= for every deploy, a
+  // new index.html ran beside an older copy of js/i18n/en.js, and a button showed the name of a
+  // text in place of the text. css/app.css and js/manifest.js come before DL.BUILD exists, so
+  // index.html writes their tags with DL.STAMP itself; every other file carries DL.BUILD.
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   ['css/app.css', 'js/manifest.js'].forEach((f) => {
-    const m = new RegExp(f.replace('.', '\\.').replace('/', '\\/') + '\\?v=([^"\']+)').exec(html);
-    assert.ok(m, f + ' must be asked for with ?v=<version> in index.html');
-    assert.strictEqual(m[1], manifestVersion, f + ' asks for version ' + m[1] + ' but js/manifest.js says ' + manifestVersion);
+    assert.ok(html.indexOf(f + "?v=' + (DL.STAMP") >= 0, f + ' must be asked for with the stamp of the deploy');
   });
+  assert.ok(!/\?v=\d/.test(html), 'no file of index.html may carry a fixed version');
+  assert.ok(/document\.lastModified/.test(html), 'the stamp comes from the time of the deploy');
+  // The manifest puts the stamp into DL.BUILD, the number that every other file carries.
+  const ctx = { self: { DL: { STAMP: '1789750982000' } }, location: { hostname: 'ethanpil.github.io' } };
+  ctx.self.location = ctx.location;
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'js/manifest.js'), 'utf8'), ctx);
+  assert.strictEqual(ctx.self.DL.BUILD, manifestVersion + '.1789750982000');
+  // With no stamp, as in the desktop application, the number is the version.
+  const app = { self: { location: { hostname: 'delimiter-lab' } } };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'js/manifest.js'), 'utf8'), app);
+  assert.strictEqual(app.self.DL.BUILD, manifestVersion);
 });
 
 test('every file that the page loads is on disk, with the same letters', () => {
@@ -106,7 +116,7 @@ test('every file that the page loads is on disk, with the same letters', () => {
   // as text. The manifest names most files. index.html and the worker name the others themselves.
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'js/engine/worker.js'), 'utf8');
-  const needed = ['js/engine/worker.js']
+  const needed = ['js/engine/worker.js', 'css/app.css', 'js/manifest.js']
     .concat(...Object.values(DL.FILES))
     .concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js'))
     .concat([...html.matchAll(/(?:src|href)="([^"#?:]+)(?:\?[^"]*)?"/g)].map((m) => m[1]))
