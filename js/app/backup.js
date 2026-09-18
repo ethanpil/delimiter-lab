@@ -37,7 +37,20 @@
     } catch (e) { return -1; }
   }
 
+  // True when a step of the saved workflows or of the session runs code. Such a backup gets the
+  // warning that a workflow file with code gets, because a backup can come from another person.
+  function runsCode(storage) {
+    var lists = [];
+    try { lists = lists.concat(JSON.parse(storage[WORKFLOWS_KEY] || '[]')); } catch (e) { /* parse() refuses it */ }
+    try { lists.push((JSON.parse(storage['dl.session.v1'] || '{}') || {}).workflow); } catch (e) { /* a broken session is not read */ }
+    return lists.some(function (w) {
+      return !!w && Array.isArray(w.steps) && w.steps.some(function (s) { return DL.stepRunsCode(s); });
+    });
+  }
+
   // The text of a backup of the storage as it is now. Throws when the browser gives no storage.
+  // workflows is -1 when the text of the saved workflows cannot be read: the backup keeps that text,
+  // but parse() does not take it back.
   B.make = function () {
     var storage = readKeys();
     return {
@@ -48,7 +61,7 @@
         createdAt: new Date().toISOString(),
         storage: storage
       }, null, 2),
-      workflows: Math.max(0, countWorkflows(storage[WORKFLOWS_KEY]))
+      workflows: countWorkflows(storage[WORKFLOWS_KEY])
     };
   };
 
@@ -57,7 +70,7 @@
     try { return Math.max(0, countWorkflows(localStorage.getItem(WORKFLOWS_KEY))); } catch (e) { return 0; }
   };
 
-  // Reads the text of a backup file. Gives { storage, workflows, createdAt, appVersion }, or throws
+  // Reads the text of a backup file. Gives { storage, workflows, runsCode, createdAt, appVersion }, or throws
   // an Error with a message for the user. Nothing is written.
   B.parse = function (text) {
     var data;
@@ -86,6 +99,7 @@
     return {
       storage: storage,
       workflows: workflows,
+      runsCode: runsCode(storage),
       createdAt: createdAt,
       appVersion: typeof data.appVersion === 'string' ? data.appVersion.slice(0, 20) : ''
     };

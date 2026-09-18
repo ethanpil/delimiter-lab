@@ -221,6 +221,20 @@ test('a full backup restores every key of the application, byte for byte, and no
   assert.deepStrictEqual(Object.keys(foreign.storage), ['dl.theme']);
   assert.strictEqual(foreign.workflows, 0);
 
+  // A backup with code in a saved workflow or in the session says so, because it can come from
+  // another person. A step with code that is turned off does not run.
+  const withSteps = (key, steps) => B.parse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: {
+    [key]: key === 'dl.session.v1' ? JSON.stringify({ workflow: { steps } }) : JSON.stringify([{ id: 'x', name: 'x', steps }]) } }));
+  const js = { opId: 'javascriptRow', params: { code: 'return false;' }, enabled: true };
+  assert.strictEqual(parsed.runsCode, false);
+  assert.strictEqual(withSteps('dl.workflows.v1', [js]).runsCode, true);
+  assert.strictEqual(withSteps('dl.session.v1', [js]).runsCode, true);
+  assert.strictEqual(withSteps('dl.workflows.v1', [Object.assign({}, js, { enabled: false })]).runsCode, false);
+  // A backup of a list of workflows that does not read says so, because parse() refuses it.
+  ls = fakeStorage({ 'dl.workflows.v1': '{broken', 'dl.theme': 'dark' });
+  Object.defineProperty(globalThis, 'localStorage', { value: ls, configurable: true, writable: true });
+  assert.strictEqual(B.make().workflows, -1);
+
   // A storage that fills up during the restore gets the keys of before back.
   const big = B.parse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: { 'dl.theme': 'light', 'dl.session.v1': 'x'.repeat(5000) } }));
   ls = fakeStorage(before, 2000);

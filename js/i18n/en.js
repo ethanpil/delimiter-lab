@@ -160,6 +160,8 @@
     'backup.damaged': 'This backup is damaged, so nothing was changed.',
     'backup.confirmTitle': 'Replace everything with this backup?',
     'backup.confirmMessage': 'This removes everything that Delimiter Lab keeps in this browser: {current}, the open steps, the open files and your settings. The backup from {when} ({version}) takes their place, with {workflows}. You cannot undo this. Make a Full Backup first if you want to keep what you have now.',
+    'backup.codeWarning': 'This backup has steps with code (Custom JavaScript Column or JavaScript Row Edit). Their code runs on your data in this browser. Restore it only when you trust the source of the backup.',
+    'backup.savedDamaged': 'The backup "{name}" holds your settings and the text of your saved workflows, but that text cannot be read. Full Restore does not take this file. Keep it: the text can be repaired by hand.',
     'backup.confirmYes': 'Remove everything and restore',
     'backup.unknownDate': 'an unknown date',
     'backup.version': 'version {v}',
