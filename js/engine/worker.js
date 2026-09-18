@@ -98,6 +98,7 @@ function handle(msg) {
       case 'search': reply({ type: 'search', stepId: msg.stepId, result: search(msg) }); break;
       case 'findRows': reply({ type: 'findRows', stepId: msg.stepId, result: findRows(msg) }); break;
       case 'memory': reply({ type: 'memory', cells: cacheCells(), maxCells: DL.maxCells }); break;
+      case 'copy': reply({ type: 'copy', stepId: msg.stepId, result: copyText(msg) }); break;
       default: reply({ type: 'error', message: 'Unknown request "' + msg.type + '".' });
     }
   } catch (err) {
@@ -629,6 +630,13 @@ function batchFile(msg) {
 }
 
 // Writers by output format id. Each gives a Blob.
+
+// The text of a table, a row or a column of a step, for the clipboard of the page.
+function copyText(msg) {
+  var table = tableFor(msg.stepId);
+  if (!table) return { text: '', rows: 0, columns: 0, cells: 0 };
+  return DL.clipboardText(table, msg.what, msg.index);
+}
 
 function exportStep(msg, reply) {
   var table = tableFor(msg.stepId);

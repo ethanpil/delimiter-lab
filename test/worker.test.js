@@ -480,6 +480,18 @@ async function blobText(b) { return Buffer.from(await b.arrayBuffer()).toString(
     });
   });
 
+  // The page copies a table, a row or a column of any step through the worker.
+  test('the worker gives the text of a copy for the table, a row and a column', () => {
+    send({ type: 'load', file: new FakeFile('Name,City\nAda,London\nAlan,Wilmslow\n', 'people.csv'), options: {} });
+    const copy = (what, index) => send({ type: 'copy', stepId: 'source', what: what, index: index }).result;
+    assert.strictEqual(copy('table').text, 'Name\tCity\nAda\tLondon\nAlan\tWilmslow');
+    assert.strictEqual(copy('row', 1).text, 'Alan\tWilmslow');
+    const col = copy('column', 1);
+    assert.strictEqual(col.text, 'City\nLondon\nWilmslow');
+    assert.strictEqual(col.name, 'City');
+    assert.strictEqual(send({ type: 'copy', stepId: 'no-such-step', what: 'table' }).result.cells, 0);
+  });
+
   await Promise.all(pending);
   console.log(passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed ? 1 : 0;

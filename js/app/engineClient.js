@@ -86,6 +86,7 @@
   EngineClient.prototype.findRows = function (stepId, lookup, limit) { return this.send({ type: 'findRows', stepId: stepId, lookup: lookup, limit: limit }); };
   EngineClient.prototype.batch = function (file, options, steps, output) { return this.send({ type: 'batch', file: file, options: options, steps: steps, output: output }); };
   EngineClient.prototype.zip = function (entries) { return this.send({ type: 'zip', entries: entries }); };
+  EngineClient.prototype.copy = function (stepId, what, index) { return this.send({ type: 'copy', stepId: stepId, what: what, index: index }); };
   EngineClient.prototype.exportStep = function (stepId, options) { return this.send({ type: 'export', stepId: stepId, options: options }); };
 
   DL.EngineClient = EngineClient;
