@@ -389,7 +389,8 @@ The Saved workflows dialog has two buttons at the top: "Full Backup" and "Full R
   It does not hold your data files.
 - **Full Restore** reads such a file. A question tells you what goes and what comes. When you
   agree, the page removes everything that Delimiter Lab keeps in this browser and puts the backup
-  in its place. Then the page loads again. You cannot undo a restore, so make a Full Backup first
+  in its place. Then the page loads again. When the backup has steps with code, the question warns you. Restore
+  such a backup only when you trust its source. You cannot undo a restore, so make a Full Backup first
   if you want to keep what you have now. Close the other tabs of Delimiter Lab before a restore,
   because an open tab can write its steps again.
 
