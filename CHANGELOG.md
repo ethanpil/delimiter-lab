@@ -4,6 +4,8 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Add: the pencil button of pasted data opens the data again, so you can change it (4a16a53, aa72cae).
+- Change: the paste box uses a smaller monospace font, and its lines do not wrap (f03fbca).
 - Add: "Copy" in the workflow list saves a workflow under a new name and opens the copy. A copy of the open workflow takes the changes that are not saved (a63368b, 3ea6490).
 - Change: "Many files" is above the list of files, and it is there before a file is open (823e56f).
 - Change: "Many files" is at stack at the start (d47e977).
