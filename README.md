@@ -8,6 +8,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 
 - Reads CSV, TSV, text files with any separator, and Excel workbooks (with sheet selection).
 - Detects the encoding and the column separator automatically. You can change both.
+- Skips rows at the top of a file, for example a title and a date. The column names then come from the top row, the first row after the skipped rows.
 - Says where a file has faults. A note gives the line and the character of a value with bad quotes. It also gives the lines of rows with more or fewer values than the header.
 - Reads the numbers of a file by the separator that file uses. A file that writes 1.234,56 gives 1000 for 1.000, and a file that writes 1,234.56 gives 1. The reader says when it finds a comma file.
 - Builds a chain of steps. Each step reads the output of the step before it.

@@ -4,6 +4,7 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Change: "First row holds the column names" is now "Top row holds the column names", after "Skip rows at the top". The names come from the first row after the skipped rows, as before (ca51658).
 - Fix: a new width of a column moves the cells below the name, not only the name (3939ca5).
 - Add: "Full Backup" and "Full Restore" in the Saved workflows dialog. A backup holds every saved workflow, the open steps and the settings (3c5fc77, b59979c, e2620be, d85e045, 8b4f8bf).
 - Add: each step has a note, for text about the step. The note goes into the saved workflow and the workflow file (58f9c89, d559cd4, 6528ed0).
