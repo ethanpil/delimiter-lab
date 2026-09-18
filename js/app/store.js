@@ -385,6 +385,15 @@
     this.setSourceFiles(files, true);
   };
 
+  // Puts a new file in the place of one file of the source, for example pasted data that the user
+  // changed. The other files and their order stay.
+  Store.prototype.replaceSourceFile = function (index, file) {
+    var files = this.state.source.files.slice();
+    if (index < 0 || index >= files.length) return;
+    files[index] = file;
+    this.setSourceFiles(files, true);
+  };
+
   Store.prototype.setSourceOptions = function (patch) {
     Object.assign(this.state.source.options, patch);
     this.emit('sourceOptions');
