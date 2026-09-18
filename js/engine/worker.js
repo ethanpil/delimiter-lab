@@ -572,7 +572,8 @@ function search(msg) {
   if (!table) return { matches: [], total: 0 };
   var q = (msg.query || '');
   if (!q) return { matches: [], total: 0 };
-  var re = new RegExp(DL.escapeRegExp(q), 'i');
+  // The rule of Find & Replace: a plain space also finds a no-break space and the other spaces.
+  var re = new RegExp(DL.buildRegex(q, { matchCase: false }).source, 'i');
   var matches = [];
   var total = 0;
   var n = table.length;
