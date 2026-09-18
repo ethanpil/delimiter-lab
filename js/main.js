@@ -867,7 +867,8 @@
     try { b = DL.backup.make(); } catch (e) { U.toast(DL.t('backup.notMade'), 'danger'); return; }
     var name = 'delimiter-lab-backup-' + DL.formatDate(Date.now(), 'YYYY-MM-DD') + '.json';
     U.downloadBlob(new Blob([b.text], { type: 'application/json' }), name);
-    U.toast(DL.t('backup.saved', { name: name, workflows: DL.pluralize(b.workflows, 'saved workflow') }), 'success');
+    if (b.workflows < 0) U.toast(DL.t('backup.savedDamaged', { name: name }), 'warning');
+    else U.toast(DL.t('backup.saved', { name: name, workflows: DL.pluralize(b.workflows, 'saved workflow') }), 'success');
   }
 
   // Reads a backup file, asks one clear question, and puts the backup in the place of everything
@@ -884,7 +885,7 @@
           when: parsed.createdAt ? U.fmtTime(Date.parse(parsed.createdAt)) : DL.t('backup.unknownDate'),
           version: parsed.appVersion ? DL.t('backup.version', { v: parsed.appVersion }) : DL.t('backup.unknownVersion'),
           workflows: DL.pluralize(parsed.workflows, 'saved workflow')
-        }),
+        }) + (parsed.runsCode ? ' ' + DL.t('backup.codeWarning') : ''),
         yes: DL.t('backup.confirmYes'),
         danger: true
       }, function () {
