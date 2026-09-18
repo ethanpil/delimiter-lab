@@ -2176,7 +2176,11 @@
   };
   DL.STEP_NOTE_MAX = 1e4;
   DL.cleanNote = function(note) {
-    return typeof note === "string" ? note.slice(0, DL.STEP_NOTE_MAX) : "";
+    if (typeof note !== "string") return "";
+    if (note.length <= DL.STEP_NOTE_MAX) return note;
+    var cut = note.slice(0, DL.STEP_NOTE_MAX);
+    var last = cut.charCodeAt(cut.length - 1);
+    return last >= 55296 && last <= 56319 ? cut.slice(0, -1) : cut;
   };
   DL.normalizeStep = function(s, keepId) {
     return {

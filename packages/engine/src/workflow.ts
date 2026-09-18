@@ -36,13 +36,17 @@ DL.workflowSlug = function (name) {
 // The longest note that a step keeps, in characters.
 DL.STEP_NOTE_MAX = 10000;
 
-// The note of a step: the text that the user wrote about the step. The engine does not read it, so
-// a note never changes a result. A value that is not text gives no note, and a long text is cut.
-// JSON.stringify escapes every character that the file format needs escaped (quotes, backslashes,
-// line ends, control characters and lone halves of a surrogate pair), so any text goes into a file
-// and comes back the same.
+// The note of a step: the text that the user writes about the step. The engine does not read it, so
+// a note never changes a result. A value that is not text gives no note. A long text is cut.
+// A file keeps any text, because JSON.stringify writes an escape for each character that the
+// format cannot hold.
 DL.cleanNote = function (note) {
-  return typeof note === 'string' ? note.slice(0, DL.STEP_NOTE_MAX) : '';
+  if (typeof note !== 'string') return '';
+  if (note.length <= DL.STEP_NOTE_MAX) return note;
+  var cut = note.slice(0, DL.STEP_NOTE_MAX);
+  var last = cut.charCodeAt(cut.length - 1);
+  // A cut between the two halves of one character leaves half a character. Take that half out.
+  return last >= 0xD800 && last <= 0xDBFF ? cut.slice(0, -1) : cut;
 };
 
 // A step with settings of the right shape. keepId keeps the name that the step came with.

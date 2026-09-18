@@ -23,6 +23,51 @@ const bundleText = fs.readFileSync(bundlePath, 'utf8');
 vm.runInThisContext(bundleText, { filename: 'engine.global.js' });
 const DL = global.DL;
 
+// Loads an application file and the files it needs, in the order of the manifest. A file that the
+// manifest does not name fails here, because the page would not load it either.
+const appFiles = DL.FILES.app.concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js'));
+const loaded = new Set();
+function loadApp(file) {
+  assert.ok(appFiles.indexOf(file) >= 0, file + ' is not in DL.FILES.app of js/manifest.js');
+  DL.FILES.app.slice(0, DL.FILES.app.indexOf(file) + 1).forEach((f) => {
+    if (loaded.has(f)) return;
+    loaded.add(f);
+    vm.runInThisContext(fs.readFileSync(path.join(root, f), 'utf8'), { filename: f });
+  });
+}
+
+// The tests put a storage of their own in place of the one of this process. withStorage gives it
+// back afterwards, so no test starts with the storage of the test before it.
+function withStorage(fake, fn) {
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { value: fake, configurable: true, writable: true });
+  try { fn(); }
+  finally {
+    if (had) Object.defineProperty(globalThis, 'localStorage', had);
+    else delete globalThis.localStorage;
+  }
+}
+
+// A browser storage with the parts that the application reads: length, key() and the three item
+// calls. quota is the most characters that the keys and the values can hold together, as in a
+// browser.
+function fakeStorage(init, quota) {
+  const m = new Map(Object.entries(init));
+  const size = () => Array.from(m).reduce((n, [k, v]) => n + k.length + v.length, 0);
+  return {
+    get length() { return m.size; },
+    key: (i) => (i < m.size ? Array.from(m.keys())[i] : null),
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => {
+      const old = m.get(k);
+      m.set(k, String(v));
+      if (quota !== undefined && size() > quota) { if (old === undefined) m.delete(k); else m.set(k, old); throw new Error('QuotaExceededError'); }
+    },
+    removeItem: (k) => { m.delete(k); },
+    dump: () => Object.fromEntries(m)
+  };
+}
+
 let passed = 0, failed = 0;
 function test(name, fn) {
   try { fn(); passed++; }
@@ -113,12 +158,9 @@ test('saved workflows of 1.0 stay readable, and a link finds them with no write'
     { id: 'later', name: 'From a later build', steps: [{ opId: 42 }] } // this build cannot read it, so it stays untouched
   ];
   const text = JSON.stringify(records);
-  const saved = { 'dl.workflows.v1': text };
-  const fake = { getItem: (k) => (k in saved ? saved[k] : null), setItem: (k, v) => { saved[k] = String(v); }, removeItem: (k) => { delete saved[k]; } };
-  Object.defineProperty(globalThis, 'localStorage', { value: fake, configurable: true, writable: true });
-  ['js/app/i18n.js', 'js/i18n/en.js', 'js/app/util.js', 'js/app/workflows.js'].forEach((f) => {
-    vm.runInThisContext(fs.readFileSync(path.join(root, f), 'utf8'), { filename: f });
-  });
+  const ls = fakeStorage({ 'dl.workflows.v1': text });
+  withStorage(ls, () => {
+  loadApp('js/app/workflows.js');
   const W = DL.workflows;
   assert.deepStrictEqual(W.list().map((w) => w.id), ['s1', 's2', 's3', 's4', 's5']);
   // Two names give one link name: the workflow used or saved last wins.
@@ -129,15 +171,16 @@ test('saved workflows of 1.0 stay readable, and a link finds them with no write'
   assert.strictEqual(W.findBySlug('no-such-name'), null);
   assert.strictEqual(W.findBySlug(''), null);
   assert.strictEqual(W.findBySlug('***'), null);
-  assert.strictEqual(saved['dl.workflows.v1'], text, 'to read and to find writes nothing');
+  assert.strictEqual(ls.getItem('dl.workflows.v1'), text, 'to read and to find writes nothing');
+  });
 });
 
 test('a copy of a saved workflow is a new record, and the first record does not change', () => {
   const first = { id: 'c1', name: 'Clean', steps: [{ id: 'a', opId: 'case', params: { columns: ['Email'], mode: 'lower' }, enabled: false }], columns: ['Email'], sourceOptions: { delimiter: ';' }, createdAt: 1, updatedAt: 2, lastUsedAt: 3 };
   const later = { id: 'later', name: 'From a later build', steps: [{ opId: 42 }] };
-  const saved = { 'dl.workflows.v1': JSON.stringify([first, later]) };
-  const fake = { getItem: (k) => (k in saved ? saved[k] : null), setItem: (k, v) => { saved[k] = String(v); }, removeItem: (k) => { delete saved[k]; } };
-  Object.defineProperty(globalThis, 'localStorage', { value: fake, configurable: true, writable: true });
+  const ls = fakeStorage({ 'dl.workflows.v1': JSON.stringify([first, later]) });
+  withStorage(ls, () => {
+  loadApp('js/app/workflows.js');
   const W = DL.workflows;
   const copy = W.copy('c1', 'Clean for Europe');
   assert.ok(copy && copy.id !== 'c1');
@@ -148,44 +191,26 @@ test('a copy of a saved workflow is a new record, and the first record does not 
   assert.ok(!copy.lastUsedAt, 'the copy was never used');
   assert.deepStrictEqual(W.get('c1'), first, 'the first record is as it was');
   assert.deepStrictEqual(W.list().map((w) => w.id), [copy.id, 'c1']);
-  assert.ok(saved['dl.workflows.v1'].indexOf('From a later build') >= 0, 'a record of a later build stays');
+  assert.ok(ls.getItem('dl.workflows.v1').indexOf('From a later build') >= 0, 'a record of a later build stays');
   // A change to the copy does not reach the first record.
   W.rename(copy.id, 'Clean for Asia');
   assert.strictEqual(W.get('c1').name, 'Clean');
   assert.strictEqual(W.copy('no-such-id', 'X'), null);
+  });
 });
 
-// A browser storage with the parts that the backup reads: length, key() and the three item calls.
-// quota is the most characters that the keys and the values can hold together, as in a browser.
-function fakeStorage(init, quota) {
-  const m = new Map(Object.entries(init));
-  const size = () => Array.from(m).reduce((n, [k, v]) => n + k.length + v.length, 0);
-  return {
-    get length() { return m.size; },
-    key: (i) => (i < m.size ? Array.from(m.keys())[i] : null),
-    getItem: (k) => (m.has(k) ? m.get(k) : null),
-    setItem: (k, v) => {
-      const old = m.get(k);
-      m.set(k, String(v));
-      if (quota !== undefined && size() > quota) { if (old === undefined) m.delete(k); else m.set(k, old); throw new Error('QuotaExceededError'); }
-    },
-    removeItem: (k) => { m.delete(k); },
-    dump: () => Object.fromEntries(m)
-  };
-}
-
-test('a full backup restores every key of the application, byte for byte, and no other key', () => {
-  vm.runInThisContext(fs.readFileSync(path.join(root, 'js/app/backup.js'), 'utf8'), { filename: 'backup.js' });
+test('a full backup restores every key of the application, and no key of another application', () => {
+  loadApp('js/app/backup.js');
   const B = DL.backup;
   // A workflow of 1.0 and one with a note that holds text that could break a file.
-  const note = 'quotes " \\ </script> line\nend     👍🏽 \ud800';
+  const note = 'quotes " \\ </script> line' + String.fromCharCode(10, 0, 0x2028) + String.fromCharCode(0xD83D, 0xDC4D) + String.fromCharCode(0xD800);
   const workflows = JSON.stringify([
     { id: 'w1', name: 'From 1.0', steps: [{ id: 'a', opId: 'case', params: { columns: ['Email'], mode: 'lower' }, enabled: true }], columns: ['Email'], sourceOptions: null, createdAt: 1, updatedAt: 2 },
     { id: 'w2', name: 'With a note', steps: [{ id: 'b', opId: 'case', params: {}, enabled: true, note: note }], columns: [], sourceOptions: null, createdAt: 3, updatedAt: 4 }
   ]);
   const before = { 'dl.workflows.v1': workflows, 'dl.session.v1': '{"workflow":{"steps":[]}}', 'dl.theme': 'dark', 'dl.autosave': '1', 'other.app': 'keep me' };
   let ls = fakeStorage(before);
-  Object.defineProperty(globalThis, 'localStorage', { value: ls, configurable: true, writable: true });
+  withStorage(ls, () => {
   const made = B.make();
   assert.strictEqual(made.workflows, 2);
   const file = JSON.parse(made.text);
@@ -200,7 +225,7 @@ test('a full backup restores every key of the application, byte for byte, and no
   ls.setItem('dl.later.v2', 'x');
   const parsed = B.parse(made.text);
   assert.strictEqual(parsed.workflows, 2);
-  assert.ok(B.restore(parsed));
+  assert.deepStrictEqual(B.restore(parsed), { ok: true });
   const after = ls.dump();
   assert.deepStrictEqual(after, before, 'every key comes back as it was, and the key that came later is gone');
   assert.strictEqual(DL.workflows.get('w2').steps[0].note, note);
@@ -220,6 +245,13 @@ test('a full backup restores every key of the application, byte for byte, and no
   const foreign = B.parse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: { 'dl.theme': 'light', 'other.app': 'no' } }));
   assert.deepStrictEqual(Object.keys(foreign.storage), ['dl.theme']);
   assert.strictEqual(foreign.workflows, 0);
+  // An empty text is an empty store, as DL.workflows reads it. It is not a damaged list.
+  assert.strictEqual(B.parse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: { 'dl.workflows.v1': '' } })).workflows, 0);
+  // The version of the file goes into a question on the screen, so only plain characters pass.
+  const version = (v) => B.parse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, appVersion: v, storage: {} })).appVersion;
+  assert.strictEqual(version('1.2'), '1.2');
+  assert.strictEqual(version('1.0' + String.fromCharCode(0x202E) + 'evil'), '', 'a character that turns the text around gives no version');
+  assert.strictEqual(version(5), '');
 
   // A backup with code in a saved workflow or in the session says so, because it can come from
   // another person. A step with code that is turned off does not run.
@@ -231,16 +263,25 @@ test('a full backup restores every key of the application, byte for byte, and no
   assert.strictEqual(withSteps('dl.session.v1', [js]).runsCode, true);
   assert.strictEqual(withSteps('dl.workflows.v1', [Object.assign({}, js, { enabled: false })]).runsCode, false);
   // A backup of a list of workflows that does not read says so, because parse() refuses it.
-  ls = fakeStorage({ 'dl.workflows.v1': '{broken', 'dl.theme': 'dark' });
-  Object.defineProperty(globalThis, 'localStorage', { value: ls, configurable: true, writable: true });
-  assert.strictEqual(B.make().workflows, -1);
+  withStorage(fakeStorage({ 'dl.workflows.v1': '{broken', 'dl.theme': 'dark' }), () => {
+    assert.strictEqual(B.make().workflows, -1);
+    assert.strictEqual(B.currentWorkflows(), -1, 'the question must say that the list cannot be read');
+  });
 
   // A storage that fills up during the restore gets the keys of before back.
   const big = B.parse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: { 'dl.theme': 'light', 'dl.session.v1': 'x'.repeat(5000) } }));
-  ls = fakeStorage(before, 2000);
-  Object.defineProperty(globalThis, 'localStorage', { value: ls, configurable: true, writable: true });
-  assert.strictEqual(B.restore(big), false);
-  assert.deepStrictEqual(ls.dump(), before, 'a failed restore changes nothing');
+  const tight = fakeStorage(before, 2000);
+  withStorage(tight, () => {
+    assert.deepStrictEqual(B.restore(big), { ok: false }, 'the keys of before come back');
+    assert.deepStrictEqual(tight.dump(), before, 'a failed restore changes nothing');
+  });
+  // A storage that takes neither the backup nor the keys of before says that the work is lost, so
+  // that the page can tell the user. Here every write after the first one fails.
+  const hostile = fakeStorage(before, 0);
+  withStorage(hostile, () => {
+    assert.deepStrictEqual(B.restore(big), { ok: false, lost: true });
+  });
+  });
 });
 
 // The page reads the IIFE build; a program that takes the engine as a module reads the other one.

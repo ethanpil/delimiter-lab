@@ -752,11 +752,15 @@ test('a workflow file of 1.0 reads as before, and no file holds a link name', ()
 // A note is free text. Any text must go into a workflow file and come back the same, and a note
 // must never change what the engine runs.
 test('a step note goes through a workflow file unchanged, and the engine does not see it', () => {
+  // The characters that a file must escape, built from their codes: a source file keeps no raw
+  // control character, because git then reads the file as binary.
+  const ctrl = [0, 1, 0x1f, 0x7f].map((c) => String.fromCharCode(c)).join(' ');
+  const sep = [0x2028, 0x2029].map((c) => String.fromCharCode(c)).join(' ');
   const odd = [
     'plain',
     'quotes " and \' and `backticks`, a backslash \\ and \\n as two characters',
     'line one\nline two\r\nline three\ttab',
-    'control      and a line separator    ',
+    'control ' + ctrl + ' and a line separator ' + sep,
     '{"format":"delimiter-lab-workflow","steps":[]} </script><script>alert(1)</script> ${x}',
     'unicode: café, 中文, emoji 👍🏽, a lone half \ud800 of a pair',
     '   spaces kept   '
@@ -777,6 +781,12 @@ test('a step note goes through a workflow file unchanged, and the engine does no
   // A long note is cut to the limit.
   assert.strictEqual(DL.parseWorkflow(JSON.stringify({ format: 'delimiter-lab-workflow', version: 1,
     steps: [{ opId: 'case', note: 'x'.repeat(DL.STEP_NOTE_MAX + 50) }] })).steps[0].note.length, DL.STEP_NOTE_MAX);
+  // A cut at the limit never leaves half a character.
+  const pair = String.fromCharCode(0xD83D, 0xDE00); // one character, written as two halves
+  const long = DL.parseWorkflow(JSON.stringify({ format: 'delimiter-lab-workflow', version: 1,
+    steps: [{ opId: 'case', note: 'x'.repeat(DL.STEP_NOTE_MAX - 1) + pair + 'more' }] })).steps[0].note;
+  assert.strictEqual(long.length, DL.STEP_NOTE_MAX - 1, 'the half character goes out with the cut');
+  assert.ok(!/[\uD800-\uDBFF]$/.test(long));
   // The steps that the engine runs carry no note, so a note never changes a result.
   assert.ok(DL.workerSteps(back.steps).every((s) => !('note' in s)));
 });
