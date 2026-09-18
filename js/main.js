@@ -974,8 +974,8 @@
 
   /* ---------- Copy from the preview ---------- */
   // Copies the table, a row or a column of the step that the preview shows, as text that a
-  // spreadsheet reads as cells. The worker makes the text; the clipboard takes it as a promise, so
-  // the click that asked for it still counts when the text comes.
+  // spreadsheet reads as cells. The worker makes the text. The write to the clipboard starts in the
+  // click, with the text as a promise, because some browsers refuse a write after the click.
   function copyData(stepId, what, index) {
     if (!stepId || !store.state.source.file) { U.toast(DL.t('msg.openFileFirst'), 'info'); return; }
     var answer = null;
@@ -983,8 +983,8 @@
       answer = r.result;
       return answer.tooBig || !answer.cells ? null : answer.text;
     });
+    // U.copyText waits for the text, so the answer of the worker is there when this runs.
     U.copyText(text).then(function (ok) {
-      if (!answer) { U.toast(DL.t('preview.copyFailed'), 'danger'); return; }
       if (answer.tooBig) {
         U.toast(DL.t('preview.copyTooBig', { cells: DL.pluralize(answer.cells, 'cell'), max: DL.pluralize(DL.COPY_MAX_CELLS, 'cell') }), 'warning');
         return;
@@ -999,7 +999,8 @@
   }
   grid.onCopy = copyData;
 
-  // Copies the value of one cell as it is, with no quotes, so it pastes into a box or a cell alike.
+  // Copies the value of one cell as it is, with no quotes. It then pastes into a text box and into a
+  // cell in the same way.
   function copyValue(value, row, name) {
     U.copyText(value).then(function (ok) {
       U.toast(ok ? DL.t('preview.copiedValue', { n: (row + 1).toLocaleString(), name: name }) : DL.t('preview.copyFailed'), ok ? 'success' : 'danger');
@@ -1145,33 +1146,19 @@
   /* ---------- Download ---------- */
   var exportToken = 0;
 
-  // The step whose result is the result of the whole workflow: the last step that is on. With no step
-  // on, that is the source.
-  function finalStepId() {
-    var steps = store.state.workflow.steps;
-    for (var i = steps.length - 1; i >= 0; i--) if (steps[i].enabled !== false) return steps[i].id;
-    return 'source';
-  }
-
   // The words that say where the data of a step stands in the workflow, or null for the final
-  // result. A copy and a download of an earlier step are real work, but the person must know that the
-  // steps after it do not apply.
+  // result. The data is final when no step after it is on: a step that is off gives its input on.
+  // A copy or a download of an earlier step is allowed, but the person must know that the steps
+  // after it do not apply.
   function notFinalNote(stepId) {
-    if (stepId === finalStepId()) return null;
     var steps = store.state.workflow.steps;
-    if (stepId === 'source') return DL.t('preview.notFinalSource', { steps: DL.pluralize(steps.length, 'step') });
-    var idx = store.stepIndex(stepId);
-    var op = idx >= 0 ? DL.getOp(steps[idx].opId) : null;
+    var idx = stepId === 'source' ? -1 : store.stepIndex(stepId);
+    if (idx < 0 && stepId !== 'source') return null;
+    var on = steps.filter(function (s) { return s.enabled !== false; });
+    if (!steps.slice(idx + 1).some(function (s) { return s.enabled !== false; })) return null;
+    if (idx < 0) return DL.t('preview.notFinalSource', { steps: DL.pluralize(on.length, 'step') });
+    var op = DL.getOp(steps[idx].opId);
     return DL.t('preview.notFinalStep', { n: idx + 1, total: steps.length, op: op ? op.name : steps[idx].opId });
-  }
-
-  // The start of the name of a download: the workflow name as a link name, the name of the source
-  // file and the time, for example clean-contacts-orders-2026-09-18-14-05. The dialog adds the
-  // extension of the format.
-  function downloadName() {
-    var slug = DL.workflowSlug(store.state.workflow.name || '');
-    var file = U.safeFileName(U.baseName(store.state.source.file.name));
-    return (slug ? slug + '-' : '') + file + '-' + DL.formatDate(Date.now(), 'YYYY-MM-DD-HH-mm');
   }
 
   function download() {
@@ -1180,10 +1167,18 @@
     if (st.source.status !== 'ready') { U.toast(DL.t('msg.openFileFirst'), 'info'); return; }
     // The download holds what the preview shows: the selected step, or the step before it when the
     // selected step cannot run yet.
-    var shown = store.displayResultFor(st.selectedId);
+    // The download takes the step that the preview shows, as Copy does.
+    var shown = { stepId: grid.stepId || store.displayResultFor(st.selectedId).stepId };
     var where = notFinalNote(shown.stepId);
     var note = where ? where + ' ' + DL.t('preview.notFinalDownload') : null;
-    DL.dialogs.download({ baseName: downloadName(), note: note, warn: !!where, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
+    // The name: the workflow name as a link name, the name of the source file and the time, for
+    // example clean-contacts-orders-2026-09-18-14-05. The dialog keeps at most 100 characters with the
+    // extension, so each of the two names keeps at most 36, and the time stays whole.
+    var cut = function (text) { return Array.from(text).slice(0, 36).join('').replace(/[\s.-]+$/, ''); };
+    var slug = cut(DL.workflowSlug(st.workflow.name || ''));
+    var file = cut(U.safeFileName(U.baseName(st.source.file.name)));
+    var baseName = (slug ? slug + '-' : '') + file + '-' + DL.formatDate(Date.now(), 'YYYY-MM-DD-HH-mm');
+    DL.dialogs.download({ baseName: baseName, note: note, warn: !!where, lastFormat: lastFormat, lastOptions: lastFormatOptions }, function (options, fileName, allOptions) {
       lastFormat = options.format;
       lastFormatOptions = allOptions;
       if (exporting) { U.toast(DL.t('msg.downloadRunning'), 'info'); return; }
@@ -1399,9 +1394,9 @@
     var stepId = grid.stepId;
     var where = stepId ? notFinalNote(stepId) : null;
     if (!where) { copyData(stepId, 'table'); return; }
-    // The question runs the copy after the dialog closes, still close to the click, so the browser
-    // takes the write.
-    U.confirm({ title: DL.t('preview.notFinalTitle'), message: where + ' ' + DL.t('preview.notFinalCopy'), yes: DL.t('preview.copyThisStep') },
+    // The copy starts in the click of the answer (inClick): Safari refuses a write to the clipboard
+    // that comes after the dialog has closed.
+    U.confirm({ title: DL.t('preview.notFinalTitle'), message: where + ' ' + DL.t('preview.notFinalCopy'), yes: DL.t('preview.copyThisStep'), inClick: true },
       function () { copyData(stepId, 'table'); });
   });
   $('btnTiming').addEventListener('click', function () {

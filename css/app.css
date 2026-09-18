@@ -399,12 +399,13 @@ kbd { font-size: 11px; }
   .preview-search { width: 200px; }
   #saveState { display: none; }
   .app-header .btn-label { display: none; }
+  .preview-actions .btn-label { display: none; }
 }
 
 /* A narrow screen, such as a telephone. The header needs about 720px on one line. With less than
-   that, and with a body that does not scroll, Download and the buttons beside it went off the
-   screen: a person opened a file and then had no way to take the answer. The header takes two
-   lines here, and the name of the workflow gives its width to the buttons. */
+   that, and with a body that does not scroll, its buttons went off the screen. The header takes two
+   lines here, and the name of the workflow gives its width to the buttons. The buttons of the
+   preview, Download among them, show icons only below 1100px and wrap to a second line. */
 @media (max-width: 760px) {
   :root { --dl-sidebar-w: 180px; }
   .app-header {

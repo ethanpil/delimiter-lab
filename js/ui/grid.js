@@ -86,31 +86,46 @@
       document.addEventListener('mousemove', move);
       document.addEventListener('mouseup', up);
     });
-    // A right click on a column name or on a row number opens a menu that copies it. onCopy is set by
-    // the page: onCopy(stepId, 'row' | 'column', index). Without it, the browser keeps its own menu.
+    // A right click on a column name, a row number or a cell opens a menu that copies it. The page
+    // sets onCopy(stepId, 'row' | 'column', index) and onCopyValue(value, row, name). Without them,
+    // the browser keeps its own menu.
+    //
+    // The menu keeps the step of the moment it opened, and show() closes it, so a copy always takes
+    // the data that the person saw. From show() until the first page of the new step comes, the
+    // screen still shows the old table and the grid has no columns: then the browser keeps its menu.
+    // A selection of text keeps the menu of the browser too, so that its Copy copies the selection.
+    var fresh = function () { return !!(self.onCopy && self.columns.length && self.pages.size); };
+    var selecting = function () { var s = window.getSelection && window.getSelection(); return !!(s && String(s).length); };
+    var columnItem = function (stepId, col) {
+      return { label: DL.t('grid.copyColumnNamed', { name: self.columns[col] }), icon: 'bi-copy', onClick: function () { self.onCopy(stepId, 'column', col); } };
+    };
     this.header.addEventListener('contextmenu', function (e) {
       var cell = e.target.closest('.grid-hcell[data-col]');
-      if (!cell || !self.onCopy) return;
-      var col = Number(cell.getAttribute('data-col'));
+      if (!cell || !fresh() || selecting()) return;
       self.closeProfile();
-      U.contextMenu(e, [{ label: DL.t('grid.copyColumn'), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'column', col); } }]);
+      U.contextMenu(e, [columnItem(self.stepId, Number(cell.getAttribute('data-col')))]);
     });
-    // A right click on a cell copies its value, its row or its column. The value comes from the
-    // rows on the screen, so it needs no answer from the worker.
     this.rowsEl.addEventListener('contextmenu', function (e) {
       var rowEl = e.target.closest('.grid-row');
       var num = rowEl && rowEl.querySelector('.grid-cell.rownum[data-row]');
-      if (!num || !self.onCopy) return;
+      if (!num || !fresh() || selecting()) return;
+      var stepId = self.stepId;
       var row = Number(num.getAttribute('data-row'));
-      var copyRow = { label: DL.t('grid.copyRow', { n: (row + 1).toLocaleString() }), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'row', row); } };
-      if (e.target.closest('.grid-cell.rownum')) { U.contextMenu(e, [copyRow]); return; }
-      var col = self.columnAt(e.clientX);
-      var value = col >= 0 ? self.cellValue(row, col) : null;
-      if (value === null) { U.contextMenu(e, [copyRow]); return; }
+      var rowItem = { label: DL.t('grid.copyRow', { n: (row + 1).toLocaleString() }), icon: 'bi-copy', onClick: function () { self.onCopy(stepId, 'row', row); } };
+      // The column under the mouse: the left edges of layout() hold the place of each column.
+      var x = e.clientX - self.scroll.getBoundingClientRect().left + self.scroll.scrollLeft;
+      var col = -1;
+      for (var c = 0; c < self.columns.length; c++) if (x >= self.lefts[c] && x < self.lefts[c + 1]) col = c;
+      // The value comes from the page on the screen, so the copy needs no answer from the worker.
+      var page = self.pages.get(Math.floor(row / self.page));
+      var values = page ? page.rows[row - page.start] : null;
+      var value = !e.target.closest('.grid-cell.rownum') && col >= 0 && values ? values[col] : undefined;
+      if (value === undefined) { U.contextMenu(e, [rowItem]); return; }
+      var name = self.columns[col];
       U.contextMenu(e, [
-        { label: DL.t('grid.copyValue'), icon: 'bi-clipboard', onClick: function () { self.onCopyValue(value, row, self.columns[col]); } },
-        copyRow,
-        { label: DL.t('grid.copyColumnNamed', { name: self.columns[col] }), icon: 'bi-copy', onClick: function () { self.onCopy(self.stepId, 'column', col); } }
+        { label: DL.t('grid.copyValue'), icon: 'bi-clipboard', onClick: function () { self.onCopyValue(value, row, name); } },
+        rowItem,
+        columnItem(stepId, col)
       ]);
     });
     this.header.addEventListener('dblclick', function (e) {
@@ -146,6 +161,7 @@
     this.profiles = {};      // column index -> statistics already received for this table
     this.sample = null;      // the rows that gave the widths, for a new measurement of one column
     this.closeProfile();
+    U.closeContextMenu(); // its items belong to the table that goes now
   };
 
   GridView.prototype.setTitle = function (t) { this.title.textContent = t || ''; this.title.hidden = !t; };
@@ -292,34 +308,22 @@
     var lefts = new Array(this.columns.length + 1);
     lefts[0] = this.rowNumW;
     for (var c = 0; c < this.columns.length; c++) lefts[c + 1] = lefts[c] + this.widths[c];
+    // Every change of a width comes through here. A new left edge clears the render key, so the
+    // next render draws the cells again and not only the header. The same edges keep the rows.
+    var old = this.lefts;
+    if (!old || old.length !== lefts.length || old.some(function (v, i) { return v !== lefts[i]; })) this.renderKey = '';
     this.lefts = lefts; // left edge of each column; lefts[cols.length] is the total width
     this.totalW = lefts[this.columns.length];
-    // Every change of a width comes through here. The rows read this number in their render key,
-    // so that a new width redraws the cells and not only the header.
-    this.layoutVersion = (this.layoutVersion || 0) + 1;
   };
 
   // Gives one column a width, or removes the width that the user set when px is 0.
   GridView.prototype.setColumnWidth = function (c, px) {
     var name = this.columns[c];
+    if (px > 0 && Math.round(px) === this.widthSet[name]) return;
     if (px > 0) { this.widthSet[name] = Math.round(px); this.widths[c] = Math.round(px); this.layout(); }
     else { delete this.widthSet[name]; this.widths[c] = this.naturalWidth(c); this.fillWidth(); }
     this.renderHeader(true);
     this.renderRows();
-  };
-
-  // The column under a point of the screen, or -1. The left edges come from layout().
-  GridView.prototype.columnAt = function (clientX) {
-    var x = clientX - this.scroll.getBoundingClientRect().left + this.scroll.scrollLeft;
-    for (var c = 0; c < this.columns.length; c++) if (x >= this.lefts[c] && x < this.lefts[c + 1]) return c;
-    return -1;
-  };
-
-  // The value of a cell from the pages on the screen, or null when its page is not there yet.
-  GridView.prototype.cellValue = function (row, col) {
-    var page = this.pages.get(Math.floor(row / this.page));
-    var values = page ? page.rows[row - page.start] : null;
-    return values && col < values.length ? values[col] : null;
   };
 
   // The columns that are inside the view (plus a small buffer): [first, last).
@@ -426,7 +430,7 @@
     var range = this.visibleColumns();
     if (!this.headerRange || range[0] !== this.headerRange[0] || range[1] !== this.headerRange[1]) this.renderHeader(true);
     // Nothing changed since the last render: keep the DOM.
-    var key = first + ':' + last + ':' + range.join('-') + ':' + loaded + ':' + this.hitsVersion + ':' + (this.current ? this.current.join('/') : '') + ':' + (this.scale < 1 ? this.scroll.scrollTop : 0) + ':' + this.layoutVersion;
+    var key = first + ':' + last + ':' + range.join('-') + ':' + loaded + ':' + this.hitsVersion + ':' + (this.current ? this.current.join('/') : '') + ':' + (this.scale < 1 ? this.scroll.scrollTop : 0);
     if (key === this.renderKey) return;
     this.renderKey = key;
     // In scaled mode rows are placed relative to the current scroll position.
@@ -554,6 +558,7 @@
   GridView.prototype.showProfile = function (cell, col) {
     var self = this;
     var stepId = this.stepId;
+    if (!this.columns.length) return; // the header on the screen belongs to the table before
     if (this.popover && this.popover.col === col) { this.closeProfile(); return; }
     this.closeProfile();
     // Bootstrap holds one widget per element. The hover text of the column name goes away while the
@@ -565,7 +570,7 @@
     U.hideTooltips();
     var known = this.profiles[col];
     // The title holds the copy button, because the body changes when the numbers come.
-    var copyBtn = this.onCopy ? '<button type="button" class="btn btn-sm btn-outline-secondary profile-copy" title="' + U.esc(DL.t('grid.copyColumnTitle')) + '">' +
+    var copyBtn = this.onCopy ? '<button type="button" class="btn btn-sm btn-outline-secondary profile-copy no-tip" aria-label="' + U.esc(DL.t('grid.copyColumnTitle')) + '">' +
       '<i class="bi bi-copy"></i> ' + U.esc(DL.t('grid.copy')) + '</button>' : '';
     var pop = new bootstrap.Popover(cell, {
       html: true, sanitize: false, trigger: 'manual', placement: 'bottom', container: 'body',
@@ -596,6 +601,7 @@
   };
 
   GridView.prototype.destroy = function () {
+    U.closeContextMenu();
     this.resizeObs.disconnect();
     clearTimeout(this.fetchTimer);
     this.closeProfile();

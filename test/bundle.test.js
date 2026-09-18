@@ -128,6 +128,16 @@ test('every file that the page loads is on disk, with the same letters', () => {
   needed.forEach((f) => assert.ok(onDisk.has(f), f + ' is named by the page but not on disk with these letters'));
 });
 
+test('the width where a field with fill moves beside the field before it agrees with the grid', () => {
+  // css/app.css puts a field with fill in the second column when the grid has two columns. The
+  // query cannot read the grid, so it holds a number made from the track and the gap of the grid.
+  const css = fs.readFileSync(path.join(root, 'css/app.css'), 'utf8');
+  const track = Number(/grid-template-columns: repeat\(auto-fill, minmax\((\d+)px, 1fr\)\)/.exec(css)[1]);
+  const gap = Number(/\.field-grid \{[^}]*gap: \d+px (\d+)px/.exec(css)[1]);
+  const query = Number(/@container \(min-width: (\d+)px\)/.exec(css)[1]);
+  assert.strictEqual(query, 2 * track + gap, 'two tracks and one gap');
+});
+
 test('the build brings every operation', () => {
   assert.strictEqual(DL.ops.length, 28);
   assert.strictEqual(DL.getOp('unpivot').id, 'unpivot');

@@ -189,7 +189,6 @@
     // Copy from the grid
     'grid.copy': 'Copy',
     'grid.copyRow': 'Copy row {n}',
-    'grid.copyColumn': 'Copy column',
     'grid.copyColumnNamed': 'Copy column "{name}"',
     'grid.copyValue': 'Copy value',
     'grid.copyColumnTitle': 'Copy this column, with its name, to paste it into a spreadsheet',
