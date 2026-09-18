@@ -33,7 +33,7 @@ function smokeWorkspace() {
 // not localhost, so DL.BUILD is the version and not a new number at each start.
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true } }]);
 
-// Supplies one file of the page. The query string (?v=app, ?debug) is not part of the path.
+// Supplies one file of the page. The query string (?v=fixed, ?debug) is not part of the path.
 async function serve(request) {
   try {
     const url = new URL(request.url);

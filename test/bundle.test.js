@@ -97,12 +97,15 @@ test('index.html asks for every file with the stamp of its deploy', () => {
   });
   assert.ok(!/\?v=\d/.test(html), 'no file of index.html may carry a fixed version');
   assert.ok(/document\.lastModified/.test(html), 'the stamp comes from the time of the deploy');
+  // The pattern that finds the files of index.html finds these two in the script as well.
+  const named = [...html.matchAll(/(?:src|href)="([^"#?:]+)(?:\?[^"]*)?"/g)].map((m) => m[1]);
+  assert.ok(named.indexOf('css/app.css') >= 0 && named.indexOf('js/manifest.js') >= 0);
   // The manifest puts the stamp into DL.BUILD, the number that every other file carries.
   const ctx = { self: { DL: { STAMP: '1789750982000' } }, location: { hostname: 'ethanpil.github.io' } };
   ctx.self.location = ctx.location;
   vm.runInNewContext(fs.readFileSync(path.join(root, 'js/manifest.js'), 'utf8'), ctx);
   assert.strictEqual(ctx.self.DL.BUILD, manifestVersion + '.1789750982000');
-  // With no stamp, as in the desktop application, the number is the version.
+  // With no stamp, as in the desktop application and the worker, the number is the version.
   const app = { self: { location: { hostname: 'delimiter-lab' } } };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'js/manifest.js'), 'utf8'), app);
   assert.strictEqual(app.self.DL.BUILD, manifestVersion);
@@ -116,7 +119,7 @@ test('every file that the page loads is on disk, with the same letters', () => {
   // as text. The manifest names most files. index.html and the worker name the others themselves.
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'js/engine/worker.js'), 'utf8');
-  const needed = ['js/engine/worker.js', 'css/app.css', 'js/manifest.js']
+  const needed = ['js/engine/worker.js']
     .concat(...Object.values(DL.FILES))
     .concat(DL.LOCALES.map((l) => 'js/i18n/' + l + '.js'))
     .concat([...html.matchAll(/(?:src|href)="([^"#?:]+)(?:\?[^"]*)?"/g)].map((m) => m[1]))
