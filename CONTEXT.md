@@ -20,8 +20,8 @@ The version in `js/manifest.js` is 1.0. `CHANGELOG.md` lists the changes with th
 | Debug handle | Open the page with `?debug`. `window.DLApp` then gives `store`, `engine`, `grid`, `openFile(file)` and `openFiles(files)`. |
 | Build the engine | `npm install`, then `npm run build`. It writes `dist/engine.global.js` (the page and the worker), `dist/engine.mjs` and `dist/dl.mjs` (the `dl` command). Only the first is in the repository. |
 | Run every test | `npm test`. It builds first, then runs the four sets below. |
-| Run the engine tests | `node test/engine.test.js` (93 tests) |
-| Run the worker tests | `node test/worker.test.js` (29 tests; loads the real worker in Node with a fake File and the real PapaParse and SheetJS) |
+| Run the engine tests | `node test/engine.test.js` (96 tests) |
+| Run the worker tests | `node test/worker.test.js` (30 tests; loads the real worker in Node with a fake File and the real PapaParse and SheetJS) |
 | Run the tests of the build | `node test/bundle.test.js` (11 tests). The page loads the manifest and then the build; these hold that pair to its promises. One test checks that every file that the page names is on disk with the same letters. One test loads saved workflows of 1.0 through `js/app/workflows.js` and checks that nothing writes over them. One test makes a full backup and restores it. It also holds the restore to these rules: keep the keys of other applications, refuse a bad file, and put the keys of before back when the storage is full. |
 | Run the parity tests | `node test/parity.test.js` (11 tests; one workflow through the worker of the page and through the `dl` command; the bytes must agree) |
 | Check the types | `npm run typecheck` |
