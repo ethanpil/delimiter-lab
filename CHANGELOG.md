@@ -4,6 +4,7 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Fix: a space in Find & Replace also finds a no-break space, as many exports write it. Before, some cells changed and others did not (6439db1).
 - Change: "First row holds the column names" is now "Top row holds the column names", after "Skip rows at the top". The names come from the first row after the skipped rows, as before (ca51658).
 - Fix: a new width of a column moves the cells below the name, not only the name (3939ca5).
 - Add: "Full Backup" and "Full Restore" in the Saved workflows dialog. A backup holds every saved workflow, the open steps and the settings (3c5fc77, b59979c, e2620be, d85e045, 8b4f8bf).
