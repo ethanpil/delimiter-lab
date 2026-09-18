@@ -322,10 +322,14 @@
     // phase, looks for a dropdown button, finds none on this page, and throws. The window hears the
     // key before the document.
     var arrows = function (ev) {
-      var keys = { ArrowDown: 1, ArrowUp: -1, Home: 0, End: 0, Escape: 0 };
-      if (!(ev.key in keys) || !menu.contains(ev.target)) return;
-      ev.preventDefault();
+      if (!menu.contains(ev.target)) return;
+      // Enter, the space bar and Tab work on the item as on any button. Every other key stops here,
+      // so that a shortcut of the page (Delete, Insert, Ctrl+D, Alt+Up) does not act behind the menu.
+      if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Tab') return;
       ev.stopPropagation();
+      var keys = { ArrowDown: 1, ArrowUp: -1, Home: 0, End: 0, Escape: 0 };
+      if (!(ev.key in keys)) return;
+      ev.preventDefault();
       if (ev.key === 'Escape') { U.closeContextMenu(); return; }
       var buttons = Array.prototype.slice.call(menu.querySelectorAll('button'));
       var at = buttons.indexOf(document.activeElement);
