@@ -4,6 +4,7 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Add: "Copy" in the workflow list saves a workflow under a new name and opens the copy. A copy of the open workflow takes the changes that are not saved (a63368b, 3ea6490).
 - Change: "Many files" is above the list of files, and it is there before a file is open (823e56f).
 - Change: "Many files" is at stack at the start (d47e977).
 - Change: the source panel lists its files on the left, with the size, the rows and the columns of each. The drop zone takes the right side. The list is there for one file too (d6756dc).

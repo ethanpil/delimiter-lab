@@ -17,6 +17,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Shows the rows that failed a Verify rule when you click the rule in the result.
 - Saves workflows in the browser and as files, so you can apply them again to new files. Autosave writes each change of the steps to the open workflow.
 - Runs a saved workflow on a file from the workflow list, and downloads the result. You do not need to build the steps again.
+- Copies a saved workflow under a new name. "Copy" in the workflow list saves the copy and opens it, so you can change it. The first workflow does not change.
 - Opens a saved workflow and data from a link: `#workflow=<link name>&source=<data in base64>`. See "Open from a link".
 - Reads many files as one Data Source. "Many files" is at stack at the start, and you can add files at any time. The columns go by name, and a column that a file does not have is empty for the rows of that file.
 - Takes pasted data: the text of a CSV or TSV file, or cells that you copied from a spreadsheet. Click "Paste data" beside the files of the source. The data becomes a file of the source.
