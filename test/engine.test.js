@@ -807,6 +807,27 @@ test('Find & Replace finds a no-break space and the other spaces with a plain sp
   // A regular expression keeps its own rules: a space there is a plain space only.
   assert.strictEqual(rowsOf(run('replace', { find: ' oz', replace: 'oz', regex: true }, t).table)[1][0], 'MILK 52' + sp(0xA0) + 'oz');
 });
+// A copy goes into a spreadsheet as cells: a tab between the values, a line end between the rows,
+// and quotes around a value that holds a tab, a line end or a quote.
+test('the text of a copy is a table that a spreadsheet reads', () => {
+  const t = T(['Name', 'Note'], [['Ada', 'says "hi"'], ['Alan', 'two' + String.fromCharCode(10) + 'lines'], ['Grace', 'a' + String.fromCharCode(9) + 'b']]);
+  const all = DL.clipboardText(t, 'table');
+  assert.strictEqual(all.text, ['Name\tNote', 'Ada\t"says ""hi"""', 'Alan\t"two\nlines"', 'Grace\t"a\tb"'].join('\n'));
+  assert.deepStrictEqual([all.rows, all.columns, all.cells], [3, 2, 8]);
+  // A row has no names of columns; a column starts with its name.
+  assert.strictEqual(DL.clipboardText(t, 'row', 0).text, 'Ada\t"says ""hi"""');
+  assert.strictEqual(DL.clipboardText(t, 'column', 0).text, 'Name\nAda\nAlan\nGrace');
+  // A place that the table does not have gives nothing.
+  assert.strictEqual(DL.clipboardText(t, 'row', 9).text, '');
+  assert.strictEqual(DL.clipboardText(t, 'column', -1).text, '');
+  // A copy above the limit gives no text, only the number of cells.
+  const keep = DL.COPY_MAX_CELLS;
+  DL.COPY_MAX_CELLS = 5;
+  try {
+    assert.deepStrictEqual(DL.clipboardText(t, 'table'), { tooBig: true, cells: 8 });
+    assert.strictEqual(DL.clipboardText(t, 'row', 1).text, 'Alan\t"two\nlines"', 'one row is small');
+  } finally { DL.COPY_MAX_CELLS = keep; }
+});
 test('split with names but no maximum has unknown columns', () => {
   const p = Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',', names: 'P, Q' });
   assert.strictEqual(DL.predictColumns('split', p, ['A']), null);

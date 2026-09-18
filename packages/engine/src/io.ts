@@ -495,6 +495,54 @@ function makeZip(entries) {
   return { chunks: parts, mime: 'application/zip' };
 }
 
+/* ---------- Clipboard ---------- */
+
+// The most cells that one copy takes. A spreadsheet pastes that many at a normal speed; a larger
+// result goes out through Download.
+DL.COPY_MAX_CELLS = 1000000;
+
+// A value for the clipboard. Spreadsheets read a tab between the values and a line end between the
+// rows. A value that holds a tab, a line end or a quote goes in quotes, with each quote written two
+// times, as spreadsheets write it themselves.
+function clipValue(v) {
+  return /[\t\r\n"]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+// The text of a whole table ('table'), of one row ('row', without the names of the columns) or of
+// one column ('column', with its name first). Gives { text, rows, columns, cells }, or
+// { tooBig: true, cells } when the copy would be larger than DL.COPY_MAX_CELLS.
+DL.clipboardText = function (table, what, index) {
+  var w = table.columns.length;
+  var n = table.length;
+  var i, c;
+  if (what === 'row' && !(index >= 0 && index < n)) return { text: '', rows: 0, columns: 0, cells: 0 };
+  if (what === 'column' && !(index >= 0 && index < w)) return { text: '', rows: 0, columns: 0, cells: 0 };
+  var cells = what === 'row' ? w : what === 'column' ? n + 1 : (n + 1) * w;
+  if (cells > DL.COPY_MAX_CELLS) return { tooBig: true, cells: cells };
+  var lines = [];
+  if (what === 'row') {
+    var values = [];
+    for (c = 0; c < w; c++) values.push(clipValue(DL.cellGetter(table, c)(index)));
+    lines.push(values.join('\t'));
+    return { text: lines.join('\n'), rows: 1, columns: w, cells: cells };
+  }
+  if (what === 'column') {
+    var get = DL.cellGetter(table, index);
+    lines.push(clipValue(table.columns[index]));
+    for (i = 0; i < n; i++) lines.push(clipValue(get(i)));
+    return { text: lines.join('\n'), rows: n, columns: 1, cells: cells, name: table.columns[index] };
+  }
+  var getters = [];
+  for (c = 0; c < w; c++) getters.push(DL.cellGetter(table, c));
+  lines.push(table.columns.map(clipValue).join('\t'));
+  for (i = 0; i < n; i++) {
+    var line = '';
+    for (c = 0; c < w; c++) line += (c ? '\t' : '') + clipValue(getters[c](i));
+    lines.push(line);
+  }
+  return { text: lines.join('\n'), rows: n, columns: w, cells: cells };
+};
+
 /* ---------- Export ---------- */
 
 
