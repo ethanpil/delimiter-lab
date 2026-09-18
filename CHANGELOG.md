@@ -4,6 +4,7 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Add: Download in the header takes the final result of the workflow, whatever step the preview shows (ef05e9a).
 - Add: the step Duplicate Column copies a column into a new column with the name that you choose (ecf5478).
 - Fix: a no-break space typed in Find & Replace finds only no-break spaces again, as in 1.0. Find in preview finds the spaces that Find & Replace finds. The copy menu keeps the step that it opened on, and its arrow keys work. A step that is off after the last step that is on counts as final. Download stays on a narrow screen (e67e9ff, 175539c, 3171aab, 64255b0, 383312d).
 - Add: a right click on a cell copies its value (a4c79f9).
