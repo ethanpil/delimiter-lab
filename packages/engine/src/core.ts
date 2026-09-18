@@ -735,9 +735,24 @@ DL.regexProblem = function (src, flags) {
   try { new RegExp(src, flags || 'u'); return ''; } catch (e) { return 'The regular expression is not valid: ' + e.message; }
 };
 
+// The spaces of Unicode that go across a line: the plain space, the no-break space (U+00A0) and
+// the thin, wide and narrow spaces. An export from a till or a spreadsheet often writes a no-break
+// space where a person sees and types a plain space. The two look the same in the grid.
+var SPACE_CHARS = ' \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000';
+var ONE_SPACE = new RegExp('[' + SPACE_CHARS + ']');
+var ALL_SPACES = new RegExp('[' + SPACE_CHARS + ']', 'g');
+
+// True when a text holds any of those spaces.
+DL.hasSpace = function (s) { return ONE_SPACE.test(s); };
+
+// The text with each of those spaces made a plain space.
+DL.plainSpaces = function (s) { return s.replace(ALL_SPACES, ' '); };
+
 DL.buildRegex = function (find, opts) {
   var flags = 'g' + (opts.matchCase ? '' : 'i');
-  var src = opts.regex ? find : DL.escapeRegExp(find);
+  // In a plain search, a space finds any of the spaces above. A regular expression says for
+  // itself what it finds, so it keeps its own rules.
+  var src = opts.regex ? find : DL.escapeRegExp(find).replace(ALL_SPACES, '[' + SPACE_CHARS + ']');
   if (opts.wholeWord) {
     // A boundary applies only at an end of the text that is a word character; "-" or "." can match anywhere.
     var left = /^[\p{L}\p{N}_]/u.test(find) ? '(?<![\\p{L}\\p{N}_])' : '';

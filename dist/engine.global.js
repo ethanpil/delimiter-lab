@@ -671,9 +671,18 @@
       return "The regular expression is not valid: " + e.message;
     }
   };
+  var SPACE_CHARS = " \xA0\u1680\u2000-\u200A\u202F\u205F\u3000";
+  var ONE_SPACE = new RegExp("[" + SPACE_CHARS + "]");
+  var ALL_SPACES = new RegExp("[" + SPACE_CHARS + "]", "g");
+  DL.hasSpace = function(s) {
+    return ONE_SPACE.test(s);
+  };
+  DL.plainSpaces = function(s) {
+    return s.replace(ALL_SPACES, " ");
+  };
   DL.buildRegex = function(find, opts) {
     var flags = "g" + (opts.matchCase ? "" : "i");
-    var src = opts.regex ? find : DL.escapeRegExp(find);
+    var src = opts.regex ? find : DL.escapeRegExp(find).replace(ALL_SPACES, "[" + SPACE_CHARS + "]");
     if (opts.wholeWord) {
       var left = /^[\p{L}\p{N}_]/u.test(find) ? "(?<![\\p{L}\\p{N}_])" : "";
       var right = /[\p{L}\p{N}_]$/u.test(find) ? "(?![\\p{L}\\p{N}_])" : "";
@@ -2561,17 +2570,17 @@
     var find = p.regex ? findText : unescapeText(findText);
     if (p.wholeCell) {
       var test = p.regex ? new RegExp("^(?:" + find + ")$", p.matchCase ? "u" : "iu") : null;
-      var target = p.matchCase ? find : find.toLowerCase();
+      var target = DL.plainSpaces(p.matchCase ? find : find.toLowerCase());
       var plain = unescapeText(replaceText);
       return function(v) {
-        var hit = test ? test.test(v) : p.matchCase ? v === target : v.toLowerCase() === target;
+        var hit = test ? test.test(v) : DL.plainSpaces(p.matchCase ? v : v.toLowerCase()) === target;
         if (!hit) return v;
         return test ? v.replace(test, plain) : plain;
       };
     }
     var replacement = p.regex ? unescapeText(replaceText) : unescapeText(replaceText).replace(/\$/g, "$$$$");
     var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
-    var quick = !p.regex && !p.wholeWord && p.matchCase ? find : null;
+    var quick = !p.regex && !p.wholeWord && p.matchCase && !DL.hasSpace(find) ? find : null;
     return function(v) {
       if (!v) return v;
       if (quick !== null && v.indexOf(quick) < 0) return v;
@@ -2602,7 +2611,7 @@
         wide: false,
         firstPair: ["find", "replace"],
         headers: ["Find", "Replace with"],
-        help: 'Each row finds a text and replaces it. The rows run in order from the top, and each row reads what the rows before it wrote. Leave "Replace with" empty to remove the text. The options apply to every row.'
+        help: 'Each row finds a text and replaces it. The rows run in order from the top, and each row reads what the rows before it wrote. Leave "Replace with" empty to remove the text. A space finds every kind of space, also the no-break space of many exports. The options apply to every row.'
       },
       { key: "matchCase", label: "Match case", type: "boolean", default: false },
       // stack: the field goes under the field before it, in the same column of the form.

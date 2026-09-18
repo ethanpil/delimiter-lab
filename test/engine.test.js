@@ -790,6 +790,23 @@ test('a step note goes through a workflow file unchanged, and the engine does no
   // The steps that the engine runs carry no note, so a note never changes a result.
   assert.ok(DL.workerSteps(back.steps).every((s) => !('note' in s)));
 });
+// An export often writes a no-break space where a person sees a plain space. A space in the text to
+// find must find it, or the step changes some cells and leaves the others as they were.
+test('Find & Replace finds a no-break space and the other spaces with a plain space', () => {
+  const sp = (c) => String.fromCharCode(c);
+  const cells = ['SALT 8 oz', 'MILK 52' + sp(0xA0) + 'oz', 'WATER 33.8' + sp(0x202F) + 'oz', 'CORN 12' + sp(0x2009) + 'ct', 'MILK 52FZ', 'TAB' + sp(9) + 'oz'];
+  const t = T(['d'], cells.map((c) => [c]));
+  const r = run('replace', { find: ' oz', replace: 'oz', more: [{ from: ' ct', to: 'ct' }] }, t);
+  assert.deepStrictEqual(rowsOf(r.table).map((x) => x[0]), ['SALT 8oz', 'MILK 52oz', 'WATER 33.8oz', 'CORN 12ct', 'MILK 52FZ', 'TAB' + sp(9) + 'oz']);
+  // Match case keeps the rule of the spaces; the quick first check must not skip those cells.
+  const mc = run('replace', { find: ' oz', replace: 'oz', matchCase: true }, t);
+  assert.strictEqual(rowsOf(mc.table)[1][0], 'MILK 52oz');
+  // Whole words and a whole cell follow the same rule.
+  assert.strictEqual(rowsOf(run('replace', { find: '52 oz', replace: 'x', wholeWord: true }, t).table)[1][0], 'MILK x');
+  assert.strictEqual(rowsOf(run('replace', { find: 'milk 52 oz', replace: 'x', wholeCell: true }, t).table)[1][0], 'x');
+  // A regular expression keeps its own rules: a space there is a plain space only.
+  assert.strictEqual(rowsOf(run('replace', { find: ' oz', replace: 'oz', regex: true }, t).table)[1][0], 'MILK 52' + sp(0xA0) + 'oz');
+});
 test('split with names but no maximum has unknown columns', () => {
   const p = Object.assign(DL.defaultParams('split'), { column: 'A', separator: ',', names: 'P, Q' });
   assert.strictEqual(DL.predictColumns('split', p, ['A']), null);

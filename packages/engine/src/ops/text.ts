@@ -291,17 +291,20 @@ function replacer(findText, replaceText, p) {
   var find = p.regex ? findText : unescapeText(findText);
   if (p.wholeCell) {
     var test = p.regex ? new RegExp('^(?:' + find + ')$', p.matchCase ? 'u' : 'iu') : null;
-    var target = p.matchCase ? find : find.toLowerCase();
+    // A plain search compares the cell with every kind of space made a plain space (DL.buildRegex).
+    var target = DL.plainSpaces(p.matchCase ? find : find.toLowerCase());
     var plain = unescapeText(replaceText);
     return function (v) {
-      var hit = test ? test.test(v) : (p.matchCase ? v === target : v.toLowerCase() === target);
+      var hit = test ? test.test(v) : DL.plainSpaces(p.matchCase ? v : v.toLowerCase()) === target;
       if (!hit) return v;
       return test ? v.replace(test, plain) : plain;
     };
   }
   var replacement = p.regex ? unescapeText(replaceText) : unescapeText(replaceText).replace(/\$/g, '$$$$');
   var re = DL.buildRegex(find, { matchCase: p.matchCase, wholeWord: p.wholeWord, regex: p.regex });
-  var quick = !p.regex && !p.wholeWord && p.matchCase ? find : null; // indexOf is a quick first check
+  // indexOf is a quick first check. It looks for the exact characters, so a text with a space, which
+  // finds other spaces too, does not take it.
+  var quick = !p.regex && !p.wholeWord && p.matchCase && !DL.hasSpace(find) ? find : null;
   return function (v) {
     if (!v) return v;
     if (quick !== null && v.indexOf(quick) < 0) return v;
@@ -327,7 +330,7 @@ DL.registerOp({
     { key: 'replace', label: 'Replace with', type: 'text', default: '', inForm: false },
     { key: 'more', label: 'Find and replace', type: 'mapping', required: false, wide: false,
       firstPair: ['find', 'replace'], headers: ['Find', 'Replace with'],
-      help: 'Each row finds a text and replaces it. The rows run in order from the top, and each row reads what the rows before it wrote. Leave "Replace with" empty to remove the text. The options apply to every row.' },
+      help: 'Each row finds a text and replaces it. The rows run in order from the top, and each row reads what the rows before it wrote. Leave "Replace with" empty to remove the text. A space finds every kind of space, also the no-break space of many exports. The options apply to every row.' },
     { key: 'matchCase', label: 'Match case', type: 'boolean', default: false },
     // stack: the field goes under the field before it, in the same column of the form.
     { key: 'wholeWord', label: 'Whole words only', type: 'boolean', default: false, stack: true },
