@@ -252,6 +252,87 @@
     });
   };
 
+  // Puts text on the clipboard. source is the text, or a promise of it; a promise that gives null
+  // copies nothing. container holds the helper box of the older copy command: an open dialog keeps
+  // the focus inside itself, so the box must go inside that dialog. Gives a promise of true when
+  // the text is on the clipboard.
+  //
+  // A browser takes a write only close to the click that asks for it. The text of a step comes from
+  // the worker a moment later, so it goes to the clipboard as a promise, and the click still counts.
+  U.copyText = function (source, container) {
+    var text = Promise.resolve(source);
+    var older = function (t) {
+      var box = U.el('textarea', { class: 'visually-hidden', readonly: true });
+      box.value = t;
+      (container || document.body).appendChild(box);
+      box.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { /* this browser has no copy command */ }
+      box.remove();
+      return ok;
+    };
+    var plain = function () {
+      return text.then(function (t) {
+        if (t === null || t === undefined) return false;
+        if (!(navigator.clipboard && navigator.clipboard.writeText)) return older(t);
+        return navigator.clipboard.writeText(t).then(function () { return true; }, function () { return older(t); });
+      });
+    };
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      var item;
+      try {
+        item = new ClipboardItem({ 'text/plain': text.then(function (t) {
+          if (t === null || t === undefined) throw new Error('nothing to copy');
+          return new Blob([t], { type: 'text/plain' });
+        }) });
+      } catch (e) { return plain(); }
+      return navigator.clipboard.write([item]).then(function () { return true; }, plain);
+    }
+    return plain();
+  };
+
+  // A small menu at the place of the mouse, for a right click. items: [{ label, icon, onClick }].
+  // A click outside, Escape, a scroll or a new size of the window closes it.
+  U.contextMenu = function (e, items) {
+    e.preventDefault();
+    U.closeContextMenu();
+    var menu = U.el('div', { class: 'dropdown-menu show dl-context-menu', role: 'menu' }, items.map(function (it) {
+      return U.el('button', { type: 'button', class: 'dropdown-item', role: 'menuitem', onclick: function () { U.closeContextMenu(); it.onClick(); } },
+        [U.el('i', { class: 'bi ' + it.icon + ' me-2' }), it.label]);
+    }));
+    document.body.appendChild(menu);
+    // The menu stays inside the window.
+    var x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 4);
+    var y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 4);
+    menu.style.left = Math.max(0, x) + 'px';
+    menu.style.top = Math.max(0, y) + 'px';
+    var first = menu.querySelector('button');
+    if (first) first.focus();
+    var close = function (ev) {
+      if (ev && ev.type === 'mousedown' && menu.contains(ev.target)) return;
+      if (ev && ev.type === 'keydown' && ev.key !== 'Escape') return;
+      U.closeContextMenu();
+    };
+    menu.closeWith = close;
+    document.addEventListener('mousedown', close, true);
+    document.addEventListener('keydown', close, true);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    openMenu = menu;
+  };
+
+  var openMenu = null;
+  U.closeContextMenu = function () {
+    if (!openMenu) return;
+    var close = openMenu.closeWith;
+    document.removeEventListener('mousedown', close, true);
+    document.removeEventListener('keydown', close, true);
+    window.removeEventListener('scroll', close, true);
+    window.removeEventListener('resize', close);
+    openMenu.remove();
+    openMenu = null;
+  };
+
   U.downloadBlob = function (blob, filename) {
     var url = URL.createObjectURL(blob);
     var a = U.el('a', { href: url, download: filename });

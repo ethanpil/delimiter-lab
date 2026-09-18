@@ -237,20 +237,9 @@
     // text for that command goes inside the dialog.
     function copyLink(slug) {
       var link = location.origin + location.pathname + '#workflow=' + encodeURIComponent(slug);
-      var done = function () { U.toast(DL.t('wf.linkCopied', { link: link }), 'success'); };
-      var older = function () {
-        var box = U.el('textarea', { class: 'visually-hidden', readonly: true });
-        box.value = link;
-        m.el.appendChild(box);
-        box.select();
-        var ok = false;
-        try { ok = document.execCommand('copy'); } catch (e) { /* this browser has no copy command */ }
-        box.remove();
-        if (ok) done();
-        else U.toast(DL.t('wf.linkNotCopied', { link: link }), 'danger');
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, older);
-      else older();
+      U.copyText(link, m.el).then(function (ok) {
+        U.toast(DL.t(ok ? 'wf.linkCopied' : 'wf.linkNotCopied', { link: link }), ok ? 'success' : 'danger');
+      });
     }
     function build() {
       U.empty(list);
