@@ -20,7 +20,8 @@
   function wrap(param, control, wide) {
     var id = U.domId('f');
     if (control.tagName === 'INPUT' || control.tagName === 'SELECT' || control.tagName === 'TEXTAREA') control.id = id;
-    return U.el('div', { class: 'field' + (wide ? ' field-wide' : ''), dataset: { key: param.key } }, [labelFor(param, id), control]);
+    // param.fill: the field starts in the second column and takes the rest of the row (css/app.css).
+    return U.el('div', { class: 'field' + (wide ? ' field-wide' : '') + (param.fill ? ' field-fill' : ''), dataset: { key: param.key } }, [labelFor(param, id), control]);
   }
 
   function noColumnsMessage(columns) {
@@ -213,8 +214,7 @@
 
   renderers.checkboxes = function (param, value, ctx) {
     var chosen = (value || []).slice();
-    // A list of options is short and fixed, so it shows all of them. param.wide puts it across the
-    // panel, so that a long label stays on one line.
+    // A list of options is short and fixed, so it shows all of them.
     var box = U.el('div', { class: 'column-list option-list' });
     param.options.forEach(function (o) {
       var check = U.check(o.label, chosen.indexOf(o.value) >= 0, function (on) {
@@ -225,7 +225,7 @@
       });
       box.appendChild(check.el);
     });
-    return wrap(param, box, !!param.wide);
+    return wrap(param, box);
   };
 
   renderers.column = function (param, value, ctx) {

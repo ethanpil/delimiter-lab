@@ -194,6 +194,13 @@ body {
 .column-list .form-check { margin: 2px 0; }
 /* A list of options shows every option: it has no height limit and no scroll bar. */
 .column-list.option-list { max-height: none; }
+/* A field with fill starts in the second column and takes the rest of the row. The grid has two
+   columns from 538 px (two columns of 260 px and the gap of 18 px). A narrower grid has one column,
+   and the field then goes under the field before it. */
+.field-grid:has(> .field-fill) { container-type: inline-size; }
+@container (min-width: 538px) {
+  .field-grid > .field-fill { grid-column: 2 / -1; }
+}
 .column-list-tools { display: flex; gap: 8px; margin-bottom: 4px; font-size: 12px; }
 
 .sortable-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--dl-border); border-radius: 6px; max-height: 260px; overflow-y: auto; }

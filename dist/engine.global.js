@@ -2929,12 +2929,12 @@
     keywords: "accent diacritic html tags entities unicode normalize whitespace nbsp smart quotes control characters",
     params: [
       { key: "columns", label: "Columns", type: "columns", required: false, help: "Leave empty to clean all columns." },
-      // wide: the list goes across the panel, so each label stays on one line.
+      // fill: the list takes the rest of the row beside Columns, so each label stays on one line.
       {
         key: "steps",
         label: "Clean",
         type: "checkboxes",
-        wide: true,
+        fill: true,
         default: ["html", "control", "spaces", "unicode"],
         options: CLEAN_STEPS.map(function(s) {
           return { value: s.value, label: s.label };
