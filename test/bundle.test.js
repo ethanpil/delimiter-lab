@@ -155,6 +155,80 @@ test('a copy of a saved workflow is a new record, and the first record does not 
   assert.strictEqual(W.copy('no-such-id', 'X'), null);
 });
 
+// A browser storage with the parts that the backup reads: length, key() and the three item calls.
+// quota is the most characters that the keys and the values can hold together, as in a browser.
+function fakeStorage(init, quota) {
+  const m = new Map(Object.entries(init));
+  const size = () => Array.from(m).reduce((n, [k, v]) => n + k.length + v.length, 0);
+  return {
+    get length() { return m.size; },
+    key: (i) => (i < m.size ? Array.from(m.keys())[i] : null),
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => {
+      const old = m.get(k);
+      m.set(k, String(v));
+      if (quota !== undefined && size() > quota) { if (old === undefined) m.delete(k); else m.set(k, old); throw new Error('QuotaExceededError'); }
+    },
+    removeItem: (k) => { m.delete(k); },
+    dump: () => Object.fromEntries(m)
+  };
+}
+
+test('a full backup restores every key of the application, byte for byte, and no other key', () => {
+  vm.runInThisContext(fs.readFileSync(path.join(root, 'js/app/backup.js'), 'utf8'), { filename: 'backup.js' });
+  const B = DL.backup;
+  // A workflow of 1.0 and one with a note that holds text that could break a file.
+  const note = 'quotes " \\ </script> line\nend     👍🏽 \ud800';
+  const workflows = JSON.stringify([
+    { id: 'w1', name: 'From 1.0', steps: [{ id: 'a', opId: 'case', params: { columns: ['Email'], mode: 'lower' }, enabled: true }], columns: ['Email'], sourceOptions: null, createdAt: 1, updatedAt: 2 },
+    { id: 'w2', name: 'With a note', steps: [{ id: 'b', opId: 'case', params: {}, enabled: true, note: note }], columns: [], sourceOptions: null, createdAt: 3, updatedAt: 4 }
+  ]);
+  const before = { 'dl.workflows.v1': workflows, 'dl.session.v1': '{"workflow":{"steps":[]}}', 'dl.theme': 'dark', 'dl.autosave': '1', 'other.app': 'keep me' };
+  let ls = fakeStorage(before);
+  Object.defineProperty(globalThis, 'localStorage', { value: ls, configurable: true, writable: true });
+  const made = B.make();
+  assert.strictEqual(made.workflows, 2);
+  const file = JSON.parse(made.text);
+  assert.strictEqual(file.format, 'delimiter-lab-backup');
+  assert.strictEqual(file.version, 1);
+  assert.strictEqual(file.appVersion, DL.VERSION);
+  assert.ok(!('other.app' in file.storage), 'the keys of other applications stay out');
+
+  // Later changes, and a key that the backup does not have.
+  ls.setItem('dl.theme', 'light');
+  ls.setItem('dl.workflows.v1', '[]');
+  ls.setItem('dl.later.v2', 'x');
+  const parsed = B.parse(made.text);
+  assert.strictEqual(parsed.workflows, 2);
+  assert.ok(B.restore(parsed));
+  const after = ls.dump();
+  assert.deepStrictEqual(after, before, 'every key comes back as it was, and the key that came later is gone');
+  assert.strictEqual(DL.workflows.get('w2').steps[0].note, note);
+  assert.deepStrictEqual(DL.workflows.list().map((w) => w.id), ['w1', 'w2']);
+
+  // Files that are refused. parse() writes nothing.
+  const refuse = (text, re) => assert.throws(() => B.parse(text), re);
+  refuse('not json', /not a Delimiter Lab backup/);
+  refuse(DL.workflowToJSON({ name: 'x', steps: [] }), /workflow file, not a backup/);
+  refuse(JSON.stringify({ format: 'delimiter-lab-backup', version: 2, storage: {} }), /newer version/);
+  refuse(JSON.stringify({ format: 'delimiter-lab-backup', storage: {} }), /not a Delimiter Lab backup/);
+  refuse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: [] }), /not a Delimiter Lab backup/);
+  refuse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: { 'dl.theme': 5 } }), /damaged/);
+  refuse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: { 'dl.workflows.v1': '{broken' } }), /damaged/);
+  assert.deepStrictEqual(ls.dump(), before);
+  // A key of another application in a file does not go into the storage.
+  const foreign = B.parse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: { 'dl.theme': 'light', 'other.app': 'no' } }));
+  assert.deepStrictEqual(Object.keys(foreign.storage), ['dl.theme']);
+  assert.strictEqual(foreign.workflows, 0);
+
+  // A storage that fills up during the restore gets the keys of before back.
+  const big = B.parse(JSON.stringify({ format: 'delimiter-lab-backup', version: 1, storage: { 'dl.theme': 'light', 'dl.session.v1': 'x'.repeat(5000) } }));
+  ls = fakeStorage(before, 2000);
+  Object.defineProperty(globalThis, 'localStorage', { value: ls, configurable: true, writable: true });
+  assert.strictEqual(B.restore(big), false);
+  assert.deepStrictEqual(ls.dump(), before, 'a failed restore changes nothing');
+});
+
 // The page reads the IIFE build; a program that takes the engine as a module reads the other one.
 // Both come from one source, so both must hold the same engine.
 (async () => {
