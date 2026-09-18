@@ -926,7 +926,10 @@
       var parsed;
       try { parsed = DL.backup.parse(text); } catch (e) { U.toast(e.message, 'danger'); return; }
       var current = DL.backup.currentWorkflows();
-      var when = parsed.createdAt ? U.fmtTime(Date.parse(parsed.createdAt)) : '';
+      // The time comes from another computer, whose clock can be ahead. "just now" would then be
+      // wrong for a backup of next year, so a time in the future shows its date.
+      var made = parsed.createdAt ? Date.parse(parsed.createdAt) : 0;
+      var when = !made ? '' : made > Date.now() ? new Date(made).toLocaleString() : U.fmtTime(made);
       var go = function () {
         // A batch can start while a question is on the screen. A reload would stop it half way.
         if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
