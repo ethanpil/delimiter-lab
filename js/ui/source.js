@@ -14,6 +14,10 @@
     'Amara Okafor,amara@example.com,Lagos,-45,2024-06-30,active\n' +
     'Sam O\'Neil,sam@example.com,Dublin,120,not a date,ACTIVE\n';
 
+  // The largest pasted file that the edit box opens. A box holds text that a person reads and
+  // changes; megabytes of data would stop the page.
+  SourceView.EDIT_MAX_BYTES = 5 * 1024 * 1024;
+
   // The name that pasteData() in js/main.js gives to pasted data. A file with this name gets an edit
   // button. The name comes back with the workspace after a reload, so the button comes back too.
   var PASTED_NAME = /^pasted-data(-\d+)?\.csv$/;

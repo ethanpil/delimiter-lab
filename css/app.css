@@ -233,13 +233,14 @@ body {
 .source-file:only-child { border-radius: 6px; }
 .source-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-file-actions { display: flex; align-items: center; gap: 8px; }
-/* The box of "Paste data": a smaller size shows more rows and more columns of the data. */
-.paste-box { font-size: 13px; line-height: 1.45; white-space: pre; overflow-x: auto; }
+/* The box of "Paste data": a smaller size shows more rows and more columns of the data. The
+   attribute wrap="off" keeps each row of the data on one line. */
+.paste-box { font-size: 13px; line-height: 1.45; }
 .code-editor { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; min-height: 140px; tab-size: 2; }
 
 .problems { margin-top: 10px; }
 .step-note-field { margin-top: 14px; }
-.step-note { resize: vertical; min-height: 64px; }
+.step-note { min-height: 64px; }
 .notes-list { margin: 0; padding-left: 18px; }
 
 /* ---------- Grid ---------- */

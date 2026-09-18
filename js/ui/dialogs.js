@@ -158,7 +158,7 @@
       class: 'form-control font-monospace paste-box', rows: '18', wrap: 'off', spellcheck: 'false', autofocus: true,
       placeholder: DL.t('dialog.pastePlaceholder'), 'aria-label': title
     });
-    if (opts.editing) box.value = opts.text || '';
+    box.value = opts.text || '';
     var m;
     var submit = function () {
       if (!box.value.trim()) { box.classList.add('is-invalid'); box.focus(); return; }
@@ -170,12 +170,15 @@
       title: title,
       size: 'lg',
       body: [U.el('p', { class: 'small text-secondary', text: DL.t(opts.editing ? 'dialog.pasteEditHelp' : 'dialog.pasteHelp') }), box],
+      // The box opens at the first row. A box that keeps its text puts the caret at the end, and the
+      // user then sees the last rows of the data.
+      onShown: function () { box.setSelectionRange(0, 0); box.scrollTop = 0; },
       footer: [
         U.el('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-bs-dismiss': 'modal', text: DL.t('common.cancel') }),
-        opts.editing
-          ? U.el('button', { type: 'button', class: 'btn btn-primary', onclick: submit }, [U.el('i', { class: 'bi bi-check-lg me-1' }), DL.t('dialog.pasteSave')])
-          : U.el('button', { type: 'button', class: 'btn btn-primary', onclick: submit },
-            [U.el('i', { class: 'bi bi-clipboard-plus me-1' }), DL.t(opts.adding ? 'dialog.pasteAdd' : 'dialog.pasteOpen')])
+        U.el('button', { type: 'button', class: 'btn btn-primary', onclick: submit }, [
+          U.el('i', { class: 'bi ' + (opts.editing ? 'bi-check-lg' : 'bi-clipboard-plus') + ' me-1' }),
+          DL.t(opts.editing ? 'dialog.pasteSave' : opts.adding ? 'dialog.pasteAdd' : 'dialog.pasteOpen')
+        ])
       ]
     });
   };
@@ -183,6 +186,23 @@
   // A link opens the page only on a web server. The desktop application and a file have no address
   // that a link can reach.
   function linksWork() { return /^https?:$/.test(location.protocol); }
+
+  // The name that a copy starts with: "<name> (copy)". A name that is taken gets a number.
+  // A name is at most 80 characters, which is the limit of the box. A long name gives its end to
+  // the words that say what the record is. A cut never leaves half a character.
+  function copyName(name, taken) {
+    var LIMIT = 80;
+    var full = DL.t('wf.copyName', { name: name });
+    if (full.length > LIMIT) full = DL.t('wf.copyName', { name: cut(name, name.length - (full.length - LIMIT)) });
+    var out = DL.uniqueName(taken, full.trim());
+    return out.length > LIMIT ? cut(out, LIMIT) : out;
+  }
+
+  function cut(text, length) {
+    var out = text.slice(0, Math.max(0, length));
+    var last = out.charCodeAt(out.length - 1);
+    return last >= 0xD800 && last <= 0xDBFF ? out.slice(0, -1) : out;
+  }
 
   /* ---------- Saved workflows ---------- */
   D.workflows = function (opts, actions) {
@@ -291,16 +311,11 @@
               });
             } }, [U.el('i', { class: 'bi bi-pencil' }), ' ' + DL.t('common.rename')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('wf.copyTitle'), onclick: function () {
-              // The first free name of "<name> (copy)", "<name> (copy) 2", and so on.
               var names = all.map(function (r) { return r.name; });
-              var base = DL.t('wf.copyName', { name: w.name }).slice(0, 80), name = base;
-              for (var n = 2; names.indexOf(name) >= 0; n++) name = base.slice(0, 80 - String(n).length - 1) + ' ' + n;
               m.closeThen(function () {
-                U.prompt({ title: DL.t('dialog.copyWorkflow'), message: DL.t('wf.copyMessage'), value: name, yes: DL.t('wf.copy') }, function (v) {
-                  var rec = actions.copy(w, v);
-                  if (rec) U.toast(DL.t('wf.copied', { name: rec.name }), 'success');
-                  else D.workflows(opts, actions);
-                }, function () { D.workflows(opts, actions); });
+                U.prompt({ title: DL.t('dialog.copyWorkflow'), message: DL.t('wf.copyMessage'), value: copyName(w.name, names), yes: DL.t('wf.copy') },
+                  function (v) { actions.copy(w, v); },
+                  function () { D.workflows(opts, actions); });
               });
             } }, [U.el('i', { class: 'bi bi-copy' }), ' ' + DL.t('wf.copy')]),
             U.el('button', { type: 'button', class: 'btn btn-outline-secondary', title: DL.t('dialog.exportWorkflow'), onclick: function () {
@@ -327,11 +342,10 @@
         U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary text-nowrap', title: DL.t('backup.buttonTitle'), onclick: function () { actions.backup(); } },
           [U.el('i', { class: 'bi bi-box-arrow-down' }), ' ' + DL.t('backup.button')]),
         U.el('button', { type: 'button', class: 'btn btn-sm btn-outline-danger text-nowrap', title: DL.t('backup.restoreTitle'), onclick: function () { restoreInput.click(); } },
-          [U.el('i', { class: 'bi bi-box-arrow-up' }), ' ' + DL.t('backup.restore')]),
-        restoreInput
+          [U.el('i', { class: 'bi bi-box-arrow-up' }), ' ' + DL.t('backup.restore')])
       ],
       body: [
-        U.el('div', { class: 'd-flex gap-2' }, [search, U.el('button', { type: 'button', class: 'btn btn-outline-secondary text-nowrap', onclick: function () { importInput.click(); } }, [U.el('i', { class: 'bi bi-upload' }), ' ' + DL.t('wf.importFile')]), importInput, runInput]),
+        U.el('div', { class: 'd-flex gap-2' }, [search, U.el('button', { type: 'button', class: 'btn btn-outline-secondary text-nowrap', onclick: function () { importInput.click(); } }, [U.el('i', { class: 'bi bi-upload' }), ' ' + DL.t('wf.importFile')]), importInput, runInput, restoreInput]),
         U.el('div', { class: 'form-text', text: DL.t('wf.kept') }),
         list
       ]

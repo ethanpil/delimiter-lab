@@ -191,15 +191,32 @@
 
   // Opens the text of a pasted file in the paste box. The changed text takes the place of the file,
   // with the same name, and the source reads it again. The steps stay.
+  //
+  // A file of the disk can carry the name of a pasted file, so the bytes decide if the box opens.
+  // The box takes UTF-8 only. A file in another encoding would come back with a question mark in
+  // the place of each letter that UTF-8 does not hold, and the edit would write those marks into
+  // the data. A box holds text, not megabytes, so a large file keeps its button but no box.
   function editPastedFile(index) {
     var file = store.state.source.files[index];
     if (!file) return;
-    file.text().then(function (text) {
-      DL.dialogs.paste({ text: text, editing: true }, function (changed) {
+    if (file.size > DL.SourceView.EDIT_MAX_BYTES) {
+      U.toast(DL.t('source.editTooBig', { size: U.fmtBytes(DL.SourceView.EDIT_MAX_BYTES) }), 'warning');
+      return;
+    }
+    file.arrayBuffer().then(function (buf) {
+      var text;
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+      catch (e) { U.toast(DL.t('source.editNotUtf8'), 'warning'); return; }
+      // A byte order mark is not part of the data. It goes out of the box and comes back with it.
+      var mark = text.charAt(0) === '\uFEFF' ? text.charAt(0) : '';
+      var body = mark ? text.slice(1) : text;
+      DL.dialogs.paste({ text: body, editing: true }, function (changed) {
         // The list can change while the box is open. The file keeps its place by its identity.
         var at = store.state.source.files.indexOf(file);
-        if (at < 0 || changed === text) return;
-        store.replaceSourceFile(at, new File([changed], file.name, { type: 'text/csv' }));
+        if (at < 0) { U.toast(DL.t('source.editGone'), 'warning'); return; }
+        // A box holds one kind of line end. Text that only lost its carriage returns did not change.
+        if (changed === body.replace(/\r\n?/g, '\n')) return;
+        store.replaceSourceFile(at, new File([mark + changed], file.name, { type: 'text/csv' }));
         afterSourceFilesChanged();
       });
     }, function () { U.toast(DL.t('msg.fileNotRead'), 'danger'); });
@@ -826,7 +843,12 @@
           var rec = DL.workflows.save(wf);
           if (rec) { store.setWorkflowMeta({ id: rec.id, name: rec.name }, true); U.toast(DL.t('msg.workflowImported', { name: wf.name }), 'success'); }
         });
-      } catch (e) { U.toast(e.message, 'danger'); }
+      } catch (e) {
+        // A backup is a JSON file too, and a drop on the page brings it here.
+        var isBackup = false;
+        try { isBackup = JSON.parse(reader.result).format === 'delimiter-lab-backup'; } catch (e2) { /* not JSON at all */ }
+        U.toast(isBackup ? DL.t('backup.useRestore') : e.message, 'danger');
+      }
     };
     reader.onerror = function () { U.toast(DL.t('msg.fileNotRead'), 'danger'); };
     reader.readAsText(file);
@@ -837,18 +859,27 @@
   // The screen then belongs to the copy, and the first record keeps its saved steps.
   function copyWorkflow(wf, name) {
     if (wf.id !== store.state.workflow.id) {
-      var copy = DL.workflows.copy(wf.id, name);
-      if (copy) applyWorkflow(copy);
-      return copy;
+      // The questions of applyWorkflow come first, as they do for a workflow file. A copy that the
+      // user stops there must not stay behind in the list.
+      applyWorkflow({ name: name, steps: wf.steps, columns: wf.columns, sourceOptions: wf.sourceOptions }, function () {
+        var rec = DL.workflows.copy(wf.id, name);
+        if (!rec) return; // the save said why
+        store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
+        U.toast(DL.t('wf.copied', { name: rec.name }), 'success');
+      });
+      return;
     }
+    if (!store.state.workflow.steps.length) { U.toast(DL.t('msg.addStepBeforeSave'), 'info'); return; }
     // With autosave on, the first record takes a change that waits, as it would without the copy.
     autosaveSoon.cancel();
     autosaveNow();
     var rec = currentRecord(name);
     rec.id = null;
     rec = DL.workflows.save(rec);
-    if (rec) store.setWorkflowMeta({ id: rec.id, name: rec.name }, true);
-    return rec;
+    if (!rec) return;
+    // The screen belongs to the copy now. Undo must not take it back to the first record.
+    store.rebindWorkflow(rec.id, rec.name);
+    U.toast(DL.t('wf.copied', { name: rec.name }), 'success');
   }
 
   /* ---------- Full backup and full restore ---------- */
@@ -856,6 +887,17 @@
   // the page loads again, nothing may write the storage: a session or an autosave of this page
   // would take the place of the restored one.
   var restoring = false;
+  var MAX_BACKUP_BYTES = 32 * 1024 * 1024;
+  var RESTORE_CHANNEL = 'dl.restore.v1';
+
+  // A restore in another tab makes this tab stop its writes and read the new keys.
+  try {
+    new BroadcastChannel(RESTORE_CHANNEL).onmessage = function () {
+      restoring = true;
+      autosaveSoon.cancel();
+      location.reload();
+    };
+  } catch (e) { /* no BroadcastChannel: the other tabs keep their steps until a reload */ }
 
   // Downloads one file with every key of the application. A waiting autosave and the session go in
   // first, so the backup holds the steps on the screen.
@@ -863,6 +905,8 @@
     autosaveSoon.cancel();
     autosaveNow();
     store.saveSession();
+    // A storage that is full keeps the older text, so the backup would hold that older text.
+    if (store.sessionFailed) U.toast(DL.t('backup.stale'), 'warning');
     var b;
     try { b = DL.backup.make(); } catch (e) { U.toast(DL.t('backup.notMade'), 'danger'); return; }
     var name = 'delimiter-lab-backup-' + DL.formatDate(Date.now(), 'YYYY-MM-DD') + '.json';
@@ -875,30 +919,51 @@
   // that the application keeps. The page then loads again, so every part reads the new keys.
   function fullRestore(file) {
     if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
+    // A backup holds what the browser storage holds, which is a few megabytes. A larger file is
+    // another file, and to read it into the page would stop the page for seconds.
+    if (file.size > MAX_BACKUP_BYTES) { U.toast(DL.t('backup.tooBig', { size: U.fmtBytes(MAX_BACKUP_BYTES) }), 'danger'); return; }
     file.text().then(function (text) {
       var parsed;
       try { parsed = DL.backup.parse(text); } catch (e) { U.toast(e.message, 'danger'); return; }
-      U.confirm({
-        title: DL.t('backup.confirmTitle'),
-        message: DL.t('backup.confirmMessage', {
-          current: DL.pluralize(DL.backup.currentWorkflows(), 'saved workflow'),
-          when: parsed.createdAt ? U.fmtTime(Date.parse(parsed.createdAt)) : DL.t('backup.unknownDate'),
-          version: parsed.appVersion ? DL.t('backup.version', { v: parsed.appVersion }) : DL.t('backup.unknownVersion'),
-          workflows: DL.pluralize(parsed.workflows, 'saved workflow')
-        }) + (parsed.runsCode ? ' ' + DL.t('backup.codeWarning') : ''),
-        yes: DL.t('backup.confirmYes'),
-        danger: true
-      }, function () {
+      var current = DL.backup.currentWorkflows();
+      var when = parsed.createdAt ? U.fmtTime(Date.parse(parsed.createdAt)) : '';
+      var go = function () {
+        // A batch can start while a question is on the screen. A reload would stop it half way.
+        if (batchRunning) { U.toast(DL.t('msg.batchRunning'), 'info'); return; }
         restoring = true;
         autosaveSoon.cancel();
-        if (!DL.backup.restore(parsed)) {
+        var done = DL.backup.restore(parsed);
+        if (!done.ok) {
           restoring = false;
-          U.toast(DL.t('backup.failed'), 'danger');
+          U.toast(DL.t(done.lost ? 'backup.lost' : 'backup.failed'), 'danger');
           return;
         }
+        // The other tabs of this browser hold the steps of before. Each one stops its writes and
+        // reads the new keys, so that no tab writes over the restore.
+        try { new BroadcastChannel(RESTORE_CHANNEL).postMessage('restored'); } catch (e) { /* the other tabs keep their steps */ }
         // The file of the workspace belongs to the steps that are gone.
         DL.fileStore.clear().then(function () { location.reload(); });
-      });
+      };
+      var ask = function () {
+        U.confirm({
+          title: DL.t('backup.confirmTitle'),
+          message: DL.t('backup.confirmMessage', {
+            current: current < 0 ? DL.t('backup.currentDamaged') : DL.pluralize(current, 'saved workflow'),
+            when: when || DL.t('backup.unknownDate'),
+            version: parsed.appVersion ? DL.t('backup.version', { v: parsed.appVersion }) : DL.t('backup.unknownVersion'),
+            workflows: DL.pluralize(parsed.workflows, 'saved workflow')
+          }),
+          yes: DL.t('backup.confirmYes'),
+          danger: true
+        }, go);
+      };
+      // A backup can come from another person, so the warning about code gets its own question,
+      // as it does for a workflow file.
+      if (parsed.runsCode) {
+        U.confirm({ title: DL.t('backup.codeTitle'), message: DL.t('backup.codeWarning'), yes: DL.t('common.use'), danger: true }, ask);
+        return;
+      }
+      ask();
     }, function () { U.toast(DL.t('msg.fileNotRead'), 'danger'); });
   }
 
