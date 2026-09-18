@@ -4,6 +4,9 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Add: a right click on a cell copies its value (a4c79f9).
+- Change: the name of a download is the workflow name, the file name and the time, for example clean-contacts-orders-2026-09-18-14-05.csv (3e6b211).
+- Fix: after a deploy, a browser could mix new and old files for ten minutes, and a button showed the key of its text. The files of one deploy now load together (1e4a677).
 - Change: Download is beside Copy in the preview. Copy and Download ask first when the preview does not show the final step (d131777).
 - Add: Clean Text can reduce 2 or more spaces in a row to 1 space. Its list of options takes the rest of the row beside Columns (42eac90, 30a4d79, 41638d4).
 - Add: Copy puts the preview on the clipboard, to paste into a spreadsheet. A right click on a row number or a column name copies that row or column (cf09a77, 79acbcd, 01e560a, 4afefbf).

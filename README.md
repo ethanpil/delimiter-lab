@@ -12,8 +12,8 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Says where a file has faults. A note gives the line and the character of a value with bad quotes. It also gives the lines of rows with more or fewer values than the header.
 - Reads the numbers of a file by the separator that file uses. A file that writes 1.234,56 gives 1000 for 1.000, and a file that writes 1,234.56 gives 1. The reader says when it finds a comma file.
 - Builds a chain of steps. Each step reads the output of the step before it.
-- Shows a preview of each step. Download and Copy beside the preview take the data that it shows, at any step. When that is not the final step, they ask first.
-- Copies the preview to the clipboard, to paste it into a spreadsheet. The Copy button beside Changes copies the result of the step. A right click on a row number copies that row. A right click on a column name copies that column with its name, and the profile of a column has a Copy button too. A copy takes at most 1,000,000 cells.
+- Shows a preview of each step. Download and Copy beside the preview take the data that it shows, at any step. When that is not the final step, they ask first. A download is named after the workflow, the file and the time.
+- Copies the preview to the clipboard, to paste it into a spreadsheet. The Copy button beside Changes copies the result of the step. A right click on a cell copies its value, its row or its column. A right click on a row number copies that row. A right click on a column name copies that column with its name, and the profile of a column has a Copy button too. A copy takes at most 1,000,000 cells.
 - Shows a profile of a column (type, empty cells, different values, smallest and largest, most common values) when you click its name.
 - Marks the cells that a step changed (the "Changes" button). The marks follow moved rows and renamed columns.
 - Shows the rows that failed a Verify rule when you click the rule in the result.
