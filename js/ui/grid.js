@@ -267,6 +267,9 @@
     for (var c = 0; c < this.columns.length; c++) lefts[c + 1] = lefts[c] + this.widths[c];
     this.lefts = lefts; // left edge of each column; lefts[cols.length] is the total width
     this.totalW = lefts[this.columns.length];
+    // Every change of a width comes through here. The rows read this number in their render key,
+    // so that a new width redraws the cells and not only the header.
+    this.layoutVersion = (this.layoutVersion || 0) + 1;
   };
 
   // Gives one column a width, or removes the width that the user set when px is 0.
@@ -382,7 +385,7 @@
     var range = this.visibleColumns();
     if (!this.headerRange || range[0] !== this.headerRange[0] || range[1] !== this.headerRange[1]) this.renderHeader(true);
     // Nothing changed since the last render: keep the DOM.
-    var key = first + ':' + last + ':' + range.join('-') + ':' + loaded + ':' + this.hitsVersion + ':' + (this.current ? this.current.join('/') : '') + ':' + (this.scale < 1 ? this.scroll.scrollTop : 0);
+    var key = first + ':' + last + ':' + range.join('-') + ':' + loaded + ':' + this.hitsVersion + ':' + (this.current ? this.current.join('/') : '') + ':' + (this.scale < 1 ? this.scroll.scrollTop : 0) + ':' + this.layoutVersion;
     if (key === this.renderKey) return;
     this.renderKey = key;
     // In scaled mode rows are placed relative to the current scroll position.
