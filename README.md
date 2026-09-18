@@ -18,6 +18,7 @@ Use it here: **https://ethanpil.github.io/delimiter-lab/**
 - Saves workflows in the browser and as files, so you can apply them again to new files. Autosave writes each change of the steps to the open workflow.
 - Runs a saved workflow on a file from the workflow list, and downloads the result. You do not need to build the steps again.
 - Keeps a note on each step. Write why the step is there or what to check. The note goes into the saved workflow and the workflow file. It does not change the data.
+- Makes a full backup of everything that Delimiter Lab keeps in the browser, and restores it. See "Full backup and restore".
 - Copies a saved workflow under a new name. "Copy" in the workflow list saves the copy and opens it, so you can change it. The first workflow does not change.
 - Opens a saved workflow and data from a link: `#workflow=<link name>&source=<data in base64>`. See "Open from a link".
 - Reads many files as one Data Source. "Many files" is at stack at the start, and you can add files at any time. The columns go by name, and a column that a file does not have is empty for the rows of that file.
@@ -378,6 +379,49 @@ Saved workflows are JSON files with this shape:
 `note` is optional. It is text of at most 10,000 characters. A step with no note has no `note` key.
 Any text can go in a note, because JSON escapes the quotes, the line ends and the control
 characters. An older version of Delimiter Lab reads the file too, but it does not keep the notes.
+
+## Full backup and restore
+
+The Saved workflows dialog has two buttons at the top: "Full Backup" and "Full Restore".
+
+- **Full Backup** downloads one file, `delimiter-lab-backup-<date>.json`. It holds all saved
+  workflows, the open steps with their notes, and the settings, such as the theme and autosave.
+  It does not hold your data files.
+- **Full Restore** reads such a file. A question tells you what goes and what comes. When you
+  agree, the page removes everything that Delimiter Lab keeps in this browser and puts the backup
+  in its place. Then the page loads again. You cannot undo a restore, so make a Full Backup first
+  if you want to keep what you have now. Close the other tabs of Delimiter Lab before a restore,
+  because an open tab can write its steps again.
+
+The file has this shape:
+
+```json
+{
+  "format": "delimiter-lab-backup",
+  "version": 1,
+  "appVersion": "1.1",
+  "createdAt": "2026-09-17T10:00:00.000Z",
+  "storage": {
+    "dl.workflows.v1": "[{\"id\":\"s1\",\"name\":\"Clean contacts\", ...}]",
+    "dl.session.v1": "{...}",
+    "dl.theme": "dark"
+  }
+}
+```
+
+`storage` holds the text of each browser storage key of Delimiter Lab, as the browser holds it.
+Only keys that start with `dl.` go into a backup or come out of it. Other applications on the same
+web address keep their keys.
+
+Versions:
+
+- `version` is the version of the backup file. A version of Delimiter Lab reads every backup
+  version up to its own. It refuses a backup from a newer version, and nothing changes.
+- Each key carries the version of its content, for example `dl.workflows.v1`. A newer version of
+  Delimiter Lab reads the old keys and moves them to a new shape when it must. So a backup from an
+  older version restores into a newer one.
+- A restore checks the whole file before it removes anything. When the browser storage is full
+  during the restore, the page puts the keys of before back, and nothing changes.
 
 ## License
 
