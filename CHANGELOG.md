@@ -4,6 +4,7 @@ The numbers below 1.0 are the history of the development before 1.0.
 
 ## 1.1 (in development)
 
+- Fix: "Save, then open" during a workflow import kept the old steps on the screen, marked as saved, and the next save wrote them over the import. A file whose name two saved workflows share now becomes a new saved workflow instead of replacing one of them (dbd510f).
 - Add: Download in the header takes the final result of the workflow, whatever step the preview shows (ef05e9a).
 - Add: the step Duplicate Column copies a column into a new column with the name that you choose (ecf5478).
 - Fix: a no-break space typed in Find & Replace finds only no-break spaces again, as in 1.0. Find in preview finds the spaces that Find & Replace finds. The copy menu keeps the step that it opened on, and its arrow keys work. A step that is off after the last step that is on counts as final. Download stays on a narrow screen (e67e9ff, 175539c, 3171aab, 64255b0, 383312d).
