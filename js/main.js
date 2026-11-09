@@ -839,9 +839,15 @@
     reader.onload = function () {
       try {
         var wf = DL.workflows.fromJSON(reader.result);
-        var same = DL.workflows.list().filter(function (r) { return r.name === wf.name; })[0];
-        if (same) wf.id = same.id; // the same name replaces the saved record instead of a second copy
+        // The same name replaces the saved record instead of a second copy. When two records have
+        // that name, the file cannot say which one it is, so it becomes a new record and both stay.
+        var same = DL.workflows.list().filter(function (r) { return r.name === wf.name; });
+        var sameId = same.length === 1 ? same[0].id : null;
+        // wf has no id until it is saved. With the id of the record, "Save, then open" reads that
+        // record back after it saves the open steps, and the steps of the file never reach the
+        // screen. The record is chosen before the questions, so a save in them is not replaced.
         applyWorkflow(wf, function () {
+          if (sameId && DL.workflows.get(sameId)) wf.id = sameId;
           var rec = DL.workflows.save(wf);
           if (rec) { store.setWorkflowMeta({ id: rec.id, name: rec.name }, true); U.toast(DL.t('msg.workflowImported', { name: wf.name }), 'success'); }
         });

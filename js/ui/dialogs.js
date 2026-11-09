@@ -252,7 +252,8 @@
       var rank = { full: 0, partial: 1, unknown: 2, none: 3 };
       items.sort(function (a, b) {
         var d = rank[level(a)] - rank[level(b)];
-        return d !== 0 ? d : (b.lastUsedAt || b.updatedAt) - (a.lastUsedAt || a.updatedAt);
+        // A record without times sorts last. NaN here would make the order of the list random.
+        return d !== 0 ? d : (b.lastUsedAt || b.updatedAt || 0) - (a.lastUsedAt || a.updatedAt || 0);
       });
       if (!all.length) {
         list.appendChild(U.el('div', { class: 'text-center text-secondary p-4' }, [
