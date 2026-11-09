@@ -898,9 +898,13 @@
   var MAX_BACKUP_BYTES = 32 * 1024 * 1024;
   var RESTORE_CHANNEL = 'dl.restore.v1';
 
-  // A restore in another tab makes this tab stop its writes and read the new keys.
+  // A restore in another tab makes this tab stop its writes and read the new keys. The restore
+  // posts on this same channel object, because a second object in this tab would get the message
+  // too: the page then loads again before the file of the workspace is gone.
+  var restoreChannel = null;
   try {
-    new BroadcastChannel(RESTORE_CHANNEL).onmessage = function () {
+    restoreChannel = new BroadcastChannel(RESTORE_CHANNEL);
+    restoreChannel.onmessage = function () {
       restoring = true;
       autosaveSoon.cancel();
       location.reload();
@@ -951,7 +955,7 @@
         }
         // The other tabs of this browser hold the steps of before. Each one stops its writes and
         // reads the new keys, so that no tab writes over the restore.
-        try { new BroadcastChannel(RESTORE_CHANNEL).postMessage('restored'); } catch (e) { /* the other tabs keep their steps */ }
+        try { if (restoreChannel) restoreChannel.postMessage('restored'); } catch (e) { /* the other tabs keep their steps */ }
         // The file of the workspace belongs to the steps that are gone.
         DL.fileStore.clear().then(function () { location.reload(); });
       };
